@@ -1,6 +1,9 @@
 import { schedule } from "node-cron";
 import moment from "moment-timezone";
-import { setBackupReserve } from "./util/gateway";
+import {
+  setBackupReserve,
+  setBackupReserveWhenFullyCharged,
+} from "./util/gateway";
 
 // Schedule at 9:00 AM (Phoenix) to set the reserve to 100%
 schedule(
@@ -22,6 +25,15 @@ schedule(
     if (now.hour() === 14) {
       setBackupReserve(5);
     }
+  },
+  { timezone: "America/Phoenix" },
+);
+
+// Schedule a polling job every minute to check the battery charge state and automatically set to 5%
+schedule(
+  "*/1 * * * *",
+  async () => {
+    await setBackupReserveWhenFullyCharged(5);
   },
   { timezone: "America/Phoenix" },
 );
