@@ -1,0 +1,57 @@
+{
+  "name": "simple-mcp-client",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.ts",
+  "type": "module",
+  "bin": {
+    "simple-mcp-server": "build/main.js"
+  },
+  "scripts": {
+    "build": "bun build src/main.ts --outdir build --target bun --minify",
+    "eslint": "bun x eslint src tests",
+    "eslint:fix": "bun eslint -- --quiet --fix",
+    "prettier": "bun x prettier --check src/* tests/*",
+    "prettier:fix": "bun x prettier --write src/* tests/*",
+    "start": "bun run src/main.ts",
+    "stylelint": "stylelint 'src/**/*.tsx' --aei",
+    "stylelint:fix": "stylelint 'src/**/*.tsx' --aei --fix",
+    "test": "bun test",
+    "test:coverage": "bun test --coverage",
+    "test:coverage:lcov": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov",
+    "tsc": "tsc --noEmit",
+    "verify": "bun prettier && bun eslint && bun stylelint && bun tsc && bun test:coverage"
+  },
+  "files": [
+    "build"
+  ],
+  "keywords": [
+    "typescript",
+    "bun",
+    "mcp"
+  ],
+  "author": "",
+  "license": "",
+  "devDependencies": {
+    "@types/bun": "^1.2.16",
+    "@types/nodemailer": "^6.4.17",
+    "@typescript-eslint/eslint-plugin": "^8.34.1",
+    "@typescript-eslint/parser": "^8.34.1",
+    "bun-types": "^1.2.16",
+    "eslint": "^9.29.0",
+    "prettier": "^3.5.3",
+    "stylelint": "^16.19.1",
+    "stylelint-config-prettier": "^9.0.5",
+    "stylelint-config-recommended": "^16.0.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "moment-timezone": "^0.6.0",
+    "node-cron": "^4.1.0",
+    "nodemailer": "^7.0.3",
+    "pino": "^9.7.0",
+    "pino-pretty": "^13.0.0"
+  }
+}

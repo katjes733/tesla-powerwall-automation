@@ -1,0 +1,10 @@
+logs
+_.log
+coverage
+coverage-report
+*.lcov
+node_modules/
+.env
+.DS_Store
+build/
+server-config.json
