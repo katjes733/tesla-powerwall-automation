@@ -1,13 +1,70 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Tesla Scheduler App</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tesla Powerwall Automation</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f4f6f8;
+      color: #333;
+    }
+    header {
+      background: #0d1117;
+      color: #fff;
+      padding: 2rem;
+      text-align: center;
+    }
+    main {
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+    }
+    section {
+      margin-bottom: 2rem;
+    }
+    h1, h2 {
+      color: #0d1117;
+    }
+    footer {
+      text-align: center;
+      padding: 1rem;
+      font-size: 0.9rem;
+      color: #777;
+    }
+    a {
+      color: #007acc;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
+  <header>
     <h1>Tesla Powerwall Automation</h1>
-    <p>This application automates scheduled commands and energy management tasks using Tesla Fleet API.</p>
-    <p>Developed for personal use and experimentation with secure automation workflows.</p>
-    <p>Contact: katjes733@gmx.net</p>
-</body>
-</html>
+    <p>Scheduled energy management using the Tesla Fleet API</p>
+  </header>
+  <main>
+    <section>
+      <h2>About This Project</h2>
+      <p><strong>Tesla Powerwall Automation</strong> is a backend scheduling app that automates energy device interactions. It uses secure OAuth 2.0 authentication and the Tesla Fleet API to dynamically adjust backup reserves, monitor battery status, and trigger customized commands based on time or system state.</p>
+    </section>
+    <section>
+      <h2>Use Case</h2>
+      <p>Designed for personal use, this system helps streamline energy usage and supports resilience goals by scheduling actions based on forecasted demand, pricing, or solar generation patterns. It runs quietly in the background—no frontend or GUI required.</p>
+    </section>
+    <section>
+      <h2>Security & Privacy</h2>
+      <p>All tokens are securely managed, and access credentials are never exposed. The system uses encrypted token storage and minimizes polling to conserve bandwidth and align with API best practices. No user data is shared or logged beyond local scope.</p>
+    </section>
+    <section>
+      <h2>Contact</h2>
+      <p>For inquiries or collaboration ideas, contact <a href="mailto:your@email.com">your@email.com</a>.</p>
+    </section>
+  </main>
+  <footer
