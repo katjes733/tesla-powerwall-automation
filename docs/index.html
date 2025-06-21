@@ -82,29 +82,29 @@
       <!-- <img src="images/favicon-96x96.png" alt="Tesla Powerwall Automation Logo" style="height: 60px; width: auto;"> -->
       <svg width="60" height="60" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
         <style>
-          .battery { 
+          .house {
             fill: none;
             stroke: var(--link-color, #007acc);
-            stroke-width: 4;
-            stroke-linecap: round;
-            stroke-linejoin: round;
+            stroke-width: 2;
           }
-          .tip {
-            fill: var(--link-color, #007acc);
+          .battery {
+            fill: var(--bg-color, #f4f6f8);
+            stroke: var(--link-color, #007acc);
+            stroke-width: 2;
           }
           .bolt {
             fill: var(--link-color, #007acc);
           }
         </style>
         
-        <!-- Battery Body -->
-        <rect x="12" y="30" width="55" height="40" rx="5" ry="5" class="battery" />
+        <!-- House Outline: a polygon representing a house with a triangular roof -->
+        <polygon class="house" points="10,50 50,20 90,50 90,90 10,90" />
         
-        <!-- Battery Tip -->
-        <rect x="67" y="42" width="8" height="16" rx="2" ry="2" class="battery" fill="var(--link-color, #007acc)" />
+        <!-- Powerwall Battery: a centered rectangle inside the house -->
+        <rect class="battery" x="30" y="60" width="40" height="20" rx="3" ry="3" />
         
-        <!-- Lightning Bolt (Energy Indicator) -->
-        <polygon points="36,40 46,40 38,55 48,55 34,68 44,55" class="bolt" />
+        <!-- Lightning Bolt: a polygon placed over the battery -->
+        <polygon class="bolt" points="48,62 58,62 52,70 62,70 44,78 52,68" />
       </svg>
       <div>
         <h1>Tesla Powerwall Automation</h1>
