@@ -83,7 +83,22 @@
     </section>
     <section>
       <h2>Use Case</h2>
-      <p>Designed for personal use, this system helps streamline energy usage and supports resilience goals by scheduling actions based on forecasted demand, pricing, or solar generation patterns. It runs quietly in the background—no frontend or GUI required.</p>
+      <p>This app was developed to address a practical limitation encountered with the Tesla Powerwall: when using custom schedules without enabling grid charging, the Powerwall would often fail to charge to 100% from solar alone. The expected behavior of maximizing solar utilization during peak sunlight hours was not occurring reliably.</p>
+      <p>To solve this, the automation sets the backup reserve to 100% early in the morning, prompting the Powerwall to prioritize charging from solar generation. Once the battery reaches full charge—ideally by 12 PM and no later than 2 PM—the backup reserve is reset to 5%, restoring normal energy flow. This scheduling workaround ensures complete battery availability without relying on grid charging, helping users meet energy independence and optimization goals.</p>
+    </section>
+    <section>
+      <h2>Automation Logic</h2>
+      <p>
+        The diagram below outlines the daily automation routine. It begins at <strong>9:00 AM</strong>,
+        setting the backup reserve to <strong>100%</strong> to prioritize solar charging. The system
+        periodically checks the battery level throughout the day. Once the battery is fully charged,
+        it resets the backup reserve to <strong>5%</strong>, restoring normal energy flow.
+        This ensures the Powerwall is fully charged by midday—without relying on grid power.
+      </p>
+      <div style="background: var(--header-bg); padding: 1rem; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); text-align: center;">
+        <img src="flow-diagram.png" alt="Tesla Powerwall Automation Flow Diagram"
+             style="width:100%; max-width:700px; border-radius: 6px; background: var(--bg-color);" />
+      </div>
     </section>
     <section>
       <h2>Security & Privacy</h2>
@@ -91,7 +106,7 @@
     </section>
     <section>
       <h2>Contact</h2>
-      <p>For inquiries or collaboration ideas, contact <a href="mailto:your@email.com">your@email.com</a>.</p>
+      <p>For inquiries or collaboration ideas, contact <a href="mailto:katjes733@gmx.net">katjes733@gmx.net</a>.</p>
     </section>
   </main>
   <footer>
