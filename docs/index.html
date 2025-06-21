@@ -116,9 +116,9 @@
               font-size: 14px;
             }
           </style>
-          <!-- Arrowhead marker definition -->
+          <!-- Arrowhead marker definition with custom settings -->
           <defs>
-            <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5" orient="auto" markerUnits="strokeWidth">
+            <marker id="arrow" viewBox="0 0 10 10" refX="0" refY="5" markerWidth="6" markerHeight="6" orient="auto" markerUnits="strokeWidth">
               <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--text-color)" />
             </marker>
           </defs>
@@ -155,8 +155,7 @@
           <line x1="350" y1="340" x2="350" y2="360" class="arrow-path"/>
     
           <!-- Loop arrow from "Battery 100%?" back to "Periodically check battery level" -->
-          <!-- Starting at the left-center of Box 4 (Battery 100%?) -->
-          <!-- Ending at the left-center of Box 3 (Periodically check battery level) -->
+          <!-- Begins at left center of Box 4 (x=260, y=245) and ends at left center of Box 3 (x=210, y=175) -->
           <path d="M260,245 C190,245 190,175 210,175" class="arrow-path"/>
           <text x="180" y="215" class="label" text-anchor="middle">No</text>
         </svg>
