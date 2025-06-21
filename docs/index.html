@@ -79,7 +79,33 @@
 <body>
   <header>
     <div style="display: flex; align-items: center; justify-content: center; gap: 1em;">
-      <img src="images/favicon-96x96.png" alt="Tesla Powerwall Automation Logo" style="height: 60px; width: auto;">
+      <!-- <img src="images/favicon-96x96.png" alt="Tesla Powerwall Automation Logo" style="height: 60px; width: auto;"> -->
+      <svg width="60" height="60" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        <style>
+          .battery { 
+            fill: none;
+            stroke: var(--link-color, #007acc);
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+          }
+          .tip {
+            fill: var(--link-color, #007acc);
+          }
+          .bolt {
+            fill: var(--link-color, #007acc);
+          }
+        </style>
+        
+        <!-- Battery Body -->
+        <rect x="12" y="30" width="55" height="40" rx="5" ry="5" class="battery" />
+        
+        <!-- Battery Tip -->
+        <rect x="67" y="42" width="8" height="16" rx="2" ry="2" class="battery" fill="var(--link-color, #007acc)" />
+        
+        <!-- Lightning Bolt (Energy Indicator) -->
+        <polygon points="36,40 46,40 38,55 48,55 34,68 44,55" class="bolt" />
+      </svg>
       <div>
         <h1>Tesla Powerwall Automation</h1>
         <p>Scheduled energy management using the Tesla Fleet API</p>
