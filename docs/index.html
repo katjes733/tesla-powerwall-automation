@@ -79,33 +79,7 @@
 <body>
   <header>
     <div style="display: flex; align-items: center; justify-content: center; gap: 1em;">
-      <!-- <img src="images/favicon-96x96.png" alt="Tesla Powerwall Automation Logo" style="height: 60px; width: auto;"> -->
-      <svg width="60" height="60" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
-        <style>
-          .house {
-            fill: none;
-            stroke: var(--link-color, #007acc);
-            stroke-width: 2;
-          }
-          .battery {
-            fill: var(--bg-color, #f4f6f8);
-            stroke: var(--link-color, #007acc);
-            stroke-width: 2;
-          }
-          .bolt {
-            fill: var(--link-color, #007acc);
-          }
-        </style>
-        
-        <!-- House Outline: a polygon representing a house with a triangular roof -->
-        <polygon class="house" points="10,50 50,20 90,50 90,90 10,90" />
-        
-        <!-- Powerwall Battery: a centered rectangle inside the house -->
-        <rect class="battery" x="30" y="60" width="40" height="20" rx="3" ry="3" />
-        
-        <!-- Lightning Bolt: a polygon placed over the battery -->
-        <polygon class="bolt" points="48,62 58,62 52,70 62,70 44,78 52,68" />
-      </svg>
+      <img src="images/logo.png" alt="Tesla Powerwall Automation Logo" style="height: 60px; width: auto;">      
       <div>
         <h1>Tesla Powerwall Automation</h1>
         <p>Scheduled energy management using the Tesla Fleet API</p>
