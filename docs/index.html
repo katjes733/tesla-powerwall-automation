@@ -96,41 +96,54 @@
         This ensures the Powerwall is fully charged by midday—without relying on grid power.
       </p>
       <div style="overflow-x: auto; padding: 1rem; background: var(--header-bg); border-radius: 8px;">
-        <svg viewBox="0 0 700 400" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg"
+        <svg viewBox="0 0 700 460" width="100%" height="auto" xmlns="http://www.w3.org/2000/svg"
              style="max-width: 700px; height: auto;">
           <style>
-            .step { fill: none; stroke: var(--text-color); stroke-width: 2; }
+            .step { fill: none; stroke: var(--text-color); stroke-width: 2; marker-end: url(#arrow); }
             .box { fill: none; stroke: var(--link-color); stroke-width: 2; rx: 8; }
             .label { fill: var(--text-color); font-family: 'Segoe UI', sans-serif; font-size: 14px; }
           </style>
-          <!-- Start -->
+      
+          <!-- Arrowhead -->
+          <defs>
+            <marker id="arrow" markerWidth="10" markerHeight="10" refX="5" refY="5"
+                    orient="auto" markerUnits="strokeWidth">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="var(--text-color)" />
+            </marker>
+          </defs>
+      
+          <!-- Boxes -->
           <rect x="270" y="20" width="160" height="40" class="box"/>
           <text x="350" y="45" text-anchor="middle" class="label">Start (9:00 AM)</text>
-          <line x1="350" y1="60" x2="350" y2="80" class="step"/>
-    
-          <!-- Set Reserve to 100% -->
+      
           <rect x="220" y="80" width="260" height="50" class="box"/>
           <text x="350" y="110" text-anchor="middle" class="label">Set Backup Reserve to 100%</text>
-          <line x1="350" y1="130" x2="350" y2="150" class="step"/>
-    
-          <!-- Poll Battery Level -->
+      
           <rect x="210" y="150" width="280" height="50" class="box"/>
           <text x="350" y="180" text-anchor="middle" class="label">Periodically check battery level</text>
-          <line x1="350" y1="200" x2="350" y2="220" class="step"/>
-    
-          <!-- Battery Full Decision -->
+      
           <rect x="260" y="220" width="180" height="50" class="box"/>
           <text x="350" y="250" text-anchor="middle" class="label">Battery 100%?</text>
-          <line x1="350" y1="270" x2="350" y2="290" class="step"/>
-    
-          <!-- Yes → Set to 5% -->
+      
           <rect x="225" y="290" width="250" height="50" class="box"/>
           <text x="350" y="320" text-anchor="middle" class="label">Set Backup Reserve to 5%</text>
-          <line x1="350" y1="340" x2="350" y2="360" class="step"/>
-    
-          <!-- End -->
+      
           <rect x="270" y="360" width="160" height="40" class="box"/>
           <text x="350" y="385" text-anchor="middle" class="label">End (by 2:00 PM)</text>
+      
+          <!-- Flow arrows -->
+          <line x1="350" y1="60" x2="350" y2="80" class="step"/>
+          <line x1="350" y1="130" x2="350" y2="150" class="step"/>
+          <line x1="350" y1="200" x2="350" y2="220" class="step"/>
+          <line x1="350" y1="270" x2="350" y2="290" class="step"/>
+          <line x1="350" y1="340" x2="350" y2="360" class="step"/>
+      
+          <!-- Loopback arrow -->
+          <path d="M440,245 Q500,180 440,115" class="step"/>
+          <line x1="440" y1="115" x2="380" y2="175" class="step"/>
+      
+          <!-- Optional 'No' label -->
+          <text x="490" y="180" class="label">No</text>
         </svg>
       </div>
     </section>
