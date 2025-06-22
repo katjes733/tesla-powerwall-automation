@@ -46,8 +46,8 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
 } else {
   logger.info("Scheduled jobs are disabled.");
 
-  logger.info(getAllSiteInfo());
-  logger.info(getAllLiveStatus());
-  // setBackupReserveAll(5);
-  // setBackupReserveAllWhenFullyCharged(5);
+  logger.info(await getAllSiteInfo());
+  logger.info(await getAllLiveStatus());
+  // await setBackupReserveAll(5);
+  // await setBackupReserveAllWhenFullyCharged(5);
 }
