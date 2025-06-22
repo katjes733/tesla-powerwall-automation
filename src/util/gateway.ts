@@ -7,16 +7,18 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const BASE_URL = `https://${process.env.GATEWAY_IP}`;
 
-async function loginToGateway(): Promise<string | null> {
+export async function loginToGateway(): Promise<string | null> {
   try {
     const token = await retry<string>(
       async () => {
         const res = await fetch(`${BASE_URL}/api/login/Basic`, {
+          signal: AbortSignal.timeout(5000),
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            username: "installer",
-            password: process.env.PASSWORD,
+            // username: "installer",
+            username: "customer",
+            password: process.env.GATEWAY_PASSWORD,
           }),
         });
         if (!res.ok) {
@@ -62,7 +64,11 @@ export async function setBackupReserve(
             Authorization: `Bearer ${token}`,
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ backup_reserve_percent: percent }),
+          body: JSON.stringify({
+            // backup_reserve_percent: (19 / 20) * percent + 5,
+            backup_reserve_percent: 20,
+            mode: "autonomous",
+          }),
         });
         if (!res.ok) {
           throw new Error(
@@ -90,45 +96,33 @@ export async function setBackupReserve(
   }
 }
 
-export async function setBackupReserveWhenFullyCharged(
-  percent: number,
+export async function getBatteryCharge(
   withToken: string | null = null,
-): Promise<void> {
+): Promise<number | null> {
   const token = withToken || (await loginToGateway());
   if (!token) {
-    const errorMsg =
-      "Could not obtain token. Skipping reserve update when fully charged.";
+    const errorMsg = "Could not obtain token. Skipping getting battery charge.";
     logger.error(errorMsg);
     await sendEmail(
       "Powerwall Notification",
       `[${new Date().toLocaleString()}] ${errorMsg}`,
     );
-    return;
+    return null;
   }
-  const current_charge = (await getBatteryCharge()) || 0;
-  if (current_charge >= 100) {
-    const infoMsg = `Battery fully charged (${current_charge}%). Setting reserve to ${percent}%.`;
-    logger.info(infoMsg);
-    await sendEmail(
-      "Powerwall Notification",
-      `[${new Date().toLocaleString()}] ${infoMsg}`,
-    );
-    await setBackupReserve(percent, token);
-  }
-}
-
-export async function getBatteryCharge(): Promise<number | null> {
   try {
     // Retrieve system status with the retry mechanism
     const response = await retry(
       async () => {
         const res = await fetch(`${BASE_URL}/api/system_status`, {
           method: "GET",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
         });
         if (!res.ok) {
           throw new Error(
-            `Failed to get system status: ${res.status} ${res.statusText}`,
+            `Failed to get battery charge: ${res.status} ${res.statusText}`,
           );
         }
         return res;
@@ -138,13 +132,71 @@ export async function getBatteryCharge(): Promise<number | null> {
       2,
     );
 
-    // Cast the response to our expected interface
     const data = (await response.json()) as SystemStatusResponse;
-    logger.info(`Battery charge: ${data.battery_state_of_charge}%`);
+    const batteryChargePercent =
+      (data.nominal_energy_remaining / data.nominal_full_pack_energy) * 100;
+    logger.info(`Battery charge: ${batteryChargePercent}%`);
 
-    return data.battery_state_of_charge;
+    return batteryChargePercent;
   } catch (error: any) {
     const errorMsg = `Error after retries polling battery charge: ${error.message}`;
+    logger.error(errorMsg);
+    await sendEmail(
+      "Powerwall Notification",
+      `[${new Date().toLocaleString()}] ${errorMsg}`,
+    );
+    return null;
+  }
+}
+
+export async function getBatteryReserve(
+  withToken: string | null = null,
+): Promise<number | null> {
+  const token = withToken || (await loginToGateway());
+  if (!token) {
+    const errorMsg =
+      "Could not obtain token. Skipping getting battery reserve.";
+    logger.error(errorMsg);
+    await sendEmail(
+      "Powerwall Notification",
+      `[${new Date().toLocaleString()}] ${errorMsg}`,
+    );
+    return null;
+  }
+  try {
+    // Retrieve system status with the retry mechanism
+    const response = await retry(
+      async () => {
+        const res = await fetch(`${BASE_URL}/api/operation`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+        });
+        if (!res.ok) {
+          throw new Error(
+            `Failed to get battery reserve: ${res.status} ${res.statusText}`,
+          );
+        }
+        return res;
+      },
+      3,
+      2000,
+      2,
+    );
+
+    const data = await response.json();
+    logger.info(data);
+    // const data = (await response.json()) as SystemStatusResponse;
+    // const batteryChargePercent =
+    //   (data.nominal_energy_remaining / data.nominal_full_pack_energy) * 100;
+
+    // logger.info(`Battery charge: ${batteryChargePercent}%`);
+
+    return null;
+  } catch (error: any) {
+    const errorMsg = `Error after retries polling battery reserve: ${error.message}`;
     logger.error(errorMsg);
     await sendEmail(
       "Powerwall Notification",

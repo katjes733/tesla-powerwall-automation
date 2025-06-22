@@ -7,4 +7,4 @@ node_modules/
 .env
 .DS_Store
 build/
-server-config.json
+*.pem
