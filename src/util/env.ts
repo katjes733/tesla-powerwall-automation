@@ -1,20 +1,3 @@
-// import { writeFile, readFile } from "fs/promises";
-
-// export async function setEnvVar(key: string, value: string, file = ".env") {
-//   let content = "";
-//   try {
-//     content = await readFile(file, "utf8");
-//   } catch {
-//     // File might not exist yet — that's okay
-//   }
-
-//   const lines = content.split("\n").filter(Boolean);
-//   const updated = lines.filter((line) => !line.startsWith(`${key}=`));
-//   updated.push(`${key}=${value}`);
-
-//   await writeFile(file, updated.join("\n") + "\n", "utf8");
-// }
-
 import { existsSync, readFileSync, writeFileSync } from "fs";
 
 /**
@@ -60,7 +43,3 @@ export function setEnvVar(key: string, value: string, filePath = ".env"): void {
 
   writeFileSync(filePath, updatedLines.join("\n"), "utf8");
 }
-
-// // Example usage
-// const envPath = join(__dirname, ".env");
-// setEnvVar(envPath, "TESLA_REFRESH_TOKEN", "new_refresh_token_here");

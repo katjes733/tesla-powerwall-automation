@@ -1,4 +1,5 @@
 import { schedule } from "node-cron";
+import parser from "cron-parser";
 import moment from "moment-timezone";
 
 import {
@@ -7,6 +8,24 @@ import {
   setBackupReserveAll,
   setBackupReserveAllWhenFullyCharged,
 } from "~/util/automation";
+import { AppDataSource } from "~/database/datasource";
+
+if (AppDataSource) {
+  AppDataSource.initialize()
+    .then(async () => {
+      logger.info("✅ Database connection established successfully.");
+      await AppDataSource?.query(
+        `CREATE SCHEMA IF NOT EXISTS "${process.env.DB_SCHEMA || "public"}";`,
+      );
+      logger.info("✅ Database schema ensured successfully.");
+      await AppDataSource?.synchronize();
+      logger.info("✅ Database migrations completed successfully.");
+    })
+    .catch((error) => {
+      logger.error(error, "❌ Error during Data Source initialization:");
+      process.exit(1);
+    });
+}
 
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   logger.info("Running scheduled jobs...");
@@ -18,6 +37,12 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
       const now = moment().tz("America/Phoenix");
       if (now.hour() === 9) {
         await setBackupReserveAll(100);
+        const interval = parser.parse("0 9 * * *", {
+          tz: "America/Phoenix",
+        });
+        logger.info(
+          `Next run time for 9:00 AM job: ${interval.hasNext() ? interval.next().toString() : "N/A"}`,
+        );
       }
     },
     { timezone: "America/Phoenix" },
@@ -46,7 +71,7 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
 } else {
   logger.info("Scheduled jobs are disabled.");
 
-  logger.info(await getAllSiteInfo());
+  // logger.info(await getAllSiteInfo());
   logger.info(await getAllLiveStatus());
   // await setBackupReserveAll(5);
   // await setBackupReserveAllWhenFullyCharged(5);
