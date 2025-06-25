@@ -10,6 +10,8 @@ import { getNewTokenWithRefreshToken } from "~/util/auth";
 import { setEnvVar } from "~/util/env";
 import { retry } from "~/util/retry";
 import { sendEmail } from "./mailing";
+import { AppDataSource } from "~/database/datasource";
+import { upsert as upsertToken } from "~/routes/token";
 
 const baseApiUrl =
   process.env.TESLA_API_BASE_URL ||
@@ -21,6 +23,7 @@ export class Fleet {
   private token: string = "";
   private tokenExpiresAt: number = 0;
   private refreshToken: string;
+  private refreshTokenMap: Map<string, Record<string, any>> = new Map();
 
   private energyProducts: Product[] = [];
 
@@ -35,9 +38,73 @@ export class Fleet {
     return Fleet.instance;
   }
 
+  async upsertToken({
+    email,
+    token,
+    expiresAt,
+  }: {
+    email: string;
+    token: string;
+    expiresAt?: Date;
+  }) {
+    this.refreshTokenMap.get(email)?.id;
+    upsertToken({
+      id: this.refreshTokenMap.get(email)?.id,
+      email,
+      token,
+      expiresAt,
+    }).then(({ email, id, token, expiresAt }) => {
+      this.refreshTokenMap.set(email, { id, token, expiresAt });
+    });
+    // if (AppDataSource) {
+    //   const tokenRepo = AppDataSource.getRepository("Token");
+    //   let id =
+    //     this.refreshTokenMap.get(email). ||
+    //     (await tokenRepo
+    //       .findOne({
+    //         where: { email },
+    //         select: ["id"],
+    //       })
+    //       .then((record) => record?.id));
+    //   const newDate = new Date();
+    //   const expiresAtDate =
+    //     expiresAt || new Date(newDate.getTime() + 24 * 59 * 60 * 1000);
+    //   let status;
+    //   if (!id) {
+    //     id = v4();
+    //     await tokenRepo.insert({
+    //       id,
+    //       creation_time: newDate,
+    //       modified_time: newDate,
+    //       email,
+    //       token,
+    //       expires_at: expiresAtDate,
+    //     });
+    //     status = 200;
+    //   } else {
+    //     await tokenRepo.update(id, {
+    //       modified_time: newDate,
+    //       token,
+    //       expires_at: expiresAtDate,
+    //     });
+    //     status = 201;
+    //   }
+    //   this.refreshTokenMap.set(email, { id, token, expiresAt: expiresAtDate });
+    //   return {
+    //     status,
+    //     id,
+    //     action: status === 200 ? "created" : "updated",
+    //   };
+    // }
+  }
+
   async getToken() {
     if (!this.refreshToken) {
       throw new Error("Refresh token is not set");
+      // TODO:
+      // 1. Read refresh token from DB (for email) if configured
+      // 2. If DB not configured, read from env var
+      // 3. If env var not set, throw error
     }
 
     if (this.token && this.tokenExpiresAt > Date.now()) {

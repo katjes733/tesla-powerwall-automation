@@ -1,10 +1,12 @@
-import { v4 } from "uuid";
 import open from "open";
 import dedent from "dedent";
 import { setEnvVar } from "~/util/env";
 import type { TokenData } from "~/types/common";
 import { getNewTokenWithCode } from "~/util/auth";
+import { upsert as upsertToken } from "~/routes/token";
+import AppDataSource from "~/database/datasource";
 
+const teslaAccountEmail = process.env.TESLA_ACCOUNT_EMAIL;
 const clientId = process.env.TESLA_CLIENT_ID;
 const clientSecret = process.env.TESLA_CLIENT_SECRET;
 const redirectUri =
@@ -13,18 +15,18 @@ const baseAuthUrl =
   process.env.TESLA_AUTH_BASE_URL ||
   "https://fleet-auth.prd.vn.cloud.tesla.com";
 
-if (!clientId || !clientSecret) {
+if (!teslaAccountEmail || !clientId || !clientSecret) {
   throw new Error(
-    "Missing required environment variables: TESLA_CLIENT_ID or TESLA_CLIENT_SECRET",
+    "Missing required environment variables: TESLA_ACCOUNT_EMAIL or TESLA_CLIENT_ID or TESLA_CLIENT_SECRET",
   );
 }
 
-const state = v4();
+await AppDataSource.getInstance(true);
 
 const authUrl = new URL(
   `/oauth2/v3/authorize?response_type=code&client_id=${encodeURIComponent(
     clientId,
-  )}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=openid%20offline_access%20user_data%20energy_device_data%20energy_cmds&state=${encodeURIComponent(state)}`,
+  )}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=openid%20offline_access%20user_data%20energy_device_data%20energy_cmds&state=${encodeURIComponent(teslaAccountEmail)}`,
   baseAuthUrl,
 ).toString();
 
@@ -64,6 +66,8 @@ oauthServer = Bun.serve({
         const tokenData = (await tokenResponse.json()) as TokenData;
         const refreshToken = tokenData.refresh_token;
 
+        await upsertToken({ email: teslaAccountEmail, token: refreshToken });
+        // TODO: these should be removed as soon as the main app is getting the token from the database
         setEnvVar("TESLA_REFRESH_TOKEN", refreshToken);
         setEnvVar("TESLA_REDIRECT_URI", redirectUri);
 

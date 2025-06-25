@@ -8,24 +8,9 @@ import {
   setBackupReserveAll,
   setBackupReserveAllWhenFullyCharged,
 } from "~/util/automation";
-import { AppDataSource } from "~/database/datasource";
+import AppDataSource from "./database/datasource";
 
-if (AppDataSource) {
-  AppDataSource.initialize()
-    .then(async () => {
-      logger.info("✅ Database connection established successfully.");
-      await AppDataSource?.query(
-        `CREATE SCHEMA IF NOT EXISTS "${process.env.DB_SCHEMA || "public"}";`,
-      );
-      logger.info("✅ Database schema ensured successfully.");
-      await AppDataSource?.synchronize();
-      logger.info("✅ Database migrations completed successfully.");
-    })
-    .catch((error) => {
-      logger.error(error, "❌ Error during Data Source initialization:");
-      process.exit(1);
-    });
-}
+await AppDataSource.getInstance(false);
 
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   logger.info("Running scheduled jobs...");
