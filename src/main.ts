@@ -12,6 +12,12 @@ import AppDataSource from "./database/datasource";
 
 await AppDataSource.getInstance(false);
 
+const email =
+  process.env.TESLA_ACCOUNT_EMAIL ||
+  (() => {
+    throw new Error("TESLA_ACCOUNT_EMAIL environment variable is not set.");
+  })();
+
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   logger.info("Running scheduled jobs...");
 
@@ -21,7 +27,7 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
     async () => {
       const now = moment().tz("America/Phoenix");
       if (now.hour() === 9) {
-        await setBackupReserveAll(100);
+        await setBackupReserveAll(100, email);
         const interval = parser.parse("0 9 * * *", {
           tz: "America/Phoenix",
         });
@@ -39,7 +45,7 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
     async () => {
       const now = moment().tz("America/Phoenix");
       if (now.hour() === 14) {
-        await setBackupReserveAll(5);
+        await setBackupReserveAll(5, email);
       }
     },
     { timezone: "America/Phoenix" },
@@ -49,15 +55,15 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   schedule(
     "*/1 * * * *",
     async () => {
-      await setBackupReserveAllWhenFullyCharged(5);
+      await setBackupReserveAllWhenFullyCharged(5, email);
     },
     { timezone: "America/Phoenix" },
   );
 } else {
   logger.info("Scheduled jobs are disabled.");
 
-  // logger.info(await getAllSiteInfo());
-  logger.info(await getAllLiveStatus());
+  logger.info(await getAllSiteInfo(email));
+  logger.info(await getAllLiveStatus(email));
   // await setBackupReserveAll(5);
   // await setBackupReserveAllWhenFullyCharged(5);
 }

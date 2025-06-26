@@ -3,15 +3,17 @@ import type {
   JWT,
   LiveStatus,
   Product,
+  RefreshTokenData,
   SiteInfo,
   TokenData,
 } from "~/types/common";
 import { getNewTokenWithRefreshToken } from "~/util/auth";
-import { setEnvVar } from "~/util/env";
 import { retry } from "~/util/retry";
 import { sendEmail } from "./mailing";
-import { AppDataSource } from "~/database/datasource";
-import { upsert as upsertToken } from "~/routes/token";
+import {
+  upsert as upsertToken,
+  getByEmail as getRefreshTokenByEmail,
+} from "~/routes/refreshToken";
 
 const baseApiUrl =
   process.env.TESLA_API_BASE_URL ||
@@ -19,92 +21,53 @@ const baseApiUrl =
 
 export class Fleet {
   private static instance: Fleet;
+  private static instanceMap = new Map<string, Fleet>();
 
+  private email: string;
   private token: string = "";
   private tokenExpiresAt: number = 0;
-  private refreshToken: string;
-  private refreshTokenMap: Map<string, Record<string, any>> = new Map();
+  private refreshToken: string = "";
 
   private energyProducts: Product[] = [];
 
-  private constructor() {
-    this.refreshToken = process.env.TESLA_REFRESH_TOKEN || "";
+  private constructor(email: string) {
+    this.email = email;
   }
 
-  public static getInstance(): Fleet {
-    if (!Fleet.instance) {
-      Fleet.instance = new Fleet();
+  public static getInstance(email: string): Fleet {
+    if (!Fleet.instanceMap.has(email)) {
+      Fleet.instanceMap.set(email, new Fleet(email));
     }
-    return Fleet.instance;
+    return Fleet.instanceMap.get(email) as Fleet;
   }
 
-  async upsertToken({
-    email,
-    token,
-    expiresAt,
-  }: {
-    email: string;
-    token: string;
-    expiresAt?: Date;
-  }) {
-    this.refreshTokenMap.get(email)?.id;
-    upsertToken({
-      id: this.refreshTokenMap.get(email)?.id,
-      email,
-      token,
-      expiresAt,
-    }).then(({ email, id, token, expiresAt }) => {
-      this.refreshTokenMap.set(email, { id, token, expiresAt });
-    });
-    // if (AppDataSource) {
-    //   const tokenRepo = AppDataSource.getRepository("Token");
-    //   let id =
-    //     this.refreshTokenMap.get(email). ||
-    //     (await tokenRepo
-    //       .findOne({
-    //         where: { email },
-    //         select: ["id"],
-    //       })
-    //       .then((record) => record?.id));
-    //   const newDate = new Date();
-    //   const expiresAtDate =
-    //     expiresAt || new Date(newDate.getTime() + 24 * 59 * 60 * 1000);
-    //   let status;
-    //   if (!id) {
-    //     id = v4();
-    //     await tokenRepo.insert({
-    //       id,
-    //       creation_time: newDate,
-    //       modified_time: newDate,
-    //       email,
-    //       token,
-    //       expires_at: expiresAtDate,
-    //     });
-    //     status = 200;
-    //   } else {
-    //     await tokenRepo.update(id, {
-    //       modified_time: newDate,
-    //       token,
-    //       expires_at: expiresAtDate,
-    //     });
-    //     status = 201;
-    //   }
-    //   this.refreshTokenMap.set(email, { id, token, expiresAt: expiresAtDate });
-    //   return {
-    //     status,
-    //     id,
-    //     action: status === 200 ? "created" : "updated",
-    //   };
-    // }
-  }
+  // async upsertToken({
+  //   email,
+  //   refreshToken,
+  //   expiresAt,
+  // }: {
+  //   email: string;
+  //   refreshToken: string;
+  //   expiresAt?: Date;
+  // }) {
+  //   upsertToken({
+  //     email,
+  //     refreshToken,
+  //     expiresAt,
+  //   }).then(({ refreshToken }) => {
+  //     this.refreshToken = refreshToken;
+  //   });
+  // }
 
   async getToken() {
     if (!this.refreshToken) {
-      throw new Error("Refresh token is not set");
-      // TODO:
-      // 1. Read refresh token from DB (for email) if configured
-      // 2. If DB not configured, read from env var
-      // 3. If env var not set, throw error
+      const result = await getRefreshTokenByEmail(this.email);
+      if (result) {
+        const { refreshToken } = result as RefreshTokenData;
+        this.refreshToken = refreshToken;
+      } else {
+        throw new Error("Refresh token not found for email: " + this.email);
+      }
     }
 
     if (this.token && this.tokenExpiresAt > Date.now()) {
@@ -118,6 +81,7 @@ export class Fleet {
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
       );
       throw new Error(errorMsg);
     }
@@ -125,7 +89,11 @@ export class Fleet {
     this.token = tokenData.access_token;
     this.tokenExpiresAt = jwtDecode<JWT>(this.token).exp * 1000;
     this.refreshToken = tokenData.refresh_token;
-    setEnvVar("TESLA_REFRESH_TOKEN", this.refreshToken);
+    await upsertToken({
+      email: this.email,
+      refreshToken: this.refreshToken,
+      expiresAt: new Date(this.tokenExpiresAt),
+    });
 
     logger.info("New token obtained and stored successfully.");
 
@@ -183,6 +151,7 @@ export class Fleet {
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
       );
       return [];
     }
@@ -217,6 +186,7 @@ export class Fleet {
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
       );
       return null;
     }
@@ -250,6 +220,7 @@ export class Fleet {
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
       );
       return null;
     }
@@ -299,6 +270,7 @@ export class Fleet {
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
       );
     }
   }

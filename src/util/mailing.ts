@@ -26,13 +26,17 @@ function getMailTransporter(): Transporter | null {
 
 const RECIPIENT_EMAIL = process.env.RECIPIENT_EMAIL || "recipient@example.com";
 
-export async function sendEmail(subject: string, text: string): Promise<void> {
+export async function sendEmail(
+  subject: string,
+  text: string,
+  recipient = RECIPIENT_EMAIL,
+): Promise<void> {
   const transporter = getMailTransporter();
-  if (transporter) {
+  if (transporter && recipient) {
     try {
       const info = await transporter.sendMail({
         from: `"Tesla Powerwall Scheduler" <${process.env.SENDER_EMAIL || "your_email@example.com"}>`,
-        to: RECIPIENT_EMAIL,
+        to: recipient,
         subject: subject,
         text: text,
       });

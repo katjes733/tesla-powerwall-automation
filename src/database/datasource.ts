@@ -1,5 +1,5 @@
 import { DataSource } from "typeorm";
-import { Token } from "~/database/models/token";
+import { RefreshToken } from "~/database/models/refreshToken";
 import { Schedule } from "~/database/models/schedule";
 
 class AppDataSource {
@@ -33,7 +33,7 @@ class AppDataSource {
             // ssl: {
             //   rejectUnauthorized: false,
             // },
-            entities: [Token, Schedule],
+            entities: [RefreshToken, Schedule],
           })
         : (() => {
             throw new Error(

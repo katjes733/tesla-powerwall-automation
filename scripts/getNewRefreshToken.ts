@@ -3,7 +3,7 @@ import dedent from "dedent";
 import { setEnvVar } from "~/util/env";
 import type { TokenData } from "~/types/common";
 import { getNewTokenWithCode } from "~/util/auth";
-import { upsert as upsertToken } from "~/routes/token";
+import { upsert as upsertToken } from "~/routes/refreshToken";
 import AppDataSource from "~/database/datasource";
 
 const teslaAccountEmail = process.env.TESLA_ACCOUNT_EMAIL;
@@ -66,10 +66,10 @@ oauthServer = Bun.serve({
         const tokenData = (await tokenResponse.json()) as TokenData;
         const refreshToken = tokenData.refresh_token;
 
-        await upsertToken({ email: teslaAccountEmail, token: refreshToken });
+        await upsertToken({ email: teslaAccountEmail, refreshToken });
         // TODO: these should be removed as soon as the main app is getting the token from the database
-        setEnvVar("TESLA_REFRESH_TOKEN", refreshToken);
-        setEnvVar("TESLA_REDIRECT_URI", redirectUri);
+        // setEnvVar("TESLA_REFRESH_TOKEN", refreshToken);
+        // setEnvVar("TESLA_REDIRECT_URI", redirectUri);
 
         oauthServer.stop();
         console.log("Token refresh successful.");

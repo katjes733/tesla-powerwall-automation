@@ -11,6 +11,13 @@ export interface JWT {
   exp: number;
 }
 
+export interface RefreshTokenData {
+  id: string;
+  email: string;
+  refreshToken: string;
+  expiresAt: Date;
+}
+
 export interface Product {
   id: string;
   site_name: string;
