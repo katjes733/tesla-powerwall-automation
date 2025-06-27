@@ -30,7 +30,11 @@ export async function sendEmail(
   subject: string,
   text: string,
   recipient = RECIPIENT_EMAIL,
+  sendEmail = true,
 ): Promise<void> {
+  if (!sendEmail) {
+    return;
+  }
   const transporter = getMailTransporter();
   if (transporter && recipient) {
     try {

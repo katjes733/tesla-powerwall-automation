@@ -1,5 +1,7 @@
 import { jwtDecode } from "jwt-decode";
 import type {
+  FleetOptions,
+  FleetOptionsInput,
   JWT,
   LiveStatus,
   Product,
@@ -27,37 +29,24 @@ export class Fleet {
   private token: string = "";
   private tokenExpiresAt: number = 0;
   private refreshToken: string = "";
+  private options: FleetOptions;
 
   private energyProducts: Product[] = [];
 
-  private constructor(email: string) {
+  private constructor(email: string, options?: FleetOptionsInput) {
     this.email = email;
+    this.options = {
+      mailOnError: options?.mailOnError ?? false,
+      throwOnError: options?.throwOnError ?? true,
+    };
   }
 
-  public static getInstance(email: string): Fleet {
+  public static getInstance(email: string, options?: FleetOptionsInput): Fleet {
     if (!Fleet.instanceMap.has(email)) {
-      Fleet.instanceMap.set(email, new Fleet(email));
+      Fleet.instanceMap.set(email, new Fleet(email, options));
     }
     return Fleet.instanceMap.get(email) as Fleet;
   }
-
-  // async upsertToken({
-  //   email,
-  //   refreshToken,
-  //   expiresAt,
-  // }: {
-  //   email: string;
-  //   refreshToken: string;
-  //   expiresAt?: Date;
-  // }) {
-  //   upsertToken({
-  //     email,
-  //     refreshToken,
-  //     expiresAt,
-  //   }).then(({ refreshToken }) => {
-  //     this.refreshToken = refreshToken;
-  //   });
-  // }
 
   async getToken() {
     if (!this.refreshToken) {
@@ -82,6 +71,7 @@ export class Fleet {
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
         this.email,
+        this.options.mailOnError,
       );
       throw new Error(errorMsg);
     }
@@ -152,7 +142,11 @@ export class Fleet {
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
         this.email,
+        this.options.mailOnError,
       );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
       return [];
     }
   }
@@ -187,7 +181,11 @@ export class Fleet {
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
         this.email,
+        this.options.mailOnError,
       );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
       return null;
     }
   }
@@ -221,7 +219,11 @@ export class Fleet {
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
         this.email,
+        this.options.mailOnError,
       );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
       return null;
     }
   }
@@ -271,7 +273,11 @@ export class Fleet {
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] ${errorMsg}`,
         this.email,
+        this.options.mailOnError,
       );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
     }
   }
 }

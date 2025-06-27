@@ -5,20 +5,34 @@ import { Schedule, type ISchedule } from "~/database/models/schedule";
 export async function upsert({
   id,
   email,
-  device_id,
+  deviceId,
   cron,
   timezone,
   enabled = true,
-  expires_at,
+  expiresAt,
   configuration,
-  last_run_time,
-  next_run_time,
-  last_error,
-  last_error_time,
-  last_success_time,
-}: ISchedule) {
+  lastRunTime,
+  nextRunTime,
+  lastError,
+  lastErrorTime,
+  lastSuccessTime,
+}: {
+  id?: string;
+  email?: string;
+  deviceId?: string;
+  cron?: string;
+  timezone?: string;
+  enabled?: boolean;
+  expiresAt?: Date;
+  configuration?: Record<string, any>;
+  lastRunTime?: Date;
+  nextRunTime?: Date;
+  lastError?: string;
+  lastErrorTime?: Date;
+  lastSuccessTime?: Date;
+}) {
   const scheduleRepo = (await AppDataSource.getInstance()).getRepository(
-    Schedule,
+    "Schedule",
   );
   let recordId = id;
 
@@ -33,34 +47,37 @@ export async function upsert({
       creation_time: newDate,
       modified_time: newDate,
       email,
-      device_id,
+      device_id: deviceId,
       cron,
       timezone,
       enabled,
-      expires_at,
+      expires_at: expiresAt,
       configuration,
-      last_run_time,
-      next_run_time,
-      last_error,
-      last_error_time,
-      last_success_time,
+      last_run_time: lastRunTime,
+      next_run_time: nextRunTime,
+      last_error: lastError,
+      last_error_time: lastErrorTime,
+      last_success_time: lastSuccessTime,
     });
     status = 200;
   } else {
-    await scheduleRepo.update(recordId, {
-      modified_time: newDate,
-      device_id,
-      cron,
-      timezone,
-      enabled,
-      expires_at,
-      configuration,
-      last_run_time,
-      next_run_time,
-      last_error,
-      last_error_time,
-      last_success_time,
-    });
+    // Only include provided fields in the update
+    const updateFields: Record<string, any> = { modified_time: newDate };
+    if (cron !== undefined) updateFields.cron = cron;
+    if (timezone !== undefined) updateFields.timezone = timezone;
+    if (enabled !== undefined) updateFields.enabled = enabled;
+    if (expiresAt !== undefined) updateFields.expires_at = expiresAt;
+    if (configuration !== undefined) updateFields.configuration = configuration;
+    if (lastRunTime !== undefined) updateFields.last_run_time = lastRunTime;
+    if (nextRunTime !== undefined) updateFields.next_run_time = nextRunTime;
+    if (lastError !== undefined) updateFields.last_error = lastError;
+    if (lastErrorTime !== undefined)
+      updateFields.last_error_time = lastErrorTime;
+    if (lastSuccessTime !== undefined)
+      updateFields.last_success_time = lastSuccessTime;
+    if (email !== undefined) updateFields.email = email;
+    if (deviceId !== undefined) updateFields.device_id = deviceId;
+    await scheduleRepo.update(recordId, updateFields);
     status = 201;
   }
 
@@ -70,17 +87,17 @@ export async function upsert({
     data: {
       id: recordId,
       email,
-      device_id,
+      deviceId,
       cron,
       timezone,
       enabled,
-      expires_at,
+      expiresAt,
       configuration,
-      last_run_time,
-      next_run_time,
-      last_error,
-      last_error_time,
-      last_success_time,
+      lastRunTime,
+      nextRunTime,
+      lastError,
+      lastErrorTime,
+      lastSuccessTime,
     },
   };
 }

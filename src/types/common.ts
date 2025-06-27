@@ -77,3 +77,10 @@ export interface IBasicEntity {
   creation_time: Date;
   modified_time: Date;
 }
+
+export interface FleetOptions {
+  mailOnError: boolean;
+  throwOnError: boolean;
+}
+
+export type FleetOptionsInput = Partial<FleetOptions>;

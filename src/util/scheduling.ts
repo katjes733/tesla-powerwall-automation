@@ -1,10 +1,13 @@
 import type { ScheduledTask } from "node-cron";
 import { schedule as scheduleTask } from "node-cron";
-import parser from "cron-parser";
 import moment from "moment-timezone";
 import type { ISchedule } from "~/database/models/schedule";
 import { getAllEmails } from "~/routes/refreshToken";
-import { getAll as getAllSchedules } from "~/routes/schedule";
+import {
+  getAll as getAllSchedules,
+  upsert as upsertSchedule,
+} from "~/routes/schedule";
+import { sendEmail } from "./mailing";
 
 export class Scheduler {
   private static instance: Scheduler;
@@ -64,16 +67,36 @@ export class Scheduler {
         logger.info(
           `Executing scheduled task for email ${schedule.email} with ID ${schedule.id}`,
         );
-        // TODO: Implement the actual task logic based on the schedule configuration
-        let lastError: string | null = null;
         try {
+          // TODO: Implement the actual task logic based on the schedule configuration
+          logger.info(
+            `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully`,
+          );
+          upsertSchedule({
+            id: schedule.id,
+            lastRunTime: now.toDate(),
+            nextRunTime: task.getNextRun() || undefined,
+            lastSuccessTime: now.toDate(),
+          });
         } catch (error: any) {
-          lastError = error.message || "Unknown error";
+          const lastError = error.message || "Unknown error";
           logger.error(
             `Error executing scheduled task for email ${schedule.email} with ID ${schedule.id}: ${lastError}`,
           );
-          // TODO: send email notification
-          // Need to modify email handling in Fleet to be optional there or if the exception should just passed through for consistency
+          Promise.all([
+            sendEmail(
+              "Powerwall Notification",
+              `[${new Date().toLocaleString()}] ${lastError}`,
+              schedule.email,
+            ),
+            upsertSchedule({
+              id: schedule.id,
+              lastRunTime: now.toDate(),
+              nextRunTime: task.getNextRun() || undefined,
+              lastError,
+              lastErrorTime: now.toDate(),
+            }),
+          ]);
         }
 
         now.toDate();
