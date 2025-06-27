@@ -71,3 +71,9 @@ export interface SystemStatusResponse {
   nominal_energy_remaining: number;
   nominal_full_pack_energy: number;
 }
+
+export interface IBasicEntity {
+  id: string;
+  creation_time: Date;
+  modified_time: Date;
+}

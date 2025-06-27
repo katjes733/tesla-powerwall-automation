@@ -67,9 +67,6 @@ oauthServer = Bun.serve({
         const refreshToken = tokenData.refresh_token;
 
         await upsertToken({ email: teslaAccountEmail, refreshToken });
-        // TODO: these should be removed as soon as the main app is getting the token from the database
-        // setEnvVar("TESLA_REFRESH_TOKEN", refreshToken);
-        // setEnvVar("TESLA_REDIRECT_URI", redirectUri);
 
         oauthServer.stop();
         console.log("Token refresh successful.");

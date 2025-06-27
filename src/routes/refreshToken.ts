@@ -74,3 +74,16 @@ export async function getByEmail(email: string) {
       return null;
     });
 }
+
+export async function getAllEmails(): Promise<string[]> {
+  const tokenRepo = (await AppDataSource.getInstance()).getRepository(
+    "RefreshToken",
+  );
+  return tokenRepo
+    .find({
+      select: ["email"],
+    })
+    .then((records) => {
+      return records.map((record) => record.email);
+    });
+}
