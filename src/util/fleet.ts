@@ -32,6 +32,7 @@ export class Fleet {
   private options: FleetOptions;
 
   private energyProducts: Product[] = [];
+  private _actionMap: Record<string, Function>;
 
   private constructor(email: string, options?: FleetOptionsInput) {
     this.email = email;
@@ -39,6 +40,17 @@ export class Fleet {
       mailOnError: options?.mailOnError ?? false,
       throwOnError: options?.throwOnError ?? true,
     };
+    this._actionMap = {};
+    Object.getOwnPropertyNames(Fleet.prototype)
+      .filter(
+        (key) =>
+          typeof (this as any)[key] === "function" &&
+          key !== "constructor" &&
+          key.startsWith("set"),
+      )
+      .forEach((key) => {
+        this._actionMap[key] = (this as any)[key].bind(this);
+      });
   }
 
   public static getInstance(email: string, options?: FleetOptionsInput): Fleet {
@@ -46,6 +58,10 @@ export class Fleet {
       Fleet.instanceMap.set(email, new Fleet(email, options));
     }
     return Fleet.instanceMap.get(email) as Fleet;
+  }
+
+  public getActionMap() {
+    return this._actionMap;
   }
 
   async getToken() {

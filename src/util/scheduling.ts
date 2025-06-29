@@ -1,13 +1,17 @@
 import type { ScheduledTask } from "node-cron";
 import { schedule as scheduleTask } from "node-cron";
 import moment from "moment-timezone";
-import type { ISchedule } from "~/database/models/schedule";
+import type {
+  ISchedule,
+  IScheduleConfiguration,
+} from "~/database/models/schedule";
 import { getAllEmails } from "~/routes/refreshToken";
 import {
   getAll as getAllSchedules,
   upsert as upsertSchedule,
 } from "~/routes/schedule";
 import { sendEmail } from "./mailing";
+import { Fleet } from "~/util/fleet";
 
 export class Scheduler {
   private static instance: Scheduler;
@@ -48,16 +52,33 @@ export class Scheduler {
     return true;
   }
 
+  private isValidConfigurationItem(
+    config: IScheduleConfiguration,
+    schedule: ISchedule,
+  ): boolean {
+    if (!config.action || !config.value) {
+      logger.warn(
+        `Invalid configuration for schedule ID ${schedule.id}: ${JSON.stringify(config)}`,
+      );
+      return false;
+    }
+    if (!Fleet.getInstance(schedule.email).getActionMap()[config.action]) {
+      logger.warn(
+        `There is no action defined for ${config.action} in schedule ID ${schedule.id}. Skipping...`,
+      );
+      return false;
+    }
+    return true;
+  }
+
   async initialize() {
     this.validEmails = await getAllEmails();
     for (const schedule of await getAllSchedules()) {
       if (!this.isValidSchedule(schedule)) {
-        continue; // Skip invalid schedules
+        continue;
       }
       const task = scheduleTask(schedule.cron, async () => {
         const now = moment().tz(schedule.timezone);
-        // TODO: re-think this logic if this is needed, as we may want to check expiration manually
-        // However, this is actually quite elegant, as it allows us to check expiration at the time of execution
         if (now.isAfter(moment(schedule.expires_at))) {
           logger.warn(`Schedule with ID ${schedule.id} has expired.`);
           this.enabledScheduledTasks.delete(schedule.id || "");
@@ -68,7 +89,28 @@ export class Scheduler {
           `Executing scheduled task for email ${schedule.email} with ID ${schedule.id}`,
         );
         try {
-          // TODO: Implement the actual task logic based on the schedule configuration
+          const products = await Fleet.getInstance(schedule.email)
+            .getEnergyProducts()
+            .then((allProducts) => {
+              return schedule.device_id === "ALL"
+                ? allProducts
+                : allProducts.filter(
+                    (product) => product.id === schedule.device_id,
+                  );
+            });
+
+          for (const product of products) {
+            for (const config of schedule.configuration || []) {
+              if (!this.isValidConfigurationItem(config, schedule)) {
+                continue;
+              }
+              /* eslint-disable no-unexpected-multiline */
+              await Fleet.getInstance(schedule.email)
+                .getActionMap()
+                [config.action](product, parseInt(config.value));
+              /* eslint-enable no-unexpected-multiline */
+            }
+          }
           logger.info(
             `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully`,
           );
@@ -83,26 +125,20 @@ export class Scheduler {
           logger.error(
             `Error executing scheduled task for email ${schedule.email} with ID ${schedule.id}: ${lastError}`,
           );
-          Promise.all([
-            sendEmail(
-              "Powerwall Notification",
-              `[${new Date().toLocaleString()}] ${lastError}`,
-              schedule.email,
-            ),
-            upsertSchedule({
-              id: schedule.id,
-              lastRunTime: now.toDate(),
-              nextRunTime: task.getNextRun() || undefined,
-              lastError,
-              lastErrorTime: now.toDate(),
-            }),
-          ]);
+          sendEmail(
+            "Powerwall Notification",
+            `[${new Date().toLocaleString()}] ${lastError}`,
+            schedule.email,
+          );
+          upsertSchedule({
+            id: schedule.id,
+            lastRunTime: now.toDate(),
+            nextRunTime: task.getNextRun() || undefined,
+            lastError,
+            lastErrorTime: now.toDate(),
+          });
         }
-
-        now.toDate();
       });
     }
   }
-
-  // Additional methods for scheduling can be added here
 }
