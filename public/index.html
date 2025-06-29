@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Welcome</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        min-height: 100vh;
+        font-family: Arial, sans-serif;
+        background: #f4f4f4;
+        transition:
+          background 0.3s,
+          color 0.3s;
+      }
+      .center-wrapper {
+        width: 100vw;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-top: 2rem;
+      }
+      .health-container {
+        display: flex;
+        gap: 2rem;
+        margin-top: 2rem;
+        justify-content: center;
+      }
+      .health-status {
+        flex: 1;
+        padding: 1rem;
+        border-radius: 8px;
+        background: #fff;
+        max-width: 400px;
+        min-width: 250px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.07);
+        transition:
+          background 0.3s,
+          color 0.3s;
+      }
+      .status-ok {
+        color: green;
+        font-weight: bold;
+      }
+      .status-fail {
+        color: red;
+        font-weight: bold;
+      }
+      .status-message {
+        margin-top: 0.5rem;
+        font-size: 1rem;
+      }
+      .health-title {
+        font-size: 1.2rem;
+        margin-bottom: 0.5rem;
+      }
+      h1,
+      p {
+        text-align: center;
+      }
+      /* Dark mode styles */
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #181a1b;
+          color: #f4f4f4;
+        }
+        .health-status {
+          background: #23272a;
+          color: #f4f4f4;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="center-wrapper">
+      <h1>Tesla Powerwall Automation</h1>
+      <div class="health-container">
+        <div class="health-status" id="serverHealth">
+          <div class="health-title">Server Health</div>
+          <span>Loading server health status...</span>
+        </div>
+        <div class="health-status" id="dbHealth">
+          <div class="health-title">Database Health</div>
+          <span>Loading database health status...</span>
+        </div>
+      </div>
+    </div>
+    <script>
+      // Server health
+      fetch("/health/status-server")
+        .then((res) => res.json())
+        .then((data) => {
+          const el = document.getElementById("serverHealth");
+          if (data.status && data.status.toLowerCase() === "ok") {
+            el.innerHTML =
+              '<div class="health-title">Server Health</div>' +
+              '<span class="status-ok">Health: OK</span>' +
+              '<div class="status-message">' +
+              (data.message || "") +
+              "</div>";
+          } else {
+            el.innerHTML =
+              '<div class="health-title">Server Health</div>' +
+              '<span class="status-fail">Health: ' +
+              (data.status || "Error") +
+              "</span>" +
+              '<div class="status-message">' +
+              (data.message || "Service is not healthy") +
+              "</div>";
+          }
+        })
+        .catch(() => {
+          document.getElementById("serverHealth").innerHTML =
+            '<div class="health-title">Server Health</div>' +
+            '<span class="status-fail">Health: Error fetching status</span>' +
+            '<div class="status-message">Could not reach health endpoint.</div>';
+        });
+      // DB health
+      fetch("/health/status-db")
+        .then((res) => res.json())
+        .then((data) => {
+          const el = document.getElementById("dbHealth");
+          if (data.status && data.status.toLowerCase() === "ok") {
+            el.innerHTML =
+              '<div class="health-title">Database Health</div>' +
+              '<span class="status-ok">Health: OK</span>' +
+              '<div class="status-message">' +
+              (data.message || "") +
+              "</div>";
+          } else {
+            el.innerHTML =
+              '<div class="health-title">Database Health</div>' +
+              '<span class="status-fail">Health: ' +
+              (data.status || "Error") +
+              "</span>" +
+              '<div class="status-message">' +
+              (data.message || "Database is not healthy") +
+              "</div>";
+          }
+        })
+        .catch(() => {
+          document.getElementById("dbHealth").innerHTML =
+            '<div class="health-title">Database Health</div>' +
+            '<span class="status-fail">Health: Error fetching status</span>' +
+            '<div class="status-message">Could not reach database health endpoint.</div>';
+        });
+    </script>
+  </body>
+</html>
