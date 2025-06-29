@@ -1,6 +1,6 @@
 import { DataSource } from "typeorm";
-import { RefreshToken } from "~/database/models/refreshToken";
-import { Schedule } from "~/database/models/schedule";
+import { RefreshToken } from "~/server/database/models/refreshToken";
+import { Schedule } from "~/server/database/models/schedule";
 
 class AppDataSource {
   private static instance: DataSource | null = null;

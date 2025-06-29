@@ -1,6 +1,6 @@
 import { v4 } from "uuid";
-import AppDataSource from "~/database/datasource";
-import { Schedule, type ISchedule } from "~/database/models/schedule";
+import AppDataSource from "~/server/database/datasource";
+import { Schedule, type ISchedule } from "~/server/database/models/schedule";
 
 export async function upsert({
   id,
@@ -83,7 +83,7 @@ export async function upsert({
 
   return {
     status,
-    action: status === 200 ? "created" : "updated",
+    action: status === 200 ? "create" : "update",
     data: {
       id: recordId,
       email,
@@ -99,6 +99,20 @@ export async function upsert({
       lastErrorTime,
       lastSuccessTime,
     },
+  };
+}
+
+export async function deleteById(id: string) {
+  const scheduleRepo = (await AppDataSource.getInstance()).getRepository(
+    Schedule,
+  );
+  const result = await scheduleRepo.delete(id);
+  if (result.affected === 0) {
+    return { status: 404, action: "delete" };
+  }
+  return {
+    status: 204,
+    action: "delete",
   };
 }
 

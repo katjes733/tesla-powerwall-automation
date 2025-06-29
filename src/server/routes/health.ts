@@ -1,5 +1,5 @@
 import express from "express";
-import AppDataSource from "~/database/datasource";
+import AppDataSource from "~/server/database/datasource";
 
 export const router = express.Router();
 

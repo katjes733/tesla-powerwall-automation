@@ -9,7 +9,7 @@ const originalPrettyPrint = Bun.env.LOG_PRETTY_PRINT;
  */
 async function loadLogger(env: Record<string, string | undefined>) {
   const { default: createLogger } = await import(
-    `~/log?cacheBust=${Date.now()}`
+    `~/server/log?cacheBust=${Date.now()}`
   );
   return createLogger(env);
 }

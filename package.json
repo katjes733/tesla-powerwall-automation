@@ -1,20 +1,20 @@
 {
-  "name": "simple-mcp-client",
+  "name": "tesla-powerwall-automation",
   "version": "1.0.0",
   "description": "",
   "main": "main.ts",
   "type": "module",
   "bin": {
-    "simple-mcp-server": "build/main.js"
+    "tesla-powerwall-automation": "build/main.js"
   },
   "scripts": {
-    "build": "bun build src/main.ts --outdir build --target bun --minify",
+    "build": "bun build src/server/main.ts --outdir build --target bun --minify",
     "eslint": "bun x eslint src tests",
     "eslint:fix": "bun eslint -- --quiet --fix",
     "new-refresh-token": "bun run scripts/getNewRefreshToken.ts",
     "prettier": "bun x prettier --check src/* tests/*",
     "prettier:fix": "bun x prettier --write src/* tests/*",
-    "start": "bun run src/main.ts",
+    "start": "bun run src/server/main.ts",
     "stylelint": "stylelint 'src/**/*.tsx' --aei",
     "stylelint:fix": "stylelint 'src/**/*.tsx' --aei --fix",
     "test": "bun test",

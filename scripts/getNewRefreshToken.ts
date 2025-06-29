@@ -1,10 +1,9 @@
 import open from "open";
 import dedent from "dedent";
-import { setEnvVar } from "~/util/env";
-import type { TokenData } from "~/types/common";
-import { getNewTokenWithCode } from "~/util/auth";
-import { upsert as upsertToken } from "~/routes/refreshToken";
-import AppDataSource from "~/database/datasource";
+import type { TokenData } from "~/server/types/common";
+import { getNewTokenWithCode } from "~/server/util/auth";
+import { upsert as upsertToken } from "~/server/routes/refreshToken";
+import AppDataSource from "~/server/database/datasource";
 
 const teslaAccountEmail = process.env.TESLA_ACCOUNT_EMAIL;
 const clientId = process.env.TESLA_CLIENT_ID;

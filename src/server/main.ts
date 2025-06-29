@@ -1,12 +1,12 @@
-import { getAllLiveStatus } from "~/util/automation";
+import { getAllLiveStatus } from "~/server/util/automation";
 import AppDataSource from "./database/datasource";
-import { Fleet } from "~/util/fleet";
+import { Fleet } from "~/server/util/fleet";
 import { Scheduler } from "./util/scheduler";
 import { pinoHttp } from "pino-http";
 import express from "express";
 import cookieParser from "cookie-parser";
-import { router as SchedulingRouter } from "~/routes/scheduling";
-import { router as HealthRouter } from "~/routes/health";
+import { router as SchedulingRouter } from "~/server/routes/scheduling";
+import { router as HealthRouter } from "~/server/routes/health";
 import http from "http";
 import path from "path";
 

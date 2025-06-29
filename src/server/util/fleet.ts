@@ -8,14 +8,14 @@ import type {
   RefreshTokenData,
   SiteInfo,
   TokenData,
-} from "~/types/common";
-import { getNewTokenWithRefreshToken } from "~/util/auth";
-import { retry } from "~/util/retry";
+} from "~/server/types/common";
+import { getNewTokenWithRefreshToken } from "~/server/util/auth";
+import { retry } from "~/server/util/retry";
 import { sendEmail } from "./mailing";
 import {
   upsert as upsertToken,
   getByEmail as getRefreshTokenByEmail,
-} from "~/routes/refreshToken";
+} from "~/server/routes/refreshToken";
 
 const baseApiUrl =
   process.env.TESLA_API_BASE_URL ||
@@ -295,5 +295,21 @@ export class Fleet {
         throw new Error(errorMsg);
       }
     }
+  }
+
+  async setSoftBackupReserve(product: Product, percent: number): Promise<void> {
+    const liveStatus = await this.getLiveStatus(product);
+    if (!liveStatus) {
+      throw new Error(
+        `Live status not available for Energy Site ${product.energy_site_id}.`,
+      );
+    }
+    if (liveStatus.percentage_charged >= percent) {
+      logger.info(
+        `Battery level is ${liveStatus.percentage_charged}%, which is already above the soft backup reserve of ${percent}%. Not setting soft backup reserve.`,
+      );
+      return;
+    }
+    await this.setBackupReserve(product, percent);
   }
 }

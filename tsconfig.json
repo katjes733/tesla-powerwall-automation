@@ -13,7 +13,7 @@
       "~/*": ["*"]
     },
     "resolveJsonModule": true,
-    "typeRoots": ["./node_modules/@types", "./src/types"],
+    "typeRoots": ["./node_modules/@types", "src/server/types"],
 
     /* Bundler mode */
     "moduleResolution": "bundler",

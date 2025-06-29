@@ -1,5 +1,5 @@
 import { EntitySchema } from "typeorm";
-import type { IBasicEntity } from "~/types/common";
+import type { IBasicEntity } from "~/server/types/common";
 
 export interface IScheduleConfiguration {
   action: string;

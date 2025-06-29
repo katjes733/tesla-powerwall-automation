@@ -1,6 +1,6 @@
-import { sendEmail } from "~/util/mailing";
-import type { LiveStatus, Product, SiteInfo } from "~/types/common";
-import { Fleet } from "~/util//fleet";
+import { sendEmail } from "~/server/util/mailing";
+import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
+import { Fleet } from "~/server/util/fleet";
 
 export async function getAllSiteInfo(email: string): Promise<SiteInfo[]> {
   return Fleet.getInstance(email)
