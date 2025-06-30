@@ -15,7 +15,7 @@ import { sendEmail } from "./mailing";
 import {
   upsert as upsertToken,
   getByEmail as getRefreshTokenByEmail,
-} from "~/server/routes/refreshToken";
+} from "~/server/util/routes/refreshToken";
 
 const baseApiUrl =
   process.env.TESLA_API_BASE_URL ||

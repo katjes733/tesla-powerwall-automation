@@ -5,12 +5,12 @@ import type {
   ISchedule,
   IScheduleConfiguration,
 } from "~/server/database/models/schedule";
-import { getAllEmails as getAllEmailsFromDb } from "~/server/routes/refreshToken";
+import { getAllEmails as getAllEmailsFromDb } from "~/server/util/routes/refreshToken";
 import {
   getAll as getAllSchedulesFromDb,
   upsert as upsertScheduleInDb,
   deleteById as deleteScheduleFromDb,
-} from "~/server/routes/schedule";
+} from "~/server/util/routes/schedule";
 import { sendEmail } from "./mailing";
 import { Fleet } from "~/server/util/fleet";
 

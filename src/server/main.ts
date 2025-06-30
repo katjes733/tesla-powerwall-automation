@@ -4,9 +4,12 @@ import { Fleet } from "~/server/util/fleet";
 import { Scheduler } from "./util/scheduler";
 import { pinoHttp } from "pino-http";
 import express from "express";
+import session from "express-session";
 import cookieParser from "cookie-parser";
 import { router as SchedulingRouter } from "~/server/routes/scheduling";
 import { router as HealthRouter } from "~/server/routes/health";
+import { router as SessionRouter } from "~/server/routes/session";
+import { router as UserRouter } from "~/server/routes/user";
 import http from "http";
 import path from "path";
 
@@ -28,11 +31,28 @@ app.use(httpLogger);
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(
+  session({
+    secret:
+      process.env.SESSION_SECRET ||
+      "8aabb709b741d616652f9f79e76983e93338e4c5a1262946545311880721b6b4",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      secure: process.env.SSL_ENABLED === "true",
+      sameSite: "lax",
+      maxAge: 24 * 60 * 60 * 1000, // 1 day
+    },
+  }),
+);
 
 app.disable("x-powered-by");
 
 app.use("/health", HealthRouter);
 app.use("/schedule", SchedulingRouter);
+app.use("/session", SessionRouter);
+app.use("/user", UserRouter);
 
 app.use(express.static(path.join(process.cwd(), "public")));
 

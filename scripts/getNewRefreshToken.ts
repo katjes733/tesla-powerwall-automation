@@ -2,7 +2,7 @@ import open from "open";
 import dedent from "dedent";
 import type { TokenData } from "~/server/types/common";
 import { getNewTokenWithCode } from "~/server/util/auth";
-import { upsert as upsertToken } from "~/server/routes/refreshToken";
+import { upsert as upsertToken } from "~/server/util/routes/refreshToken";
 import AppDataSource from "~/server/database/datasource";
 
 const teslaAccountEmail = process.env.TESLA_ACCOUNT_EMAIL;

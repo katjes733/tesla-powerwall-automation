@@ -15,13 +15,16 @@
     "prettier": "bun x prettier --check src/* tests/*",
     "prettier:fix": "bun x prettier --write src/* tests/*",
     "start": "bun run src/server/main.ts",
-    "stylelint": "stylelint 'src/**/*.tsx' --aei",
-    "stylelint:fix": "stylelint 'src/**/*.tsx' --aei --fix",
+    "stylelint": "stylelint 'src/**/*.{css,scss}' --allow-empty-input",
+    "stylelint:fix": "bun run stylelint -- --fix",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
     "test:coverage:lcov": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov",
     "tsc": "tsc --noEmit",
-    "verify": "bun prettier && bun eslint && bun stylelint && bun tsc && bun test:coverage"
+    "verify": "bun prettier && bun eslint && bun stylelint && bun tsc && bun test:coverage",
+    "dev": "vite",
+    "build-client": "tsc -b && vite build",
+    "preview": "vite preview"
   },
   "files": [
     "build"
@@ -29,33 +32,48 @@
   "keywords": [
     "typescript",
     "bun",
-    "mcp"
+    "tesla",
+    "powerwall"
   ],
   "author": "",
   "license": "",
   "devDependencies": {
+    "@eslint/js": "^9.29.0",
     "@types/bun": "^1.2.16",
     "@types/cookie-parser": "^1.4.9",
     "@types/express": "^5.0.3",
+    "@types/express-session": "^1.18.2",
     "@types/nodemailer": "^6.4.17",
     "@types/pg": "^8.15.4",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
     "@typescript-eslint/eslint-plugin": "^8.34.1",
     "@typescript-eslint/parser": "^8.34.1",
+    "@vitejs/plugin-react": "^4.6.0",
     "bun-types": "^1.2.16",
     "eslint": "^9.29.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-refresh": "^0.4.20",
+    "globals": "^16.2.0",
     "prettier": "^3.5.3",
     "stylelint": "^16.19.1",
-    "stylelint-config-prettier": "^9.0.5",
-    "stylelint-config-recommended": "^16.0.0"
+    "stylelint-config-standard": "^38.0.0",
+    "typescript-eslint": "^8.34.1",
+    "vite": "^7.0.0"
   },
   "peerDependencies": {
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/material": "^7.1.2",
+    "argon2": "^0.43.0",
     "cookie-parser": "^1.4.7",
     "cron-parser": "^5.3.0",
     "dedent": "^1.6.0",
     "express": "^5.1.0",
+    "express-session": "^1.18.1",
     "http": "^0.0.1-security",
     "https": "^1.0.0",
     "jwt-decode": "^4.0.0",
@@ -67,6 +85,9 @@
     "pino": "^9.7.0",
     "pino-http": "^10.5.0",
     "pino-pretty": "^13.0.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.6.3",
     "typeorm": "^0.3.25",
     "uuid": "^11.1.0"
   }
