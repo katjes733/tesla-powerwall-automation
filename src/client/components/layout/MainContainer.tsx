@@ -1,7 +1,13 @@
 import Box from "@mui/material/Box";
 import HealthCards from "../health/Health";
 
-export default function MainContainer() {
+import { type ReactNode } from "react";
+
+interface MainContainerProps {
+  children: ReactNode;
+}
+
+export default function MainContainer({ children }: MainContainerProps) {
   return (
     <Box
       component="main"
@@ -14,7 +20,7 @@ export default function MainContainer() {
         width: "100vw",
       }}
     >
-      <HealthCards />
+      {children}
     </Box>
   );
 }

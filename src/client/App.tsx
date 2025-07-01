@@ -4,6 +4,28 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import NavMenu from "./components/layout/NavMenu";
 import MainContainer from "./components/layout/MainContainer";
 import Footer from "./components/layout/Footer";
+import { Route, Navigate, Routes, type RouteProps } from "react-router-dom";
+import { type ComponentType } from "react";
+import { AuthProvider, useAuth } from "./components/auth/AuthContext";
+import HealthCards from "./components/health/Health";
+import Login from "./components/auth/Login";
+import { NotificationProvider } from "./components/notification/NotificationContext";
+
+type ProtectedRouteProps = {
+  children: React.ReactNode;
+};
+
+const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
+  const { user, loading } = useAuth();
+  if (loading) return <div>Loading...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+};
+
+const AuthRedirect = () => {
+  const { user } = useAuth();
+  return <Navigate to={user ? "/" : "/login"} replace />;
+};
 
 function App() {
   const prefersDarkMode = useMediaQuery("(prefers-color-scheme: dark)");
@@ -16,9 +38,26 @@ function App() {
   return (
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <NavMenu />
-      <MainContainer />
-      <Footer />
+      <AuthProvider>
+        <NotificationProvider>
+          <NavMenu />
+          <MainContainer>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <HealthCards />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<AuthRedirect />} />
+            </Routes>
+          </MainContainer>
+          <Footer />
+        </NotificationProvider>
+      </AuthProvider>
     </ThemeProvider>
   );
 }
