@@ -10,6 +10,7 @@ import { router as SchedulingRouter } from "~/server/routes/scheduling";
 import { router as HealthRouter } from "~/server/routes/health";
 import { router as SessionRouter } from "~/server/routes/session";
 import { router as UserRouter } from "~/server/routes/user";
+import { router as SignupVerificationRouter } from "~/server/routes/signupVerification";
 import http from "http";
 import path from "path";
 
@@ -53,6 +54,7 @@ app.use("/health", HealthRouter);
 app.use("/schedule", SchedulingRouter);
 app.use("/session", SessionRouter);
 app.use("/user", UserRouter);
+app.use("/auth", SignupVerificationRouter);
 
 app.use(express.static(path.join(process.cwd(), "public")));
 
@@ -97,17 +99,17 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
 
   Scheduler.getInstance().initialize();
 } else {
-  const email =
-    process.env.TESLA_ACCOUNT_EMAIL ||
-    (() => {
-      throw new Error("TESLA_ACCOUNT_EMAIL environment variable is not set.");
-    })();
+  // const email =
+  //   process.env.TESLA_ACCOUNT_EMAIL ||
+  //   (() => {
+  //     throw new Error("TESLA_ACCOUNT_EMAIL environment variable is not set.");
+  //   })();
   logger.info("Scheduled jobs are disabled.");
 
-  Fleet.getInstance(email, { mailOnError: true, throwOnError: false });
+  // Fleet.getInstance(email, { mailOnError: true, throwOnError: false });
 
-  // logger.info(await getAllSiteInfo(email));
-  logger.info(await getAllLiveStatus(email));
-  // await setBackupReserveAll(5);
-  // await setBackupReserveAllWhenFullyCharged(5);
+  // // logger.info(await getAllSiteInfo(email));
+  // logger.info(await getAllLiveStatus(email));
+  // // await setBackupReserveAll(5);
+  // // await setBackupReserveAllWhenFullyCharged(5);
 }

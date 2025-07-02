@@ -1,6 +1,8 @@
 import { DataSource } from "typeorm";
 import { RefreshToken } from "~/server/database/models/refreshToken";
 import { Schedule } from "~/server/database/models/schedule";
+import { User } from "~/server/database/models/user";
+import { SignupVerification } from "~/server/database/models/signupVerification";
 
 class AppDataSource {
   private static instance: DataSource | null = null;
@@ -33,7 +35,7 @@ class AppDataSource {
             // ssl: {
             //   rejectUnauthorized: false,
             // },
-            entities: [RefreshToken, Schedule],
+            entities: [RefreshToken, Schedule, User, SignupVerification],
           })
         : (() => {
             throw new Error(
