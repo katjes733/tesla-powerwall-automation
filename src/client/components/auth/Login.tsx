@@ -211,6 +211,7 @@ export default function Login() {
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
+
       try {
         await login(email, password);
       } catch (error: any) {
@@ -223,7 +224,7 @@ export default function Login() {
           );
         } else {
           showNotification(
-            error.response?.data?.error || "Login error",
+            error.response?.data?.error || error.message || "Login error",
             "error",
             5000,
           );
@@ -264,28 +265,57 @@ export default function Login() {
         return;
       }
       setSignupLoading(true);
-      try {
-        await axios.post("/auth/verify-code", {
+      axios
+        .post("/auth/verify-code", {
           email,
           code: signupCode,
+        })
+        .then(() => {
+          axios
+            .post("/user/upsert", {
+              email,
+              password: signupPassword,
+            })
+            .then(() => {
+              showNotification(
+                "Sign up successful! You can now log in.",
+                "success",
+              );
+              setSignup(false);
+              setSignupStep(1);
+              setEmail("");
+              setPassword("");
+              setSignupCode("");
+              setSignupPassword("");
+              setSignupConfirmPassword("");
+            })
+            .catch((error: any) => {
+              console.error(
+                error.response?.data?.error || error.message || "Sign up error",
+              );
+              showNotification(
+                error.response?.data?.error || "Sign up error",
+                "error",
+                5000,
+              );
+            });
+        })
+        .catch((error: any) => {
+          console.error(
+            "Verification code error:",
+            error.response?.data?.error ||
+              error.message ||
+              "Verification code error",
+          );
+          showNotification(
+            error.response?.data?.error || "Verification code error",
+            "error",
+            5000,
+          );
+        })
+        .finally(() => {
+          setSignupLoading(false);
         });
-        await axios.post("/user/upsert", {
-          email,
-          password: signupPassword,
-        });
-        showNotification("Sign up successful! You can now log in.", "success");
-        setSignup(false);
-        setSignupStep(1);
-        setEmail("");
-        setPassword("");
-        setSignupCode("");
-        setSignupPassword("");
-        setSignupConfirmPassword("");
-      } catch (error: any) {
-        showNotification("Sign up error", "error", 5000);
-      } finally {
-        setSignupLoading(false);
-      }
     },
     [
       showNotification,
@@ -380,8 +410,6 @@ export default function Login() {
       setPassword(e.currentTarget.value),
     [],
   );
-
-  console.log(signupErrors);
 
   return (
     <Box

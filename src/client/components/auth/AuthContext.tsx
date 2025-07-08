@@ -45,7 +45,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [authPending, setAuthPending] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const bc = useMemo(() => new BroadcastChannel("auth_channel"), []);
+  const bc = useMemo(() => {
+    console.log("Creating BroadcastChannel");
+    return new BroadcastChannel("auth_channel");
+  }, []);
 
   const logoutActions = () => {
     setUser(null);
@@ -85,6 +88,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     return () => {
+      console.log("Closing BroadcastChannel");
       bc.close();
     };
   }, [bc, history]);
