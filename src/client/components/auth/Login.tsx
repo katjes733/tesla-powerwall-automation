@@ -103,7 +103,12 @@ const SignupForm = React.memo(
     onSubmit,
     step,
     loading,
-  }: SignupFormProps) => (
+    onJumpToStep2,
+    onResendCode,
+  }: SignupFormProps & {
+    onJumpToStep2: () => void;
+    onResendCode: () => void;
+  }) => (
     <>
       {step === 1 && (
         <form onSubmit={onSendCode}>
@@ -118,14 +123,25 @@ const SignupForm = React.memo(
             onChange={onEmailChange}
             onBlur={onEmailBlur}
           />
-          <Box mt={2} display="flex" justifyContent="center">
+          <Box mt={2} display="flex" justifyContent="center" gap={2}>
             <Button
               type="submit"
               variant="contained"
               color="primary"
               disabled={loading}
             >
-              {loading ? "Sending code..." : "Send verification code"}
+              {loading ? "Sending code..." : "Send code"}
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              disabled={loading}
+              onClick={(e) => {
+                e.preventDefault();
+                onJumpToStep2();
+              }}
+            >
+              Have a code?
             </Button>
           </Box>
         </form>
@@ -167,7 +183,7 @@ const SignupForm = React.memo(
             onChange={onConfirmPasswordChange}
             onBlur={onConfirmPasswordBlur}
           />
-          <Box mt={2} display="flex" justifyContent="center">
+          <Box mt={2} display="flex" justifyContent="center" gap={2}>
             <Button
               type="submit"
               variant="contained"
@@ -175,6 +191,17 @@ const SignupForm = React.memo(
               disabled={loading}
             >
               {loading ? "Signing up..." : "Sign up"}
+            </Button>
+            <Button
+              variant="outlined"
+              color="primary"
+              disabled={loading}
+              onClick={(e) => {
+                e.preventDefault();
+                onResendCode();
+              }}
+            >
+              Resend code
             </Button>
           </Box>
         </form>
@@ -200,6 +227,7 @@ export default function Login() {
     signupPassword: "",
     signupConfirmPassword: "",
   });
+  const [signupEmailExistsError, setSignupEmailExistsError] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -242,20 +270,59 @@ export default function Login() {
         return;
       }
       setSignupLoading(true);
-      try {
-        // TODO; need to check if email already exists and stop in that case
-        // maybe use a different endpoint or parameter to enforce user does not exist yet
-        await axios.post("/auth/send-code", { email });
-        setSignupStep(2);
-        showNotification("Verification code sent to your email.", "success");
-      } catch (error: any) {
-        showNotification("Failed to send code", "error", 5000);
-      } finally {
-        setSignupLoading(false);
-      }
+      axios
+        .post("/auth/send-code", { email })
+        .then(() => {
+          setSignupStep(2);
+          setSignupEmailExistsError(false);
+          showNotification("Verification code sent to your email.", "success");
+        })
+        .catch((error: any) => {
+          if (error.response?.status === 409) {
+            setSignupEmailExistsError(true);
+            showNotification(
+              "User already exists. Please log in instead.",
+              "error",
+              5000,
+            );
+          } else {
+            setSignupEmailExistsError(false);
+            showNotification(
+              error.response?.data?.error ||
+                error.message ||
+                "Error sending code",
+              "error",
+              5000,
+            );
+          }
+        })
+        .finally(() => {
+          setSignupLoading(false);
+        });
     },
     [email, showNotification],
   );
+
+  const handleResendCode = useCallback(async () => {
+    setSignupLoading(true);
+    axios
+      .post("/auth/send-code", { email })
+      .then(() => {
+        showNotification("Verification code resent to your email.", "success");
+      })
+      .catch((error: any) => {
+        showNotification(
+          error.response?.data?.error ||
+            error.message ||
+            "Error resending code",
+          "error",
+          5000,
+        );
+      })
+      .finally(() => {
+        setSignupLoading(false);
+      });
+  }, [email, showNotification]);
 
   const handleSignup = useCallback(
     async (e: React.FormEvent) => {
@@ -456,6 +523,8 @@ export default function Login() {
             onSubmit={handleSignup}
             step={signupStep}
             loading={signupLoading}
+            onJumpToStep2={() => setSignupStep(2)}
+            onResendCode={handleResendCode}
           />
         ) : (
           <LoginForm

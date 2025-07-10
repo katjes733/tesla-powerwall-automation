@@ -16,6 +16,13 @@ router.post("/send-code", async (req, res) => {
     return;
   }
 
+  const repo = (await AppDataSource.getInstance()).getRepository("User");
+  const existingUser = await repo.findOneBy({ email });
+  if (existingUser) {
+    res.status(409).json({ error: "User already exists" });
+    return;
+  }
+
   const secret = generateKey(randomBytes, 20);
   const code = await totp(hmac, { secret });
   const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes from now
