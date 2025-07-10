@@ -46,6 +46,16 @@ export default function NavMenu() {
       });
   }, [handleUserMenuClose, logout, navigate]);
 
+  const handleNavigateToHealth = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/");
+  }, [navigate]);
+
+  const handleNavigateToSchedules = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/schedules");
+  }, [navigate]);
+
   return (
     <AppBar
       position="fixed"
@@ -83,11 +93,9 @@ export default function NavMenu() {
                 open={Boolean(mainMenuAnchor)}
                 onClose={handleMainMenuClose}
               >
-                <MenuItem onClick={handleMainMenuClose}>
-                  Left Menu Item 1
-                </MenuItem>
-                <MenuItem onClick={handleMainMenuClose}>
-                  Left Menu Item 2
+                <MenuItem onClick={handleNavigateToHealth}>Health</MenuItem>
+                <MenuItem onClick={handleNavigateToSchedules}>
+                  Schedules
                 </MenuItem>
               </Menu>
             </>

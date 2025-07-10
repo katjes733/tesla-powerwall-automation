@@ -10,6 +10,7 @@ import { AuthProvider, useAuth } from "./components/auth/AuthContext";
 import HealthCards from "./components/health/Health";
 import Login from "./components/auth/Login";
 import { NotificationProvider } from "./components/notification/NotificationContext";
+import Schedules from "./components/schedules/Schedules";
 
 type ProtectedRouteProps = {
   children: React.ReactNode;
@@ -49,6 +50,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <HealthCards />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/schedules"
+                element={
+                  <ProtectedRoute>
+                    <Schedules />
                   </ProtectedRoute>
                 }
               />
