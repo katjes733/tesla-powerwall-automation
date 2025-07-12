@@ -131,24 +131,120 @@ function TimeSettings({ selectedDays, handleDaysChange }: TimeSettingsProps) {
   );
 }
 
+type DynamicSettingsProps = {
+  options: Array<{
+    key: string;
+    label: string;
+    unit: string;
+    min: number;
+    max: number;
+    step: number;
+  }>;
+  selectedOption: string;
+  setSelectedOption: (value: string) => void;
+  values: Record<string, number>;
+  setValues: React.Dispatch<
+    React.SetStateAction<PowerwallOptionValuesType | FlowOptionValuesType>
+  >;
+  extraSetting?: React.ReactNode;
+};
+
+function DynamicSettings({
+  options,
+  selectedOption,
+  setSelectedOption,
+  values,
+  setValues,
+  extraSetting,
+}: DynamicSettingsProps) {
+  return (
+    <RadioGroup
+      value={selectedOption}
+      onChange={(e) => setSelectedOption(e.target.value)}
+    >
+      {options.map((opt, idx) => (
+        <Box key={opt.key}>
+          <FormControlLabel
+            value={opt.key}
+            control={<Radio />}
+            label={<Typography>{opt.label}</Typography>}
+            sx={{ mt: idx > 0 ? 2 : 0 }}
+          />
+          <Box display="flex" flexDirection="column" gap={1}>
+            <Slider
+              value={values[opt.key]}
+              onChange={(_, v) =>
+                setValues((prev) => ({ ...prev, [opt.key]: v as number }))
+              }
+              min={opt.min}
+              max={opt.max}
+              step={opt.step}
+              sx={{ width: "100%" }}
+              disabled={selectedOption !== opt.key}
+            />
+            <TextField
+              value={values[opt.key]}
+              onChange={(e) =>
+                setValues((prev) => ({
+                  ...prev,
+                  [opt.key]: Number(e.target.value),
+                }))
+              }
+              type="number"
+              inputProps={{ min: opt.min, max: opt.max, step: opt.step }}
+              size="small"
+              sx={{ width: 100 }}
+              disabled={selectedOption !== opt.key}
+              InputProps={{ endAdornment: <Typography>{opt.unit}</Typography> }}
+            />
+          </Box>
+        </Box>
+      ))}
+      {extraSetting}
+    </RadioGroup>
+  );
+}
+
+type PowerwallOptionValuesType = {
+  charged: number;
+  discharged: number;
+  backup: number;
+};
+
 type PowerwallSettingsProps = {
   powerwallOption: string;
   setPowerwallOption: (value: string) => void;
-  chargedValue: number;
-  setChargedValue: (value: number) => void;
-  dischargedValue: number;
-  setDischargedValue: (value: number) => void;
+  powerwallOptionValues: PowerwallOptionValuesType;
+  setPowerwallOptionValues: React.Dispatch<
+    React.SetStateAction<PowerwallOptionValuesType>
+  >;
 };
 
 function PowerwallSettings({
   powerwallOption,
   setPowerwallOption,
-  chargedValue,
-  setChargedValue,
-  dischargedValue,
-  setDischargedValue,
+  powerwallOptionValues,
+  setPowerwallOptionValues,
 }: PowerwallSettingsProps) {
   const theme = useTheme();
+  const options = [
+    {
+      key: "charged",
+      label: "Charged up to:",
+      unit: "%",
+      min: 0,
+      max: 100,
+      step: 1,
+    },
+    {
+      key: "discharged",
+      label: "Discharged down to:",
+      unit: "%",
+      min: 0,
+      max: 100,
+      step: 1,
+    },
+  ];
   return (
     <>
       <Typography variant="subtitle1">
@@ -168,72 +264,150 @@ function PowerwallSettings({
           borderColor: "divider",
         }}
       >
-        <RadioGroup
-          value={powerwallOption}
-          onChange={(e) => setPowerwallOption(e.target.value)}
-        >
-          <FormControlLabel
-            value="charged"
-            control={<Radio />}
-            label={<Typography>Charged up to:</Typography>}
-          />
-          <Box display="flex" flexDirection="column" gap={1}>
-            <Slider
-              value={chargedValue}
-              onChange={(_, v) => setChargedValue(v as number)}
-              min={0}
-              max={100}
-              sx={{ width: "100%" }}
-              disabled={powerwallOption !== "charged"}
+        <DynamicSettings
+          options={options}
+          selectedOption={powerwallOption}
+          setSelectedOption={setPowerwallOption}
+          values={powerwallOptionValues}
+          setValues={setPowerwallOptionValues}
+          extraSetting={
+            <FormControlLabel
+              value="backup"
+              control={<Radio />}
+              label={<Typography>Discharged down to backup reserve</Typography>}
+              sx={{ mt: 2 }}
             />
-            <TextField
-              value={chargedValue}
-              onChange={(e) => setChargedValue(Number(e.target.value))}
-              type="number"
-              inputProps={{ min: 0, max: 100 }}
-              size="small"
-              sx={{ width: 90 }}
-              disabled={powerwallOption !== "charged"}
-              InputProps={{
-                endAdornment: <Typography>%</Typography>,
-              }}
-            />
-          </Box>
-          <FormControlLabel
-            value="discharged"
-            control={<Radio />}
-            label={<Typography>Discharged down to:</Typography>}
-            sx={{ mt: 2 }}
-          />
-          <Box display="flex" flexDirection="column" gap={1}>
-            <Slider
-              value={dischargedValue}
-              onChange={(_, v) => setDischargedValue(v as number)}
-              min={0}
-              max={100}
-              sx={{ width: "100%" }}
-              disabled={powerwallOption !== "discharged"}
-            />
-            <TextField
-              value={dischargedValue}
-              onChange={(e) => setDischargedValue(Number(e.target.value))}
-              type="number"
-              inputProps={{ min: 0, max: 100 }}
-              size="small"
-              sx={{ width: 90 }}
-              disabled={powerwallOption !== "discharged"}
-              InputProps={{
-                endAdornment: <Typography>%</Typography>,
-              }}
-            />
-          </Box>
-          <FormControlLabel
-            value="backup"
-            control={<Radio />}
-            label={<Typography>Discharged down to backup reserve</Typography>}
-            sx={{ mt: 2 }}
-          />
-        </RadioGroup>
+          }
+        />
+      </Box>
+    </>
+  );
+}
+
+type FlowOptionValuesType = {
+  homeUsageAbove: number;
+  homeUsageBelow: number;
+  solarGenerationAbove: number;
+  solarGenerationBelow: number;
+  gridImportAbove: number;
+  gridImportBelow: number;
+  gridExportAbove: number;
+  gridExportBelow: number;
+};
+
+type FlowSettingsProps = {
+  flowOption: string;
+  setFlowOption: (value: string) => void;
+  flowOptionValues: FlowOptionValuesType;
+  setFlowOptionValues: React.Dispatch<
+    React.SetStateAction<FlowOptionValuesType>
+  >;
+};
+
+function FlowSettings({
+  flowOption,
+  setFlowOption,
+  flowOptionValues,
+  setFlowOptionValues,
+}: FlowSettingsProps) {
+  const theme = useTheme();
+  const options = [
+    {
+      key: "homeUsageAbove",
+      label: "When home usage rises above:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "homeUsageBelow",
+      label: "When home usage drops to or below:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "solarGenerationAbove",
+      label: "When solar generation rises above:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "solarGenerationBelow",
+      label: "When solar generation drops to or below:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "gridImportAbove",
+      label: "When grid import rises above:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "gridImportBelow",
+      label: "When grid import drops to or below:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "gridExportAbove",
+      label: "When grid export rises above:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "gridExportBelow",
+      label: "When grid export drops to or below:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+  ];
+
+  const handleValueChange = (key: string, value: number) => {
+    setFlowOptionValues((prev) => ({ ...prev, [key]: value }));
+  };
+
+  return (
+    <>
+      <Typography variant="subtitle1">
+        When Powerwall state of charge is:
+      </Typography>
+      <Box
+        sx={{
+          bgcolor: alpha(
+            theme.palette.background.paper,
+            theme.palette.mode === "light" ? 0.5 : 0.2,
+          ),
+          borderRadius: 2,
+          p: 2,
+          mt: 1,
+          width: "100%",
+          border: 1,
+          borderColor: "divider",
+        }}
+      >
+        <DynamicSettings
+          options={options}
+          selectedOption={flowOption}
+          setSelectedOption={setFlowOption}
+          values={flowOptionValues}
+          setValues={setFlowOptionValues}
+        />
       </Box>
     </>
   );
@@ -357,8 +531,22 @@ export default function Schedules() {
   const [dialogTab, setDialogTab] = useState(0);
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [powerwallOption, setPowerwallOption] = useState("charged");
-  const [chargedValue, setChargedValue] = useState(100);
-  const [dischargedValue, setDischargedValue] = useState(20);
+  const [powerwallOptionValues, setPowerwallOptionValues] = useState({
+    charged: 100,
+    discharged: 20,
+    backup: 20,
+  });
+  const [flowOption, setFlowOption] = useState("homeUsageAbove");
+  const [flowOptionValues, setFlowOptionValues] = useState({
+    homeUsageAbove: 8,
+    homeUsageBelow: 8,
+    solarGenerationAbove: 8,
+    solarGenerationBelow: 8,
+    gridImportAbove: 8,
+    gridImportBelow: 8,
+    gridExportAbove: 8,
+    gridExportBelow: 8,
+  });
   const theme = useTheme();
 
   const loadSchedules = useCallback(async () => {
@@ -495,10 +683,8 @@ export default function Schedules() {
               <PowerwallSettings
                 powerwallOption={powerwallOption}
                 setPowerwallOption={setPowerwallOption}
-                chargedValue={chargedValue}
-                setChargedValue={setChargedValue}
-                dischargedValue={dischargedValue}
-                setDischargedValue={setDischargedValue}
+                powerwallOptionValues={powerwallOptionValues}
+                setPowerwallOptionValues={setPowerwallOptionValues}
               />
               <BetweenHours />
               <ActionList />
@@ -506,6 +692,12 @@ export default function Schedules() {
           )}
           {dialogTab === 2 && (
             <Box mt={2}>
+              <FlowSettings
+                flowOption={flowOption}
+                setFlowOption={setFlowOption}
+                flowOptionValues={flowOptionValues}
+                setFlowOptionValues={setFlowOptionValues}
+              />
               <BetweenHours />
               <ActionList />
             </Box>
