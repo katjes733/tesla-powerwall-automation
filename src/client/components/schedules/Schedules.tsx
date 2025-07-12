@@ -28,7 +28,6 @@ import ListItemAvatar from "@mui/material/ListItemAvatar";
 import ListItemText from "@mui/material/ListItemText";
 import Avatar from "@mui/material/Avatar";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
-import { IconButton } from "@mui/material";
 
 export default function Schedules() {
   const { user } = useAuth();
@@ -215,11 +214,13 @@ export default function Schedules() {
               </Typography>
               <List>
                 <ListItem
-                  secondaryAction={
-                    <IconButton edge="end" aria-label="set-backup-reserve">
-                      <ChevronRightIcon />
-                    </IconButton>
-                  }
+                  component="button"
+                  secondaryAction={<ChevronRightIcon />}
+                  sx={{
+                    bgcolor: theme.palette.action.hover,
+                    borderRadius: 2,
+                    mb: 1,
+                  }}
                 >
                   <ListItemAvatar>
                     <Avatar>
@@ -229,11 +230,13 @@ export default function Schedules() {
                   <ListItemText primary="Set backup reserve" />
                 </ListItem>
                 <ListItem
-                  secondaryAction={
-                    <IconButton edge="end" aria-label="preserve-backup-reserve">
-                      <ChevronRightIcon />
-                    </IconButton>
-                  }
+                  component="button"
+                  secondaryAction={<ChevronRightIcon />}
+                  sx={{
+                    bgcolor: theme.palette.action.hover,
+                    borderRadius: 2,
+                    mb: 1,
+                  }}
                 >
                   <ListItemAvatar>
                     <Avatar>
@@ -243,11 +246,13 @@ export default function Schedules() {
                   <ListItemText primary="Preserve battery charge" />
                 </ListItem>
                 <ListItem
-                  secondaryAction={
-                    <IconButton edge="end" aria-label="set-operational-mode">
-                      <ChevronRightIcon />
-                    </IconButton>
-                  }
+                  component="button"
+                  secondaryAction={<ChevronRightIcon />}
+                  sx={{
+                    bgcolor: theme.palette.action.hover,
+                    borderRadius: 2,
+                    mb: 1,
+                  }}
                 >
                   <ListItemAvatar>
                     <Avatar>
@@ -257,11 +262,13 @@ export default function Schedules() {
                   <ListItemText primary="Set operational mode" />
                 </ListItem>
                 <ListItem
-                  secondaryAction={
-                    <IconButton edge="end" aria-label="set-energy-exports">
-                      <ChevronRightIcon />
-                    </IconButton>
-                  }
+                  component="button"
+                  secondaryAction={<ChevronRightIcon />}
+                  sx={{
+                    bgcolor: theme.palette.action.hover,
+                    borderRadius: 2,
+                    mb: 1,
+                  }}
                 >
                   <ListItemAvatar>
                     <Avatar>
@@ -271,11 +278,13 @@ export default function Schedules() {
                   <ListItemText primary="Set energy exports" />
                 </ListItem>
                 <ListItem
-                  secondaryAction={
-                    <IconButton edge="end" aria-label="set-grid-charging">
-                      <ChevronRightIcon />
-                    </IconButton>
-                  }
+                  component="button"
+                  secondaryAction={<ChevronRightIcon />}
+                  sx={{
+                    bgcolor: theme.palette.action.hover,
+                    borderRadius: 2,
+                    mb: 1,
+                  }}
                 >
                   <ListItemAvatar>
                     <Avatar>
