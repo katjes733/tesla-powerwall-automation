@@ -275,7 +275,7 @@ export default function Login() {
       }
       setSignupLoading(true);
       axios
-        .post("/auth/send-code", { email })
+        .post("/api/auth/send-code", { email })
         .then(() => {
           setSignupStep(2);
           setSignupEmailExistsError(false);
@@ -310,7 +310,7 @@ export default function Login() {
   const handleResendCode = useCallback(async () => {
     setSignupLoading(true);
     axios
-      .post("/auth/send-code", { email })
+      .post("/api/auth/send-code", { email })
       .then(() => {
         showNotification("Verification code resent to your email.", "success");
       })
@@ -337,13 +337,13 @@ export default function Login() {
       }
       setSignupLoading(true);
       axios
-        .post("/auth/verify-code", {
+        .post("/api/auth/verify-code", {
           email,
           code: signupCode,
         })
         .then(() => {
           axios
-            .post("/user/upsert", {
+            .post("/api/user/upsert", {
               email,
               password: signupPassword,
             })

@@ -644,7 +644,7 @@ export default function Schedules() {
   const loadSchedules = useCallback(async () => {
     setLoading(true);
     axios
-      .get(`/schedule/all`, { params: { email: user.email } })
+      .get(`/api/schedule/all`, { params: { email: user.email } })
       .then((res) => {
         setRows(res.data.data || []);
       })
@@ -747,7 +747,7 @@ export default function Schedules() {
     });
 
     axios
-      .post("/schedule/upsert", schedule)
+      .post("/api/schedule/upsert", schedule)
       .then(() => {
         showNotification("Schedule saved successfully", "success");
       })
@@ -770,7 +770,7 @@ export default function Schedules() {
     setRows((prevRows) => prevRows.filter((r) => r.id !== scheduleToDelete.id));
 
     axios
-      .post("/schedule/delete", { id: scheduleToDelete.id })
+      .post("/api/schedule/delete", { id: scheduleToDelete.id })
       .then(() => {
         showNotification("Schedule deleted successfully", "success");
       })

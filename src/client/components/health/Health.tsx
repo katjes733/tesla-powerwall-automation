@@ -17,7 +17,7 @@ export default function HealthCards() {
   const [dbError, setDbError] = useState(false);
 
   useEffect(() => {
-    fetch("/health/status-server")
+    fetch("/api/health/status-server")
       .then((res) => res.json())
       .then((data) => {
         setServerHealth(data);
@@ -26,7 +26,7 @@ export default function HealthCards() {
       .catch(() => {
         setServerError(true);
       });
-    fetch("/health/status-db")
+    fetch("/api/health/status-db")
       .then((res) => res.json())
       .then((data) => {
         setDbHealth(data);

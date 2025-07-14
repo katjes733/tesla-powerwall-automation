@@ -69,7 +69,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           }
         } else if (type === "login") {
           axiosInstance
-            .get("/session/me", { withCredentials: true })
+            .get("/api/session/me", { withCredentials: true })
             .then((response) => {
               setUser(response.data.user);
               setSessionExpiry(response.data.sessionExpiry);
@@ -95,7 +95,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     axiosInstance
-      .get("/session/me", { withCredentials: true })
+      .get("/api/session/me", { withCredentials: true })
       .then((response) => {
         setUser(response.data.user);
         if (response.data.sessionExpiry) {
@@ -132,7 +132,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setAuthPending(true);
       try {
         const response = await axiosInstance.post(
-          "/session/login",
+          "/api/session/login",
           { email, password },
           { withCredentials: true },
         );
@@ -162,7 +162,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setAuthPending(true);
     try {
       const response = await axiosInstance.post(
-        "/session/extend",
+        "/api/session/extend",
         {},
         { withCredentials: true },
       );
@@ -186,7 +186,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setAuthPending(true);
     try {
       await axiosInstance.post(
-        "/session/logout",
+        "/api/session/logout",
         {},
         { withCredentials: true },
       );

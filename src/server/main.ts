@@ -50,17 +50,21 @@ app.use(
 
 app.disable("x-powered-by");
 
-app.use("/health", HealthRouter);
-app.use("/schedule", SchedulingRouter);
-app.use("/session", SessionRouter);
-app.use("/user", UserRouter);
-app.use("/auth", SignupVerificationRouter);
+app.use("/api/health", HealthRouter);
+app.use("/api/schedule", SchedulingRouter);
+app.use("/api/session", SessionRouter);
+app.use("/api/user", UserRouter);
+app.use("/api/auth", SignupVerificationRouter);
 
-app.use(express.static(path.join(process.cwd(), "public")));
-
-app.use((req, res) => {
-  res.sendFile(path.join(process.cwd(), "public", "index.html"));
-});
+if (process.env.NODE_ENV !== "development") {
+  logger.info("Serving static files from 'public' directory");
+  app.use(express.static(path.join(process.cwd(), "public")));
+  app.use((req, res) => {
+    res.sendFile(path.join(process.cwd(), "public", "index.html"));
+  });
+} else {
+  logger.info("Not in production mode");
+}
 
 const port = process.env.PORT || 3001;
 

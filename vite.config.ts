@@ -8,11 +8,6 @@ export default defineConfig({
   server: {
     proxy: {
       "/api": "http://localhost:3001",
-      "/auth": "http://localhost:3001",
-      "/user": "http://localhost:3001",
-      "/session": "http://localhost:3001",
-      "/health": "http://localhost:3001",
-      "/schedule": "http://localhost:3001",
     },
   },
 });

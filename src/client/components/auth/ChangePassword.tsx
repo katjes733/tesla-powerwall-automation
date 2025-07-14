@@ -82,7 +82,7 @@ const ChangePassword = () => {
       e.preventDefault();
       if (validate()) {
         try {
-          await axios.post("/user/change-password", {
+          await axios.post("/api/user/change-password", {
             username: user.username,
             currentPassword,
             newPassword,
@@ -91,7 +91,7 @@ const ChangePassword = () => {
           setTimeout(() => {
             history.push("/");
           }, 500);
-        } catch (error) {
+        } catch (error: any) {
           console.error("Error changing password:", error.response.data.error);
           showNotification(error.response.data.error, "error", 5000);
         }
