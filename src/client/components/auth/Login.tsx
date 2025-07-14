@@ -266,7 +266,11 @@ export default function Login() {
     async (e: React.FormEvent) => {
       e.preventDefault();
       if (!validateSignupEmail()) {
-        showNotification("Please fix the errors before sending code", "error");
+        showNotification(
+          "Please fix the errors before sending code",
+          "error",
+          5000,
+        );
         return;
       }
       setSignupLoading(true);

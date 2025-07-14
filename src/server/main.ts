@@ -95,8 +95,6 @@ server.listen(port, () => {
 await AppDataSource.getInstance(false);
 
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
-  logger.info("Running scheduled jobs...");
-
   Scheduler.getInstance().initialize();
 } else {
   // const email =
@@ -104,7 +102,7 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   //   (() => {
   //     throw new Error("TESLA_ACCOUNT_EMAIL environment variable is not set.");
   //   })();
-  logger.info("Scheduled jobs are disabled.");
+  Scheduler.getInstance().initialize(false);
 
   // Fleet.getInstance(email, { mailOnError: true, throwOnError: false });
 

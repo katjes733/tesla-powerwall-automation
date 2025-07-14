@@ -3,7 +3,7 @@ import Typography from "@mui/material/Typography";
 import Divider from "@mui/material/Divider";
 import { useAuth } from "../auth/AuthContext";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -35,14 +35,92 @@ import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Slider from "@mui/material/Slider";
+import AddIcon from "@mui/icons-material/Add";
+import { useNotification } from "../notification/NotificationContext";
+import { v4 as uuidv4 } from "uuid";
 
 type TimeSettingsProps = {
-  selectedDays: string[];
-  handleDaysChange: (_: any, newDays: string[]) => void;
+  schedule: any;
+  setSchedule: (row: any) => void;
+  setTabValid: (valid: boolean) => void;
 };
 
-function TimeSettings({ selectedDays, handleDaysChange }: TimeSettingsProps) {
+function parseCronToTimeAndDays(cron: string) {
+  const [minute, hour, , , dayOfWeek] = cron.split(" ");
+  const pad = (n: string) => (n.length === 1 ? `0${n}` : n);
+  const time = `${pad(hour)}:${pad(minute)}`;
+  let days: string[] = [];
+  if (dayOfWeek === "*") {
+    days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  } else if (/^[0-6](-[0-6])?$/.test(dayOfWeek)) {
+    // e.g. 1-5 for weekdays
+    const map = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    if (dayOfWeek.includes("-")) {
+      const [start, end] = dayOfWeek.split("-").map(Number);
+      days = map.slice(start, end + 1);
+    } else {
+      days = [map[Number(dayOfWeek)]];
+    }
+  } else {
+    // comma separated days
+    const map = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    days = dayOfWeek.split(",").map((d) => map[Number(d)]);
+  }
+  return { time, days };
+}
+
+function parseTimeAndDaysToCron(time: string, days: string[]) {
+  if (!Array.isArray(days) || days.length === 0 || !time) {
+    return null;
+  }
+  const [hour, minute] = time.split(":");
+  const dayOfWeek = days
+    .map((d) =>
+      String(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(d)),
+    )
+    .join(",");
+  return `${minute} ${hour} * * ${dayOfWeek}`;
+}
+
+function isFixedTime(cron: string) {
+  const [minute, hour] = cron.split(" ");
+  return /^\d+$/.test(minute) && /^\d+$/.test(hour);
+}
+
+function TimeSettings({
+  schedule,
+  setSchedule,
+  setTabValid,
+}: TimeSettingsProps) {
   const theme = useTheme();
+  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+  const [timeOfDay, setTimeOfDay] = useState<string>("");
+
+  useEffect(() => {
+    if (schedule?.cron) {
+      const { time, days } = parseCronToTimeAndDays(schedule.cron);
+      setTimeOfDay(time);
+      setSelectedDays(days);
+    }
+    setTabValid(schedule?.cron);
+  }, [schedule]);
+
+  const handleDaysChange = (_: any, newDays: string[]) => {
+    setSelectedDays(newDays);
+    setSchedule((prev: any) => {
+      const cron = parseTimeAndDaysToCron(timeOfDay, newDays);
+      return { ...prev, cron };
+    });
+  };
+
+  const handleTimeOfDayChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setTimeOfDay(e.target.value);
+    setSchedule((prev: any) => {
+      const cron = parseTimeAndDaysToCron(e.target.value, selectedDays);
+      return { ...prev, cron };
+    });
+  };
+
   return (
     <>
       <Typography variant="subtitle1">When:</Typography>
@@ -70,7 +148,13 @@ function TimeSettings({ selectedDays, handleDaysChange }: TimeSettingsProps) {
             <AccessTimeIcon />
             <Typography variant="body2">Time of day</Typography>
           </Box>
-          <TextField type="time" size="small" sx={{ width: 120, mt: 1 }} />
+          <TextField
+            type="time"
+            size="small"
+            sx={{ width: 120, mt: 1 }}
+            value={timeOfDay}
+            onChange={handleTimeOfDayChange}
+          />
         </Box>
         <Box
           mt={4}
@@ -524,12 +608,13 @@ function BetweenHours() {
 
 export default function Schedules() {
   const { user } = useAuth();
+  const { showNotification } = useNotification();
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedRow, setSelectedRow] = useState<any | null>(null);
+  const [schedule, setSchedule] = useState<any | null>(null);
   const [dialogTab, setDialogTab] = useState(0);
-  const [selectedDays, setSelectedDays] = useState<string[]>([]);
+
   const [powerwallOption, setPowerwallOption] = useState("charged");
   const [powerwallOptionValues, setPowerwallOptionValues] = useState({
     charged: 100,
@@ -547,6 +632,13 @@ export default function Schedules() {
     gridExportAbove: 8,
     gridExportBelow: 8,
   });
+  const [tabValid, setTabValid] = useState({
+    time: false,
+    powerwall: false,
+    flow: false,
+  });
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [scheduleToDelete, setScheduleToDelete] = useState<any | null>(null);
   const theme = useTheme();
 
   const loadSchedules = useCallback(async () => {
@@ -563,15 +655,6 @@ export default function Schedules() {
   useEffect(() => {
     loadSchedules();
   }, [loadSchedules]);
-
-  const handleDaysChange = (_: any, newDays: string[]) => {
-    setSelectedDays(newDays);
-  };
-
-  const isFixedTime = useCallback((cron: string) => {
-    const [minute, hour] = cron.split(" ");
-    return /^\d+$/.test(minute) && /^\d+$/.test(hour);
-  }, []);
 
   const columns: GridColDef[] = [
     { field: "id", headerName: "ID", flex: 1, minWidth: 80 },
@@ -622,10 +705,23 @@ export default function Schedules() {
       sortable: false,
       renderCell: (params) => (
         <>
-          <IconButton onClick={() => {}}>
+          <IconButton
+            onClick={(event) => {
+              event.stopPropagation();
+              setSchedule(params.row);
+              setDialogTab(isFixedTime(params.row.cron) ? 0 : 1);
+              setDialogOpen(true);
+            }}
+          >
             <EditIcon />
           </IconButton>
-          <IconButton onClick={() => {}}>
+          <IconButton
+            onClick={(event) => {
+              event.stopPropagation();
+              setScheduleToDelete(params.row);
+              setConfirmOpen(true);
+            }}
+          >
             <DeleteIcon />
           </IconButton>
         </>
@@ -633,16 +729,120 @@ export default function Schedules() {
     },
   ];
 
+  const handleSaveSchedule = () => {
+    setDialogOpen(false);
+
+    const optimisticSchedule = schedule.id
+      ? schedule
+      : { ...schedule, id: uuidv4() };
+
+    setRows((prevRows) => {
+      const exists = prevRows.some((r) => r.id === optimisticSchedule.id);
+      if (exists) {
+        return prevRows.map((r) =>
+          r.id === optimisticSchedule.id ? optimisticSchedule : r,
+        );
+      }
+      return [...prevRows, optimisticSchedule];
+    });
+
+    axios
+      .post("/schedule/upsert", schedule)
+      .then(() => {
+        showNotification("Schedule saved successfully", "success");
+      })
+      .catch((error: any) => {
+        showNotification(
+          error?.message || "Error saving schedule",
+          "error",
+          5000,
+        );
+      })
+      .finally(() => {
+        loadSchedules();
+      });
+  };
+
+  const handleDeleteSchedule = () => {
+    setConfirmOpen(false);
+    if (!scheduleToDelete?.id) return;
+
+    setRows((prevRows) => prevRows.filter((r) => r.id !== scheduleToDelete.id));
+
+    axios
+      .post("/schedule/delete", { id: scheduleToDelete.id })
+      .then(() => {
+        showNotification("Schedule deleted successfully", "success");
+      })
+      .catch((error: any) => {
+        showNotification(
+          error?.message || "Error deleting schedule",
+          "error",
+          5000,
+        );
+      })
+      .finally(() => {
+        setScheduleToDelete(null);
+        loadSchedules();
+      });
+  };
+
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
         Schedules
       </Typography>
       <Divider sx={{ mb: 2 }} />
-      <Typography variant="body1" color="text.secondary" mb={2}>
-        Manage your schedules here.
-      </Typography>
-      <Box sx={{ height: 400, width: "100%" }}>
+      <Box display="flex" alignItems="center" justifyContent="space-between">
+        <Typography variant="body1" color="text.secondary">
+          Manage your schedules here.
+        </Typography>
+        <IconButton
+          color="primary"
+          size="medium"
+          sx={{
+            borderRadius: "50%",
+            bgcolor: theme.palette.primary.main,
+            color: theme.palette.primary.contrastText,
+            boxShadow: 2,
+            p: 1.5,
+            "&:hover": { bgcolor: theme.palette.primary.dark },
+          }}
+          onClick={() => {
+            setDialogTab(0);
+            setDialogOpen(true);
+            setSchedule({
+              email: user,
+              device_id: "ALL",
+              cron: null,
+              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              enabled: true,
+              expires_at: null,
+              configuration: [{}],
+            });
+            setPowerwallOption("charged");
+            setPowerwallOptionValues({
+              charged: 100,
+              discharged: 20,
+              backup: 20,
+            });
+            setFlowOption("homeUsageAbove");
+            setFlowOptionValues({
+              homeUsageAbove: 8,
+              homeUsageBelow: 8,
+              solarGenerationAbove: 8,
+              solarGenerationBelow: 8,
+              gridImportAbove: 8,
+              gridImportBelow: 8,
+              gridExportAbove: 8,
+              gridExportBelow: 8,
+            });
+          }}
+        >
+          <AddIcon sx={{ fontSize: 24 }} />
+        </IconButton>
+      </Box>
+      <Box sx={{ height: 400, width: "100%", mt: 2 }}>
         <DataGrid
           rows={rows}
           columns={columns}
@@ -650,11 +850,6 @@ export default function Schedules() {
           getRowId={(row) => row.id}
           columnVisibilityModel={{ id: false }}
           checkboxSelection
-          onRowClick={(params) => {
-            setSelectedRow(params.row);
-            setDialogTab(isFixedTime(params.row.cron) ? 0 : 1);
-            setDialogOpen(true);
-          }}
         />
       </Box>
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
@@ -672,8 +867,11 @@ export default function Schedules() {
           {dialogTab === 0 && (
             <Box mt={2}>
               <TimeSettings
-                selectedDays={selectedDays}
-                handleDaysChange={handleDaysChange}
+                schedule={schedule}
+                setSchedule={setSchedule}
+                setTabValid={(valid) =>
+                  setTabValid((v) => ({ ...v, time: valid }))
+                }
               />
               <ActionList />
             </Box>
@@ -704,7 +902,42 @@ export default function Schedules() {
           )}
         </DialogContent>
         <DialogActions>
+          <Button
+            variant="contained"
+            color="primary"
+            sx={{ borderRadius: 10 }}
+            disabled={
+              !tabValid[
+                dialogTab === 0
+                  ? "time"
+                  : dialogTab === 1
+                    ? "powerwall"
+                    : "flow"
+              ]
+            }
+            onClick={handleSaveSchedule}
+          >
+            Save
+          </Button>
           <Button onClick={() => setDialogOpen(false)}>Close</Button>
+        </DialogActions>
+      </Dialog>
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+        <DialogTitle>Confirm Delete</DialogTitle>
+        <DialogContent>
+          <Typography>
+            Are you sure you want to delete this schedule?
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDeleteSchedule}
+          >
+            Delete
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

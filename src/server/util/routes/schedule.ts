@@ -6,10 +6,12 @@ export async function upsert({
   id,
   email,
   deviceId,
+  device_id, // TODO: Should be removed. We want to use the DB fields consistently.
   cron,
   timezone,
   enabled = true,
   expiresAt,
+  expires_at, // TODO: Should be removed. We want to use the DB fields consistently.
   configuration,
   lastRunTime,
   nextRunTime,
@@ -20,10 +22,12 @@ export async function upsert({
   id?: string;
   email?: string;
   deviceId?: string;
+  device_id?: string; // TODO: Should be removed. We want to use the DB fields consistently.
   cron?: string;
   timezone?: string;
   enabled?: boolean;
-  expiresAt?: Date;
+  expiresAt?: Date; // TODO: Should be removed. We want to use the DB fields consistently.
+  expires_at?: Date;
   configuration?: Record<string, any>;
   lastRunTime?: Date;
   nextRunTime?: Date;
@@ -47,11 +51,11 @@ export async function upsert({
       creation_time: newDate,
       modified_time: newDate,
       email,
-      device_id: deviceId,
+      device_id: device_id || deviceId,
       cron,
       timezone,
       enabled,
-      expires_at: expiresAt,
+      expires_at: expires_at || expiresAt,
       configuration,
       last_run_time: lastRunTime,
       next_run_time: nextRunTime,

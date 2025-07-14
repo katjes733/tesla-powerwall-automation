@@ -19,6 +19,7 @@ export class Scheduler {
 
   private enabledScheduledTasks: Map<string, ScheduledTask> = new Map();
   private validEmails: string[] = [];
+  private schedulingEnabled: boolean = true;
 
   private constructor() {}
 
@@ -145,8 +146,14 @@ export class Scheduler {
     this.enabledScheduledTasks.set(schedule.id || "", task);
   }
 
-  async initialize() {
+  async initialize(schedulingEnabled = true) {
+    this.schedulingEnabled = schedulingEnabled;
     this.validEmails = await getAllEmailsFromDb();
+    if (!this.schedulingEnabled) {
+      logger.info("Scheduling is disabled. No tasks will be initialized.");
+      return;
+    }
+    logger.info("Initializing scheduled tasks...");
     this.enabledScheduledTasks.clear();
     for (const schedule of await getAllSchedulesFromDb()) {
       await this.initializeOneSchedule(schedule);
@@ -180,7 +187,9 @@ export class Scheduler {
       existingTask.stop();
       this.enabledScheduledTasks.delete(schedule.id || "");
     }
-    await this.initializeOneSchedule(schedule);
+    if (this.schedulingEnabled) {
+      await this.initializeOneSchedule(schedule);
+    }
     return upsertScheduleInDb(schedule);
   }
 
