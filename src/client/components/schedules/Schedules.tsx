@@ -38,6 +38,8 @@ import Slider from "@mui/material/Slider";
 import AddIcon from "@mui/icons-material/Add";
 import { useNotification } from "../notification/NotificationContext";
 import { v4 as uuidv4 } from "uuid";
+import Badge from "@mui/material/Badge";
+import CheckIcon from "@mui/icons-material/Check";
 
 type TimeSettingsProps = {
   schedule: any;
@@ -497,76 +499,321 @@ function FlowSettings({
   );
 }
 
-function ActionList() {
+type ActionProps = {
+  selectedAction: string | null;
+  setSelectedAction: (action: string | null) => void;
+  actionValues: { [key: string]: string | number | null };
+  setActionValues: React.Dispatch<
+    React.SetStateAction<{ [key: string]: string | number | null }>
+  >;
+};
+
+function ActionList({
+  setSelectedAction,
+  actionValues,
+  setActionValues,
+}: ActionProps) {
   const theme = useTheme();
+  const actions = [
+    {
+      key: "backupReserve",
+      label: "Set backup reserve",
+      icon: <BatteryFullIcon />,
+    },
+    {
+      key: "preserveCharge",
+      label: "Preserve battery charge",
+      icon: <BatteryFullIcon />,
+    },
+    {
+      key: "operationalMode",
+      label: "Set operational mode",
+      icon: <SettingsIcon />,
+    },
+    { key: "energyExports", label: "Set energy exports", icon: <BoltIcon /> },
+    { key: "gridCharging", label: "Set grid charging", icon: <PowerIcon /> },
+  ];
   return (
     <>
       <Typography variant="subtitle1" mt={2}>
         Choose one or more actions:
       </Typography>
       <List>
-        <ListItem
-          component="button"
-          secondaryAction={<ChevronRightIcon />}
-          sx={{ bgcolor: theme.palette.action.hover, borderRadius: 2, mb: 1 }}
-        >
-          <ListItemAvatar>
-            <Avatar>
-              <BatteryFullIcon />
-            </Avatar>
-          </ListItemAvatar>
-          <ListItemText primary="Set backup reserve" />
-        </ListItem>
-        <ListItem
-          component="button"
-          secondaryAction={<ChevronRightIcon />}
-          sx={{ bgcolor: theme.palette.action.hover, borderRadius: 2, mb: 1 }}
-        >
-          <ListItemAvatar>
-            <Avatar>
-              <BatteryFullIcon />
-            </Avatar>
-          </ListItemAvatar>
-          <ListItemText primary="Preserve battery charge" />
-        </ListItem>
-        <ListItem
-          component="button"
-          secondaryAction={<ChevronRightIcon />}
-          sx={{ bgcolor: theme.palette.action.hover, borderRadius: 2, mb: 1 }}
-        >
-          <ListItemAvatar>
-            <Avatar>
-              <SettingsIcon />
-            </Avatar>
-          </ListItemAvatar>
-          <ListItemText primary="Set operational mode" />
-        </ListItem>
-        <ListItem
-          component="button"
-          secondaryAction={<ChevronRightIcon />}
-          sx={{ bgcolor: theme.palette.action.hover, borderRadius: 2, mb: 1 }}
-        >
-          <ListItemAvatar>
-            <Avatar>
-              <BoltIcon />
-            </Avatar>
-          </ListItemAvatar>
-          <ListItemText primary="Set energy exports" />
-        </ListItem>
-        <ListItem
-          component="button"
-          secondaryAction={<ChevronRightIcon />}
-          sx={{ bgcolor: theme.palette.action.hover, borderRadius: 2, mb: 1 }}
-        >
-          <ListItemAvatar>
-            <Avatar>
-              <PowerIcon />
-            </Avatar>
-          </ListItemAvatar>
-          <ListItemText primary="Set grid charging" />
-        </ListItem>
+        {actions.map((action) => (
+          <ListItem
+            key={action.key}
+            component="button"
+            secondaryAction={<ChevronRightIcon />}
+            sx={{ bgcolor: theme.palette.action.hover, borderRadius: 2, mb: 1 }}
+            onClick={() => setSelectedAction(action.key)}
+          >
+            <ListItemAvatar>
+              <Badge
+                color="success"
+                overlap="circular"
+                badgeContent={
+                  actionValues[action.key] !== null ? (
+                    <CheckIcon sx={{ fontSize: 14 }} />
+                  ) : null
+                }
+                anchorOrigin={{ vertical: "top", horizontal: "right" }}
+                sx={{
+                  "& .MuiBadge-badge": {
+                    minWidth: 16,
+                    height: 16,
+                    padding: 0,
+                    borderRadius: "50%",
+                  },
+                }}
+              >
+                <Avatar>{action.icon}</Avatar>
+              </Badge>
+            </ListItemAvatar>
+            <ListItemText primary={action.label} />
+          </ListItem>
+        ))}
       </List>
     </>
+  );
+}
+
+function ActionConfigDialog({
+  selectedAction,
+  setSelectedAction,
+  actionValues,
+  setActionValues,
+}: ActionProps) {
+  const theme = useTheme();
+  const actionConfig: {
+    [key: string]: {
+      label: string;
+      description?: string;
+      min?: number;
+      max?: number;
+      step?: number;
+      unit?: string;
+      options?: Array<{ key: string; label: string; description: string }>;
+    };
+  } = {
+    backupReserve: {
+      label: "Set Backup Reserve",
+      description:
+        "Backup reserve determines how much of you Powerwall's stored energy will automatically be saved for backup use. Setting it higher than the current state of charge will charge up the battery from solar or grid.",
+      min: 0,
+      max: 100,
+      step: 1,
+      unit: "%",
+    },
+    preserveCharge: {
+      label: "Preserve battery charge",
+      description:
+        "Set the Powerwall backup reserve to its current state of charge. This will avoid discharging the battery, for example when charging an EV.",
+    },
+    operationalMode: {
+      label: "Set Operational Mode",
+      options: [
+        {
+          key: "selfPowered",
+          label: "Self Powered",
+          description:
+            "Use stored energy to power your home after the sun goes down. Reduces your reliance on the grid.",
+        },
+        {
+          key: "timeBasedControl",
+          label: "Time-Based Control",
+          description:
+            "Use stored energy to maximize savings based on your utility plan. Gives you the lowest energy bill.",
+        },
+      ],
+    },
+    energyExports: {
+      label: "Set Energy Exports",
+      options: [
+        {
+          key: "solarOnly",
+          label: "Solar Only",
+          description:
+            "In Time-Based Control, your system will only send solar energy to the grid during high-value time periods. Stored Powerwall energy will serve home loads.",
+        },
+        {
+          key: "everything",
+          label: "Everything (solar and battery)",
+          description:
+            "Powerwall will export both solar production and stored Powerwall energy to the grid during high-cost time periods.",
+        },
+      ],
+    },
+    gridCharging: {
+      label: "Set Grid Charging",
+      options: [
+        {
+          key: "enabled",
+          label: "Enabled",
+          description:
+            "Powerwall will charge from the grid to your backup reserve and for daily use in Time-Based Control.",
+        },
+        {
+          key: "disabled",
+          label: "Disabled",
+          description:
+            "Powerwall will not charge from the grid and only use solar energy to charge the battery.",
+        },
+      ],
+    },
+    // Add configs for other actions as needed
+  };
+  const [tempValue, setTempValue] = useState<string | number | null>(null);
+  useEffect(() => {
+    if (selectedAction !== null) {
+      const config = actionConfig[selectedAction];
+      let initial: string | number | null = actionValues[selectedAction];
+      if (initial == null) {
+        if (config.options && config.options.length > 0) {
+          initial = null;
+        } else if (config.max !== undefined) {
+          initial = config.max;
+        } else {
+          initial = 0;
+        }
+      }
+      setTempValue(initial);
+    } else {
+      setTempValue(null);
+    }
+  }, [selectedAction, actionValues]);
+  if (!selectedAction) return null;
+  const config = actionConfig[selectedAction];
+  const value = tempValue ?? 20;
+  return (
+    <Dialog open onClose={() => setSelectedAction(null)} maxWidth="xs">
+      <DialogTitle sx={{ position: "relative", pb: 2, pl: 7 }}>
+        <Box sx={{ position: "absolute", top: 11, left: 8 }}>
+          <IconButton onClick={() => setSelectedAction(null)}>
+            <ChevronRightIcon sx={{ transform: "rotate(180deg)" }} />
+          </IconButton>
+        </Box>
+        <Box textAlign="center">
+          <Typography variant="h6">{config.label}</Typography>
+        </Box>
+      </DialogTitle>
+      <DialogContent>
+        <Box display="flex" flexDirection="column" gap={1}>
+          {config.description && (
+            <Typography variant="body2">{config.description}</Typography>
+          )}
+          {config.min !== undefined &&
+            config.max !== undefined &&
+            config.step !== undefined &&
+            config.unit !== undefined && (
+              <>
+                <Typography variant="subtitle2" sx={{ mt: 3 }}>
+                  {config.label}
+                </Typography>
+                <Slider
+                  value={typeof value === "string" ? Number(value) : value}
+                  min={config.min}
+                  max={config.max}
+                  step={config.step}
+                  onChange={(_, v) => setTempValue(v as number)}
+                />
+                <TextField
+                  type="number"
+                  value={value}
+                  onChange={(e) => setTempValue(Number(e.target.value))}
+                  slotProps={{
+                    htmlInput: {
+                      min: config.min,
+                      max: config.max,
+                      step: config.step,
+                    },
+                    input: {
+                      endAdornment: <Typography>{config.unit}</Typography>,
+                    },
+                  }}
+                  size="small"
+                  sx={{ width: 100, mt: 2 }}
+                />
+              </>
+            )}
+          {config.options && (
+            <Box display="flex" flexDirection="column" gap={2} mt={2}>
+              {config.options.map((option) => {
+                const selected = tempValue === option.key;
+                return (
+                  <Box
+                    key={option.key}
+                    onClick={() => setTempValue(option.key)}
+                    sx={{
+                      cursor: "pointer",
+                      opacity: 1,
+                      pointerEvents: "auto",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      py: 2,
+                      px: 2,
+                      border: selected
+                        ? `2px solid ${theme.palette.primary.main}`
+                        : "1px solid",
+                      borderColor: selected
+                        ? theme.palette.primary.main
+                        : "divider",
+                      borderRadius: 2,
+                      bgcolor: selected
+                        ? theme.palette.action.selected
+                        : "background.paper",
+                      boxShadow: selected ? 2 : 0,
+                      transition: "all 0.2s",
+                      display: "flex",
+                    }}
+                  >
+                    <Typography
+                      variant="subtitle1"
+                      align="center"
+                      sx={{ fontWeight: 600 }}
+                    >
+                      {option.label}
+                    </Typography>
+                    <Typography
+                      variant="body2"
+                      align="left"
+                      sx={{ mt: 1, width: "100%" }}
+                    >
+                      {option.description}
+                    </Typography>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        {actionValues[selectedAction] !== null && (
+          <Button
+            color="warning"
+            onClick={() => {
+              setActionValues((prev) => ({ ...prev, [selectedAction]: null }));
+              setSelectedAction(null);
+            }}
+          >
+            Unset
+          </Button>
+        )}
+        <Button
+          variant="contained"
+          color="primary"
+          onClick={() => {
+            setActionValues((prev) => ({
+              ...prev,
+              [selectedAction]: tempValue,
+            }));
+            setSelectedAction(null);
+          }}
+        >
+          Set
+        </Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -639,6 +886,16 @@ export default function Schedules() {
   });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<any | null>(null);
+  const [selectedAction, setSelectedAction] = useState<string | null>(null);
+  const [actionValues, setActionValues] = useState<{
+    [key: string]: string | number | null;
+  }>({
+    backupReserve: null,
+    preserveCharge: null,
+    operationalMode: null,
+    energyExports: null,
+    gridCharging: null,
+  });
   const theme = useTheme();
 
   const loadSchedules = useCallback(async () => {
@@ -852,7 +1109,11 @@ export default function Schedules() {
           checkboxSelection
         />
       </Box>
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)}>
+      <Dialog
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        maxWidth="xs"
+      >
         <DialogTitle>Schedule Details</DialogTitle>
         <DialogContent>
           <Tabs
@@ -873,7 +1134,12 @@ export default function Schedules() {
                   setTabValid((v) => ({ ...v, time: valid }))
                 }
               />
-              <ActionList />
+              <ActionList
+                selectedAction={selectedAction}
+                setSelectedAction={setSelectedAction}
+                actionValues={actionValues}
+                setActionValues={setActionValues}
+              />
             </Box>
           )}
           {dialogTab === 1 && (
@@ -885,7 +1151,12 @@ export default function Schedules() {
                 setPowerwallOptionValues={setPowerwallOptionValues}
               />
               <BetweenHours />
-              <ActionList />
+              <ActionList
+                selectedAction={selectedAction}
+                setSelectedAction={setSelectedAction}
+                actionValues={actionValues}
+                setActionValues={setActionValues}
+              />
             </Box>
           )}
           {dialogTab === 2 && (
@@ -897,7 +1168,12 @@ export default function Schedules() {
                 setFlowOptionValues={setFlowOptionValues}
               />
               <BetweenHours />
-              <ActionList />
+              <ActionList
+                selectedAction={selectedAction}
+                setSelectedAction={setSelectedAction}
+                actionValues={actionValues}
+                setActionValues={setActionValues}
+              />
             </Box>
           )}
         </DialogContent>
@@ -922,6 +1198,12 @@ export default function Schedules() {
           <Button onClick={() => setDialogOpen(false)}>Close</Button>
         </DialogActions>
       </Dialog>
+      <ActionConfigDialog
+        selectedAction={selectedAction}
+        setSelectedAction={setSelectedAction}
+        actionValues={actionValues}
+        setActionValues={setActionValues}
+      />
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>Confirm Delete</DialogTitle>
         <DialogContent>
