@@ -506,6 +506,7 @@ type ActionProps = {
   setActionValues: React.Dispatch<
     React.SetStateAction<{ [key: string]: string | number | null }>
   >;
+  setSchedule: (row: any) => void;
 };
 
 function ActionList({
@@ -552,7 +553,7 @@ function ActionList({
                 color="success"
                 overlap="circular"
                 badgeContent={
-                  actionValues[action.key] !== null ? (
+                  actionValues[action.key] != null ? (
                     <CheckIcon sx={{ fontSize: 14 }} />
                   ) : null
                 }
@@ -582,6 +583,7 @@ function ActionConfigDialog({
   setSelectedAction,
   actionValues,
   setActionValues,
+  setSchedule,
 }: ActionProps) {
   const theme = useTheme();
   const actionConfig: {
@@ -788,11 +790,20 @@ function ActionConfigDialog({
         </Box>
       </DialogContent>
       <DialogActions>
-        {actionValues[selectedAction] !== null && (
+        {actionValues[selectedAction] != null && (
           <Button
             color="warning"
             onClick={() => {
-              setActionValues((prev) => ({ ...prev, [selectedAction]: null }));
+              setActionValues((prev) => {
+                const updated = { ...prev, [selectedAction]: null };
+                setSchedule((prevSchedule: any) => ({
+                  ...prevSchedule,
+                  actions: Object.entries(updated)
+                    .filter(([_, value]) => value != null)
+                    .map(([key, value]) => ({ action: key, value })),
+                }));
+                return updated;
+              });
               setSelectedAction(null);
             }}
           >
@@ -803,10 +814,16 @@ function ActionConfigDialog({
           variant="contained"
           color="primary"
           onClick={() => {
-            setActionValues((prev) => ({
-              ...prev,
-              [selectedAction]: tempValue,
-            }));
+            setActionValues((prev) => {
+              const updated = { ...prev, [selectedAction]: tempValue };
+              setSchedule((prevSchedule: any) => ({
+                ...prevSchedule,
+                actions: Object.entries(updated)
+                  .filter(([_, value]) => value !== null)
+                  .map(([key, value]) => ({ action: key, value })),
+              }));
+              return updated;
+            });
             setSelectedAction(null);
           }}
         >
@@ -883,6 +900,7 @@ export default function Schedules() {
     time: false,
     powerwall: false,
     flow: false,
+    actions: false,
   });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<any | null>(null);
@@ -925,8 +943,14 @@ export default function Schedules() {
       type: "boolean",
     },
     {
-      field: "configuration",
-      headerName: "Configuration",
+      field: "conditions",
+      headerName: "Conditions",
+      flex: 1,
+      minWidth: 80,
+    },
+    {
+      field: "actions",
+      headerName: "Actions",
       flex: 1,
       minWidth: 80,
     },
@@ -955,8 +979,8 @@ export default function Schedules() {
           : "",
     },
     {
-      field: "actions",
-      headerName: "Actions",
+      field: "edit",
+      headerName: "Edit",
       flex: 1,
       minWidth: 100,
       sortable: false,
@@ -968,6 +992,14 @@ export default function Schedules() {
               setSchedule(params.row);
               setDialogTab(isFixedTime(params.row.cron) ? 0 : 1);
               setDialogOpen(true);
+              setActionValues(
+                Object.fromEntries(
+                  (params.row.actions || []).map((a: any) => [
+                    a.action,
+                    a.value,
+                  ]),
+                ),
+              );
             }}
           >
             <EditIcon />
@@ -1044,6 +1076,16 @@ export default function Schedules() {
       });
   };
 
+  useEffect(() => {
+    setTabValid((prev) => ({
+      ...prev,
+      actions: Object.values(actionValues).filter(v => v != null).length > 0,
+    }));
+  }, [actionValues]);
+
+  console.log("schedule", schedule);
+  console.log("actionValues", actionValues);
+
   return (
     <Box sx={{ p: 3 }}>
       <Typography variant="h4" gutterBottom>
@@ -1068,15 +1110,17 @@ export default function Schedules() {
           onClick={() => {
             setDialogTab(0);
             setDialogOpen(true);
-            setSchedule({
+            const newSchedule = {
               email: user,
               device_id: "ALL",
               cron: null,
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
               enabled: true,
               expires_at: null,
-              configuration: [{}],
-            });
+              conditions: null,
+              actions: null,
+            };
+            setSchedule(newSchedule);
             setPowerwallOption("charged");
             setPowerwallOptionValues({
               charged: 100,
@@ -1093,6 +1137,13 @@ export default function Schedules() {
               gridImportBelow: 8,
               gridExportAbove: 8,
               gridExportBelow: 8,
+            });
+            setActionValues({
+              backupReserve: null,
+              preserveCharge: null,
+              operationalMode: null,
+              energyExports: null,
+              gridCharging: null,
             });
           }}
         >
@@ -1139,6 +1190,7 @@ export default function Schedules() {
                 setSelectedAction={setSelectedAction}
                 actionValues={actionValues}
                 setActionValues={setActionValues}
+                setSchedule={setSchedule}
               />
             </Box>
           )}
@@ -1156,6 +1208,7 @@ export default function Schedules() {
                 setSelectedAction={setSelectedAction}
                 actionValues={actionValues}
                 setActionValues={setActionValues}
+                setSchedule={setSchedule}
               />
             </Box>
           )}
@@ -1173,6 +1226,7 @@ export default function Schedules() {
                 setSelectedAction={setSelectedAction}
                 actionValues={actionValues}
                 setActionValues={setActionValues}
+                setSchedule={setSchedule}
               />
             </Box>
           )}
@@ -1189,7 +1243,7 @@ export default function Schedules() {
                   : dialogTab === 1
                     ? "powerwall"
                     : "flow"
-              ]
+              ] || !tabValid.actions
             }
             onClick={handleSaveSchedule}
           >
@@ -1203,6 +1257,7 @@ export default function Schedules() {
         setSelectedAction={setSelectedAction}
         actionValues={actionValues}
         setActionValues={setActionValues}
+        setSchedule={setSchedule}
       />
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>Confirm Delete</DialogTitle>

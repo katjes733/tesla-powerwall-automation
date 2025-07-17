@@ -1,6 +1,11 @@
 import { v4 } from "uuid";
 import AppDataSource from "~/server/database/datasource";
-import { Schedule, type ISchedule } from "~/server/database/models/schedule";
+import {
+  Schedule,
+  type ISchedule,
+  type IScheduleAction,
+  type IScheduleCondition,
+} from "~/server/database/models/schedule";
 
 export async function upsert({
   id,
@@ -12,7 +17,8 @@ export async function upsert({
   enabled = true,
   expiresAt,
   expires_at, // TODO: Should be removed. We want to use the DB fields consistently.
-  configuration,
+  conditions,
+  actions,
   lastRunTime,
   nextRunTime,
   lastError,
@@ -28,7 +34,8 @@ export async function upsert({
   enabled?: boolean;
   expiresAt?: Date; // TODO: Should be removed. We want to use the DB fields consistently.
   expires_at?: Date;
-  configuration?: Record<string, any>;
+  conditions?: IScheduleCondition[];
+  actions?: IScheduleAction[];
   lastRunTime?: Date;
   nextRunTime?: Date;
   lastError?: string;
@@ -56,7 +63,8 @@ export async function upsert({
       timezone,
       enabled,
       expires_at: expires_at || expiresAt,
-      configuration,
+      conditions,
+      actions,
       last_run_time: lastRunTime,
       next_run_time: nextRunTime,
       last_error: lastError,
@@ -71,7 +79,8 @@ export async function upsert({
     if (timezone !== undefined) updateFields.timezone = timezone;
     if (enabled !== undefined) updateFields.enabled = enabled;
     if (expiresAt !== undefined) updateFields.expires_at = expiresAt;
-    if (configuration !== undefined) updateFields.configuration = configuration;
+    if (conditions !== undefined) updateFields.conditions = conditions;
+    if (actions !== undefined) updateFields.actions = actions;
     if (lastRunTime !== undefined) updateFields.last_run_time = lastRunTime;
     if (nextRunTime !== undefined) updateFields.next_run_time = nextRunTime;
     if (lastError !== undefined) updateFields.last_error = lastError;
@@ -96,7 +105,8 @@ export async function upsert({
       timezone,
       enabled,
       expiresAt,
-      configuration,
+      conditions,
+      actions,
       lastRunTime,
       nextRunTime,
       lastError,

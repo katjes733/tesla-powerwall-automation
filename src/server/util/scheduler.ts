@@ -45,10 +45,8 @@ export class Scheduler {
       logger.warn(`Schedule with ID ${schedule.id} has expired.`);
       return false;
     }
-    if (!schedule.configuration || schedule.configuration.length === 0) {
-      logger.warn(
-        `Schedule with ID ${schedule.id} has no configuration defined.`,
-      );
+    if (!schedule.actions || schedule.actions.length === 0) {
+      logger.warn(`Schedule with ID ${schedule.id} has no actions defined.`);
       return false; // For now, just skip this schedule. Will re-think later if we should allow empty configs at all.
     }
     return true;

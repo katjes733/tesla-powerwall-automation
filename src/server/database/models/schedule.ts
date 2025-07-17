@@ -1,7 +1,11 @@
 import { EntitySchema } from "typeorm";
 import type { IBasicEntity } from "~/server/types/common";
 
-export interface IScheduleConfiguration {
+export interface IScheduleCondition {
+  condition: string;
+  value: string;
+}
+export interface IScheduleAction {
   action: string;
   value: string;
 }
@@ -14,7 +18,8 @@ export interface ISchedule {
   timezone: string;
   enabled?: boolean;
   expires_at?: Date;
-  configuration?: IScheduleConfiguration[];
+  conditions?: IScheduleCondition[];
+  actions?: IScheduleAction[];
   last_run_time?: Date;
   next_run_time?: Date;
   last_error?: string;
@@ -35,7 +40,8 @@ export const Schedule = new EntitySchema<IBasicEntity & ISchedule>({
     timezone: { type: "varchar", length: 255, nullable: false },
     enabled: { type: "boolean", default: true, nullable: false },
     expires_at: { type: "timestamp with time zone", nullable: true },
-    configuration: { type: "jsonb", nullable: true },
+    conditions: { type: "jsonb", nullable: true },
+    actions: { type: "jsonb", nullable: true },
     last_run_time: { type: "timestamp with time zone", nullable: true },
     next_run_time: { type: "timestamp with time zone", nullable: true },
     last_error: { type: "text", nullable: true },
