@@ -1079,7 +1079,7 @@ export default function Schedules() {
   useEffect(() => {
     setTabValid((prev) => ({
       ...prev,
-      actions: Object.values(actionValues).filter(v => v != null).length > 0,
+      actions: Object.values(actionValues).filter((v) => v != null).length > 0,
     }));
   }, [actionValues]);
 
