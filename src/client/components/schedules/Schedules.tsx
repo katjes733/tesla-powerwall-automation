@@ -41,13 +41,16 @@ import { v4 as uuidv4 } from "uuid";
 import Badge from "@mui/material/Badge";
 import CheckIcon from "@mui/icons-material/Check";
 
-type TimeSettingsProps = {
+type SettingsProps = {
   schedule: any;
   setSchedule: (row: any) => void;
   setTabValid: (valid: boolean) => void;
 };
 
 function parseCronToTimeAndDays(cron: string) {
+  if (cron === "* * * * *") {
+    return { time: "", days: [] };
+  }
   const [minute, hour, , , dayOfWeek] = cron.split(" ");
   const pad = (n: string) => (n.length === 1 ? `0${n}` : n);
   const time = `${pad(hour)}:${pad(minute)}`;
@@ -89,6 +92,8 @@ function isFixedTime(cron: string) {
   return /^\d+$/.test(minute) && /^\d+$/.test(hour);
 }
 
+type TimeSettingsProps = {} & SettingsProps;
+
 function TimeSettings({
   schedule,
   setSchedule,
@@ -103,6 +108,9 @@ function TimeSettings({
       const { time, days } = parseCronToTimeAndDays(schedule.cron);
       setTimeOfDay(time);
       setSelectedDays(days);
+      if (!time && days.length === 0) {
+        setSchedule((prev: any) => ({ ...prev, cron: null }));
+      }
     }
     setTabValid(schedule?.cron);
   }, [schedule]);
@@ -291,10 +299,16 @@ function DynamicSettings({
   );
 }
 
+type ConditionType = {
+  condition: string;
+  value?: number;
+};
+
 type PowerwallOptionValuesType = {
   charged: number;
   discharged: number;
   backup: number;
+  [key: string]: number; // Add index signature for string keys
 };
 
 type PowerwallSettingsProps = {
@@ -304,15 +318,19 @@ type PowerwallSettingsProps = {
   setPowerwallOptionValues: React.Dispatch<
     React.SetStateAction<PowerwallOptionValuesType>
   >;
-};
+} & SettingsProps;
 
 function PowerwallSettings({
   powerwallOption,
   setPowerwallOption,
   powerwallOptionValues,
   setPowerwallOptionValues,
+  schedule,
+  setSchedule,
+  setTabValid,
 }: PowerwallSettingsProps) {
   const theme = useTheme();
+
   const options = [
     {
       key: "charged",
@@ -331,6 +349,41 @@ function PowerwallSettings({
       step: 1,
     },
   ];
+
+  const keys = options.map((opt) => opt.key);
+
+  useEffect(() => {
+    if (schedule?.conditions) {
+      const conditions: ConditionType[] = schedule.conditions;
+      const matchingCondition = Array.isArray(conditions)
+        ? conditions.find((cond) => keys.includes(cond.condition))
+        : undefined;
+      if (matchingCondition) {
+        setPowerwallOption(matchingCondition.condition);
+        setPowerwallOptionValues((prev) => ({
+          ...prev,
+          [matchingCondition.condition]: matchingCondition.value ?? 0,
+        }));
+      }
+    }
+    setTabValid(schedule?.conditions);
+  }, [schedule?.conditions]);
+
+  useEffect(() => {
+    if (powerwallOption) {
+      setTabValid(true);
+      setSchedule((prev: any) => {
+        const condition: any = { condition: powerwallOption };
+        if (keys.includes(powerwallOption)) {
+          condition.value = powerwallOptionValues[powerwallOption];
+        }
+        return { ...prev, conditions: [condition] };
+      });
+    }
+  }, [powerwallOption]);
+
+  console.log("Powerwall option values:", powerwallOptionValues);
+
   return (
     <>
       <Typography variant="subtitle1">
@@ -883,7 +936,7 @@ export default function Schedules() {
   const [powerwallOptionValues, setPowerwallOptionValues] = useState({
     charged: 100,
     discharged: 20,
-    backup: 20,
+    backup: -1,
   });
   const [flowOption, setFlowOption] = useState("homeUsageAbove");
   const [flowOptionValues, setFlowOptionValues] = useState({
@@ -1083,6 +1136,19 @@ export default function Schedules() {
     }));
   }, [actionValues]);
 
+  useEffect(() => {
+    if (
+      (dialogTab === 1 || dialogTab === 2) &&
+      schedule &&
+      schedule.cron !== "* * * * *"
+    ) {
+      setSchedule((prev: any) => ({ ...prev, cron: "* * * * *" }));
+    }
+    if (dialogTab === 0 && schedule && schedule.conditions !== null) {
+      setSchedule((prev: any) => ({ ...prev, conditions: null }));
+    }
+  }, [dialogTab, schedule]);
+
   console.log("schedule", schedule);
   console.log("actionValues", actionValues);
 
@@ -1201,6 +1267,11 @@ export default function Schedules() {
                 setPowerwallOption={setPowerwallOption}
                 powerwallOptionValues={powerwallOptionValues}
                 setPowerwallOptionValues={setPowerwallOptionValues}
+                schedule={schedule}
+                setSchedule={setSchedule}
+                setTabValid={(valid) =>
+                  setTabValid((v) => ({ ...v, powerwall: valid }))
+                }
               />
               <BetweenHours />
               <ActionList
