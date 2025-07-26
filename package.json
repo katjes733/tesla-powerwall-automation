@@ -8,6 +8,8 @@
     "tesla-powerwall-automation": "build/main.js"
   },
   "scripts": {
+    "docker:up": "docker-compose --env-file .env up -d",
+    "docker:down": "docker-compose --env-file .env down",
     "build": "bun build src/server/main.ts --outdir build --target bun --minify",
     "eslint": "bun x eslint src tests",
     "eslint:fix": "bun eslint -- --quiet --fix",

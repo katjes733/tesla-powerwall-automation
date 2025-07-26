@@ -92,6 +92,102 @@ function isFixedTime(cron: string) {
   return /^\d+$/.test(minute) && /^\d+$/.test(hour);
 }
 
+type TabOptions = {
+  powerwall: Array<Option>;
+  flow: Array<Option>;
+};
+
+const tabOptions: TabOptions = {
+  powerwall: [
+    {
+      key: "charged",
+      label: "Charged up to:",
+      unit: "%",
+      min: 0,
+      max: 100,
+      step: 1,
+    },
+    {
+      key: "discharged",
+      label: "Discharged down to:",
+      unit: "%",
+      min: 0,
+      max: 100,
+      step: 1,
+    },
+    {
+      key: "backup",
+      label: "Discharged down to backup reserve",
+    },
+  ],
+  flow: [
+    {
+      key: "homeUsageAbove",
+      label: "When home usage rises above:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "homeUsageBelow",
+      label: "When home usage drops to or below:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "solarGenerationAbove",
+      label: "When solar generation rises above:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "solarGenerationBelow",
+      label: "When solar generation drops to or below:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "gridImportAbove",
+      label: "When grid import rises above:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "gridImportBelow",
+      label: "When grid import drops to or below:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "gridExportAbove",
+      label: "When grid export rises above:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+    {
+      key: "gridExportBelow",
+      label: "When grid export drops to or below:",
+      unit: "kW",
+      min: 0,
+      max: 24,
+      step: 0.5,
+    },
+  ],
+};
+
 type TimeSettingsProps = {} & SettingsProps;
 
 function TimeSettings({
@@ -113,7 +209,7 @@ function TimeSettings({
       }
     }
     setTabValid(schedule?.cron);
-  }, [schedule]);
+  }, [schedule?.cron]);
 
   const handleDaysChange = (_: any, newDays: string[]) => {
     setSelectedDays(newDays);
@@ -225,22 +321,23 @@ function TimeSettings({
   );
 }
 
+type Option = {
+  key: string;
+  label: string;
+  unit?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+};
+
 type DynamicSettingsProps = {
-  options: Array<{
-    key: string;
-    label: string;
-    unit: string;
-    min: number;
-    max: number;
-    step: number;
-  }>;
+  options: Array<Option>;
   selectedOption: string;
   setSelectedOption: (value: string) => void;
   values: Record<string, number>;
   setValues: React.Dispatch<
     React.SetStateAction<PowerwallOptionValuesType | FlowOptionValuesType>
   >;
-  extraSetting?: React.ReactNode;
 };
 
 function DynamicSettings({
@@ -249,7 +346,6 @@ function DynamicSettings({
   setSelectedOption,
   values,
   setValues,
-  extraSetting,
 }: DynamicSettingsProps) {
   return (
     <RadioGroup
@@ -264,37 +360,43 @@ function DynamicSettings({
             label={<Typography>{opt.label}</Typography>}
             sx={{ mt: idx > 0 ? 2 : 0 }}
           />
-          <Box display="flex" flexDirection="column" gap={1}>
-            <Slider
-              value={values[opt.key]}
-              onChange={(_, v) =>
-                setValues((prev) => ({ ...prev, [opt.key]: v as number }))
-              }
-              min={opt.min}
-              max={opt.max}
-              step={opt.step}
-              sx={{ width: "100%" }}
-              disabled={selectedOption !== opt.key}
-            />
-            <TextField
-              value={values[opt.key]}
-              onChange={(e) =>
-                setValues((prev) => ({
-                  ...prev,
-                  [opt.key]: Number(e.target.value),
-                }))
-              }
-              type="number"
-              inputProps={{ min: opt.min, max: opt.max, step: opt.step }}
-              size="small"
-              sx={{ width: 100 }}
-              disabled={selectedOption !== opt.key}
-              InputProps={{ endAdornment: <Typography>{opt.unit}</Typography> }}
-            />
-          </Box>
+          {opt.min !== undefined &&
+            opt.max !== undefined &&
+            opt.step !== undefined &&
+            opt.unit !== undefined && (
+              <Box display="flex" flexDirection="column" gap={1}>
+                <Slider
+                  value={values[opt.key]}
+                  onChange={(_, v) =>
+                    setValues((prev) => ({ ...prev, [opt.key]: v as number }))
+                  }
+                  min={opt.min}
+                  max={opt.max}
+                  step={opt.step}
+                  sx={{ width: "100%" }}
+                  disabled={selectedOption !== opt.key}
+                />
+                <TextField
+                  value={values[opt.key]}
+                  onChange={(e) =>
+                    setValues((prev) => ({
+                      ...prev,
+                      [opt.key]: Number(e.target.value),
+                    }))
+                  }
+                  type="number"
+                  inputProps={{ min: opt.min, max: opt.max, step: opt.step }}
+                  size="small"
+                  sx={{ width: 100 }}
+                  disabled={selectedOption !== opt.key}
+                  InputProps={{
+                    endAdornment: <Typography>{opt.unit}</Typography>,
+                  }}
+                />
+              </Box>
+            )}
         </Box>
       ))}
-      {extraSetting}
     </RadioGroup>
   );
 }
@@ -312,6 +414,7 @@ type PowerwallOptionValuesType = {
 };
 
 type PowerwallSettingsProps = {
+  options: Array<Option>;
   powerwallOption: string;
   setPowerwallOption: (value: string) => void;
   powerwallOptionValues: PowerwallOptionValuesType;
@@ -321,6 +424,7 @@ type PowerwallSettingsProps = {
 } & SettingsProps;
 
 function PowerwallSettings({
+  options,
   powerwallOption,
   setPowerwallOption,
   powerwallOptionValues,
@@ -330,25 +434,6 @@ function PowerwallSettings({
   setTabValid,
 }: PowerwallSettingsProps) {
   const theme = useTheme();
-
-  const options = [
-    {
-      key: "charged",
-      label: "Charged up to:",
-      unit: "%",
-      min: 0,
-      max: 100,
-      step: 1,
-    },
-    {
-      key: "discharged",
-      label: "Discharged down to:",
-      unit: "%",
-      min: 0,
-      max: 100,
-      step: 1,
-    },
-  ];
 
   const keys = options.map((opt) => opt.key);
 
@@ -362,7 +447,7 @@ function PowerwallSettings({
         setPowerwallOption(matchingCondition.condition);
         setPowerwallOptionValues((prev) => ({
           ...prev,
-          [matchingCondition.condition]: matchingCondition.value ?? 0,
+          [matchingCondition.condition]: matchingCondition.value ?? -1,
         }));
       }
     }
@@ -374,13 +459,20 @@ function PowerwallSettings({
       setTabValid(true);
       setSchedule((prev: any) => {
         const condition: any = { condition: powerwallOption };
-        if (keys.includes(powerwallOption)) {
+        if (
+          keys.includes(powerwallOption) &&
+          powerwallOptionValues[powerwallOption] !== -1
+        ) {
           condition.value = powerwallOptionValues[powerwallOption];
         }
         return { ...prev, conditions: [condition] };
       });
     }
   }, [powerwallOption]);
+
+  // TODO: powerwallOptionsValues contains current UI settings. Changes do not automatically update the schedule.
+  // This may lead to situation where UI is showing e.g. 50 and That value jumps back to default of 100.
+  // schedule should be in sync
 
   console.log("Powerwall option values:", powerwallOptionValues);
 
@@ -409,14 +501,6 @@ function PowerwallSettings({
           setSelectedOption={setPowerwallOption}
           values={powerwallOptionValues}
           setValues={setPowerwallOptionValues}
-          extraSetting={
-            <FormControlLabel
-              value="backup"
-              control={<Radio />}
-              label={<Typography>Discharged down to backup reserve</Typography>}
-              sx={{ mt: 2 }}
-            />
-          }
         />
       </Box>
     </>
@@ -432,94 +516,62 @@ type FlowOptionValuesType = {
   gridImportBelow: number;
   gridExportAbove: number;
   gridExportBelow: number;
+  [key: string]: number; // Add index signature for string keys
 };
 
 type FlowSettingsProps = {
+  options: Array<Option>;
   flowOption: string;
   setFlowOption: (value: string) => void;
   flowOptionValues: FlowOptionValuesType;
   setFlowOptionValues: React.Dispatch<
     React.SetStateAction<FlowOptionValuesType>
   >;
-};
+} & SettingsProps;
 
 function FlowSettings({
+  options,
   flowOption,
   setFlowOption,
   flowOptionValues,
   setFlowOptionValues,
+  schedule,
+  setSchedule,
+  setTabValid,
 }: FlowSettingsProps) {
   const theme = useTheme();
-  const options = [
-    {
-      key: "homeUsageAbove",
-      label: "When home usage rises above:",
-      unit: "kW",
-      min: 0,
-      max: 24,
-      step: 0.5,
-    },
-    {
-      key: "homeUsageBelow",
-      label: "When home usage drops to or below:",
-      unit: "kW",
-      min: 0,
-      max: 24,
-      step: 0.5,
-    },
-    {
-      key: "solarGenerationAbove",
-      label: "When solar generation rises above:",
-      unit: "kW",
-      min: 0,
-      max: 24,
-      step: 0.5,
-    },
-    {
-      key: "solarGenerationBelow",
-      label: "When solar generation drops to or below:",
-      unit: "kW",
-      min: 0,
-      max: 24,
-      step: 0.5,
-    },
-    {
-      key: "gridImportAbove",
-      label: "When grid import rises above:",
-      unit: "kW",
-      min: 0,
-      max: 24,
-      step: 0.5,
-    },
-    {
-      key: "gridImportBelow",
-      label: "When grid import drops to or below:",
-      unit: "kW",
-      min: 0,
-      max: 24,
-      step: 0.5,
-    },
-    {
-      key: "gridExportAbove",
-      label: "When grid export rises above:",
-      unit: "kW",
-      min: 0,
-      max: 24,
-      step: 0.5,
-    },
-    {
-      key: "gridExportBelow",
-      label: "When grid export drops to or below:",
-      unit: "kW",
-      min: 0,
-      max: 24,
-      step: 0.5,
-    },
-  ];
 
-  const handleValueChange = (key: string, value: number) => {
-    setFlowOptionValues((prev) => ({ ...prev, [key]: value }));
-  };
+  const keys = options.map((opt) => opt.key);
+
+  useEffect(() => {
+    if (schedule?.conditions) {
+      const conditions: ConditionType[] = schedule.conditions;
+      const matchingCondition = Array.isArray(conditions)
+        ? conditions.find((cond) => keys.includes(cond.condition))
+        : undefined;
+      if (matchingCondition) {
+        setFlowOption(matchingCondition.condition);
+        setFlowOptionValues((prev) => ({
+          ...prev,
+          [matchingCondition.condition]: matchingCondition.value ?? 0,
+        }));
+      }
+    }
+    setTabValid(schedule?.conditions);
+  }, [schedule?.conditions]);
+
+  useEffect(() => {
+    if (flowOption) {
+      setTabValid(true);
+      setSchedule((prev: any) => {
+        const condition: any = { condition: flowOption };
+        if (keys.includes(flowOption)) {
+          condition.value = flowOptionValues[flowOption];
+        }
+        return { ...prev, conditions: [condition] };
+      });
+    }
+  }, [flowOption]);
 
   return (
     <>
@@ -887,8 +939,78 @@ function ActionConfigDialog({
   );
 }
 
-function BetweenHours() {
+type BetweenHoursProps = Pick<SettingsProps, "schedule" | "setSchedule">;
+
+function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
   const theme = useTheme();
+  const [betweenHours, setBetweenHours] = useState<{
+    from: string;
+    to: string;
+  }>({
+    from: "",
+    to: "",
+  });
+
+  useEffect(() => {
+    const condition = schedule?.conditions?.find(
+      (c: any) => c.condition === "betweenHours",
+    );
+    if (condition && condition.value) {
+      setBetweenHours(condition.value);
+    }
+    // else {
+    //   setBetweenHours({ from: "", to: "" });
+    // }
+  }, [schedule?.conditions]);
+
+  const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newFrom = e.target.value;
+    setBetweenHours({ ...betweenHours, from: newFrom });
+    setSchedule((prev: any) => {
+      const filtered = (prev.conditions || []).filter(
+        (c: any) => c.condition !== "betweenHours",
+      );
+      if (newFrom && betweenHours.to) {
+        return {
+          ...prev,
+          conditions: [
+            ...filtered,
+            {
+              condition: "betweenHours",
+              value: { from: newFrom, to: betweenHours.to },
+            },
+          ],
+        };
+      } else {
+        return { ...prev, conditions: filtered };
+      }
+    });
+  };
+
+  const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTo = e.target.value;
+    setBetweenHours({ ...betweenHours, to: newTo });
+    setSchedule((prev: any) => {
+      const filtered = (prev.conditions || []).filter(
+        (c: any) => c.condition !== "betweenHours",
+      );
+      if (betweenHours.from && newTo) {
+        return {
+          ...prev,
+          conditions: [
+            ...filtered,
+            {
+              condition: "betweenHours",
+              value: { from: betweenHours.from, to: newTo },
+            },
+          ],
+        };
+      } else {
+        return { ...prev, conditions: filtered };
+      }
+    });
+  };
+
   return (
     <Box
       sx={{
@@ -915,9 +1037,21 @@ function BetweenHours() {
         </Typography>
       </Box>
       <Box display="flex" alignItems="center" gap={1}>
-        <TextField type="time" size="small" sx={{ width: 120, mt: 1 }} />
+        <TextField
+          type="time"
+          size="small"
+          sx={{ width: 120, mt: 1 }}
+          value={betweenHours.from || ""}
+          onChange={handleFromChange}
+        />
         <Typography variant="body2">and</Typography>
-        <TextField type="time" size="small" sx={{ width: 120, mt: 1 }} />
+        <TextField
+          type="time"
+          size="small"
+          sx={{ width: 120, mt: 1 }}
+          value={betweenHours.to || ""}
+          onChange={handleToChange}
+        />
       </Box>
     </Box>
   );
@@ -1043,6 +1177,12 @@ export default function Schedules() {
             onClick={(event) => {
               event.stopPropagation();
               setSchedule(params.row);
+              // TODO: we need to take into consideration that we may have setup Flow settings.
+              // Currently it only sees the cron and whether or not it is fixed, in which case we go to Time tab.
+              // Otherwise to Powerwall tab.
+              // We likely need a logic checking on the conditions.
+              // Since the logic happens here, we need to know the options at this time, but unfortunately
+              // the options are defined in the corresponding (isolated) components.
               setDialogTab(isFixedTime(params.row.cron) ? 0 : 1);
               setDialogOpen(true);
               setActionValues(
@@ -1150,7 +1290,7 @@ export default function Schedules() {
   }, [dialogTab, schedule]);
 
   console.log("schedule", schedule);
-  console.log("actionValues", actionValues);
+  // console.log("actionValues", actionValues);
 
   return (
     <Box sx={{ p: 3 }}>
@@ -1191,7 +1331,7 @@ export default function Schedules() {
             setPowerwallOptionValues({
               charged: 100,
               discharged: 20,
-              backup: 20,
+              backup: -1,
             });
             setFlowOption("homeUsageAbove");
             setFlowOptionValues({
@@ -1238,9 +1378,9 @@ export default function Schedules() {
             onChange={(_, v) => setDialogTab(v)}
             aria-label="schedule details tabs"
           >
-            <Tab label="Time" />
-            <Tab label="Powerwall" />
-            <Tab label="Flow" />
+            <Tab key="time" label="Time" />
+            <Tab key="powerwall" label="Powerwall" />
+            <Tab key="flow" label="Flow" />
           </Tabs>
           {dialogTab === 0 && (
             <Box mt={2}>
@@ -1263,6 +1403,7 @@ export default function Schedules() {
           {dialogTab === 1 && (
             <Box mt={2}>
               <PowerwallSettings
+                options={tabOptions.powerwall}
                 powerwallOption={powerwallOption}
                 setPowerwallOption={setPowerwallOption}
                 powerwallOptionValues={powerwallOptionValues}
@@ -1273,7 +1414,7 @@ export default function Schedules() {
                   setTabValid((v) => ({ ...v, powerwall: valid }))
                 }
               />
-              <BetweenHours />
+              <BetweenHours schedule={schedule} setSchedule={setSchedule} />
               <ActionList
                 selectedAction={selectedAction}
                 setSelectedAction={setSelectedAction}
@@ -1286,12 +1427,18 @@ export default function Schedules() {
           {dialogTab === 2 && (
             <Box mt={2}>
               <FlowSettings
+                options={tabOptions.flow}
                 flowOption={flowOption}
                 setFlowOption={setFlowOption}
                 flowOptionValues={flowOptionValues}
                 setFlowOptionValues={setFlowOptionValues}
+                schedule={schedule}
+                setSchedule={setSchedule}
+                setTabValid={(valid) =>
+                  setTabValid((v) => ({ ...v, flow: valid }))
+                }
               />
-              <BetweenHours />
+              <BetweenHours schedule={schedule} setSchedule={setSchedule} />
               <ActionList
                 selectedAction={selectedAction}
                 setSelectedAction={setSelectedAction}
