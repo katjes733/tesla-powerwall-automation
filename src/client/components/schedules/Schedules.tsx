@@ -1160,43 +1160,48 @@ export default function Schedules() {
       flex: 1,
       minWidth: 100,
       sortable: false,
-      renderCell: (params) => (
-        <>
-          <IconButton
-            onClick={(event) => {
-              event.stopPropagation();
-              setSchedule(params.row);
-              // TODO: we need to take into consideration that we may have setup Flow settings.
-              // Currently it only sees the cron and whether or not it is fixed, in which case we go to Time tab.
-              // Otherwise to Powerwall tab.
-              // We likely need a logic checking on the conditions.
-              // Since the logic happens here, we need to know the options at this time, but unfortunately
-              // the options are defined in the corresponding (isolated) components.
-              setDialogTab(isFixedTime(params.row.cron) ? 0 : 1);
-              setDialogOpen(true);
-              setActionValues(
-                Object.fromEntries(
-                  (params.row.actions || []).map((a: any) => [
-                    a.action,
-                    a.value,
-                  ]),
-                ),
-              );
-            }}
-          >
-            <EditIcon />
-          </IconButton>
-          <IconButton
-            onClick={(event) => {
-              event.stopPropagation();
-              setScheduleToDelete(params.row);
-              setConfirmOpen(true);
-            }}
-          >
-            <DeleteIcon />
-          </IconButton>
-        </>
-      ),
+      renderCell: (params) => {
+        const getTabForSchedule = (schedule: any) => {
+          if (schedule?.conditions && Array.isArray(schedule.conditions)) {
+            const condKey = schedule.conditions[0]?.condition;
+            if (tabOptions.flow.some((opt) => opt.key === condKey)) return 2; // Flow tab
+            if (tabOptions.powerwall.some((opt) => opt.key === condKey))
+              return 1; // Powerwall tab
+          }
+          return 0; // Time tab
+        };
+        return (
+          <>
+            <IconButton
+              onClick={(event) => {
+                event.stopPropagation();
+                setSchedule(params.row);
+                setDialogTab(getTabForSchedule(params.row));
+                setDialogOpen(true);
+                setActionValues(
+                  Object.fromEntries(
+                    (params.row.actions || []).map((a: any) => [
+                      a.action,
+                      a.value,
+                    ]),
+                  ),
+                );
+              }}
+            >
+              <EditIcon />
+            </IconButton>
+            <IconButton
+              onClick={(event) => {
+                event.stopPropagation();
+                setScheduleToDelete(params.row);
+                setConfirmOpen(true);
+              }}
+            >
+              <DeleteIcon />
+            </IconButton>
+          </>
+        );
+      },
     },
   ];
 
@@ -1487,3 +1492,8 @@ export default function Schedules() {
     </Box>
   );
 }
+
+// TODO: when opening an existing config (e.g. Flow) and then switching to another tab (e.g. Powerwall),
+// the schedule conditions are not updated to the selected tab's conditions.
+// That means, if i hit save, the new Powerwall setting is not persisted, but instead the old Flow setting is.
+// As soon as I change a Powerwall condition, it works immediately as expected.
