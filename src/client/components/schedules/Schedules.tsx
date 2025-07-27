@@ -432,7 +432,7 @@ type PowerwallOptionValuesType = {
   charged: number;
   discharged: number;
   backup: number;
-  [key: string]: number; // Add index signature for string keys
+  [key: string]: number;
 };
 
 type PowerwallSettingsProps = {
@@ -517,7 +517,7 @@ type FlowOptionValuesType = {
   gridImportBelow: number;
   gridExportAbove: number;
   gridExportBelow: number;
-  [key: string]: number; // Add index signature for string keys
+  [key: string]: number;
 };
 
 type FlowSettingsProps = {
@@ -1056,22 +1056,24 @@ export default function Schedules() {
   const [dialogTab, setDialogTab] = useState(0);
 
   const [powerwallOption, setPowerwallOption] = useState("charged");
-  const [powerwallOptionValues, setPowerwallOptionValues] = useState({
-    charged: 100,
-    discharged: 20,
-    backup: -1,
-  });
+  const [powerwallOptionValues, setPowerwallOptionValues] =
+    useState<PowerwallOptionValuesType>({
+      charged: 100,
+      discharged: 20,
+      backup: -1,
+    });
   const [flowOption, setFlowOption] = useState("homeUsageAbove");
-  const [flowOptionValues, setFlowOptionValues] = useState({
-    homeUsageAbove: 8,
-    homeUsageBelow: 8,
-    solarGenerationAbove: 8,
-    solarGenerationBelow: 8,
-    gridImportAbove: 8,
-    gridImportBelow: 8,
-    gridExportAbove: 8,
-    gridExportBelow: 8,
-  });
+  const [flowOptionValues, setFlowOptionValues] =
+    useState<FlowOptionValuesType>({
+      homeUsageAbove: 8,
+      homeUsageBelow: 8,
+      solarGenerationAbove: 8,
+      solarGenerationBelow: 8,
+      gridImportAbove: 8,
+      gridImportBelow: 8,
+      gridExportAbove: 8,
+      gridExportBelow: 8,
+    });
   const [tabValid, setTabValid] = useState({
     time: false,
     powerwall: false,
@@ -1283,6 +1285,40 @@ export default function Schedules() {
     }
   }, [dialogTab, schedule]);
 
+  useEffect(() => {
+    if (!schedule) return;
+    if (dialogTab === 1) {
+      // Powerwall tab
+      setSchedule((prev: any) => ({
+        ...prev,
+        conditions: [
+          {
+            condition: powerwallOption,
+            value: powerwallOptionValues[powerwallOption],
+          },
+        ],
+      }));
+    } else if (dialogTab === 2) {
+      // Flow tab
+      setSchedule((prev: any) => ({
+        ...prev,
+        conditions: [
+          {
+            condition: flowOption,
+            value: flowOptionValues[flowOption],
+          },
+        ],
+      }));
+    } else if (dialogTab === 0) {
+      // Time tab
+      setSchedule((prev: any) => ({
+        ...prev,
+        conditions: null,
+      }));
+    }
+    // eslint-disable-next-line
+  }, [dialogTab]);
+
   console.log("schedule", schedule);
   // console.log("actionValues", actionValues);
 
@@ -1492,8 +1528,3 @@ export default function Schedules() {
     </Box>
   );
 }
-
-// TODO: when opening an existing config (e.g. Flow) and then switching to another tab (e.g. Powerwall),
-// the schedule conditions are not updated to the selected tab's conditions.
-// That means, if i hit save, the new Powerwall setting is not persisted, but instead the old Flow setting is.
-// As soon as I change a Powerwall condition, it works immediately as expected.
