@@ -3,7 +3,7 @@ import Typography from "@mui/material/Typography";
 import Divider from "@mui/material/Divider";
 import { useAuth } from "../auth/AuthContext";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, memo } from "react";
 import axios from "axios";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -340,13 +340,40 @@ type DynamicSettingsProps = {
   >;
 };
 
-function DynamicSettings({
+const DynamicSettings = memo(function DynamicSettings({
   options,
   selectedOption,
   setSelectedOption,
   values,
   setValues,
-}: DynamicSettingsProps) {
+  setSchedule,
+}: DynamicSettingsProps & { setSchedule: (row: any) => void }) {
+  const keys = options.map((opt) => opt.key);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+
+  const debouncedSetSchedule = useCallback(
+    (key: string, value: number) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        setSchedule((prevSchedule: any) => {
+          const condition: any = { condition: key, value };
+          return { ...prevSchedule, conditions: [condition] };
+        });
+      }, 200);
+    },
+    [setSchedule],
+  );
+
+  const handleValueChange = (key: string, value: number) => {
+    setValues((prev) => {
+      const updated = { ...prev, [key]: value };
+      if (selectedOption === key && keys.includes(key)) {
+        debouncedSetSchedule(key, value);
+      }
+      return updated;
+    });
+  };
+
   return (
     <RadioGroup
       value={selectedOption}
@@ -367,9 +394,7 @@ function DynamicSettings({
               <Box display="flex" flexDirection="column" gap={1}>
                 <Slider
                   value={values[opt.key]}
-                  onChange={(_, v) =>
-                    setValues((prev) => ({ ...prev, [opt.key]: v as number }))
-                  }
+                  onChange={(_, v) => handleValueChange(opt.key, v as number)}
                   min={opt.min}
                   max={opt.max}
                   step={opt.step}
@@ -379,10 +404,7 @@ function DynamicSettings({
                 <TextField
                   value={values[opt.key]}
                   onChange={(e) =>
-                    setValues((prev) => ({
-                      ...prev,
-                      [opt.key]: Number(e.target.value),
-                    }))
+                    handleValueChange(opt.key, Number(e.target.value))
                   }
                   type="number"
                   inputProps={{ min: opt.min, max: opt.max, step: opt.step }}
@@ -399,7 +421,7 @@ function DynamicSettings({
       ))}
     </RadioGroup>
   );
-}
+});
 
 type ConditionType = {
   condition: string;
@@ -434,7 +456,6 @@ function PowerwallSettings({
   setTabValid,
 }: PowerwallSettingsProps) {
   const theme = useTheme();
-
   const keys = options.map((opt) => opt.key);
 
   useEffect(() => {
@@ -451,30 +472,9 @@ function PowerwallSettings({
         }));
       }
     }
-    setTabValid(schedule?.conditions);
-  }, [schedule?.conditions]);
-
-  useEffect(() => {
-    if (powerwallOption) {
-      setTabValid(true);
-      setSchedule((prev: any) => {
-        const condition: any = { condition: powerwallOption };
-        if (
-          keys.includes(powerwallOption) &&
-          powerwallOptionValues[powerwallOption] !== -1
-        ) {
-          condition.value = powerwallOptionValues[powerwallOption];
-        }
-        return { ...prev, conditions: [condition] };
-      });
-    }
-  }, [powerwallOption]);
-
-  // TODO: powerwallOptionsValues contains current UI settings. Changes do not automatically update the schedule.
-  // This may lead to situation where UI is showing e.g. 50 and That value jumps back to default of 100.
-  // schedule should be in sync
-
-  console.log("Powerwall option values:", powerwallOptionValues);
+    setTabValid(!!schedule?.conditions);
+    // eslint-disable-next-line
+  }, [schedule]);
 
   return (
     <>
@@ -501,6 +501,7 @@ function PowerwallSettings({
           setSelectedOption={setPowerwallOption}
           values={powerwallOptionValues}
           setValues={setPowerwallOptionValues}
+          setSchedule={setSchedule}
         />
       </Box>
     </>
@@ -560,19 +561,6 @@ function FlowSettings({
     setTabValid(schedule?.conditions);
   }, [schedule?.conditions]);
 
-  useEffect(() => {
-    if (flowOption) {
-      setTabValid(true);
-      setSchedule((prev: any) => {
-        const condition: any = { condition: flowOption };
-        if (keys.includes(flowOption)) {
-          condition.value = flowOptionValues[flowOption];
-        }
-        return { ...prev, conditions: [condition] };
-      });
-    }
-  }, [flowOption]);
-
   return (
     <>
       <Typography variant="subtitle1">
@@ -598,6 +586,7 @@ function FlowSettings({
           setSelectedOption={setFlowOption}
           values={flowOptionValues}
           setValues={setFlowOptionValues}
+          setSchedule={setSchedule}
         />
       </Box>
     </>
@@ -1453,7 +1442,7 @@ export default function Schedules() {
           <Button
             variant="contained"
             color="primary"
-            sx={{ borderRadius: 10 }}
+            sx={{ borderRadius: "10" }}
             disabled={
               !tabValid[
                 dialogTab === 0
