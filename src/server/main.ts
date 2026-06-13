@@ -4,6 +4,7 @@ import { pinoHttp } from "pino-http";
 import express from "express";
 import session from "express-session";
 import cookieParser from "cookie-parser";
+import { router as PowerwallRouter } from "~/server/routes/powerwall";
 import { router as SchedulingRouter } from "~/server/routes/scheduling";
 import { router as HealthRouter } from "~/server/routes/health";
 import { router as SessionRouter } from "~/server/routes/session";
@@ -48,6 +49,7 @@ app.use(
 
 app.disable("x-powered-by");
 
+app.use("/api/powerwall", PowerwallRouter);
 app.use("/api/health", HealthRouter);
 app.use("/api/schedule", SchedulingRouter);
 app.use("/api/session", SessionRouter);

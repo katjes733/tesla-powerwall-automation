@@ -11,6 +11,7 @@ import HealthCards from "./components/health/Health";
 import Login from "./components/auth/Login";
 import { NotificationProvider } from "./components/notification/NotificationContext";
 import Schedules from "./components/schedules/Schedules";
+import PowerwallStatus from "./components/powerwall/PowerwallStatus";
 
 type ProtectedRouteProps = {
   children: React.ReactNode;
@@ -47,6 +48,14 @@ function App() {
               <Route path="/login" element={<Login />} />
               <Route
                 path="/"
+                element={
+                  <ProtectedRoute>
+                    <PowerwallStatus />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/health"
                 element={
                   <ProtectedRoute>
                     <HealthCards />

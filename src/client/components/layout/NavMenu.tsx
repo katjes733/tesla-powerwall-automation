@@ -46,9 +46,14 @@ export default function NavMenu() {
       });
   }, [handleUserMenuClose, logout, navigate]);
 
-  const handleNavigateToHealth = useCallback(() => {
+  const handleNavigateToPowerwall = useCallback(() => {
     handleMainMenuClose();
     navigate("/");
+  }, [navigate]);
+
+  const handleNavigateToHealth = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/health");
   }, [navigate]);
 
   const handleNavigateToSchedules = useCallback(() => {
@@ -93,7 +98,10 @@ export default function NavMenu() {
                 open={Boolean(mainMenuAnchor)}
                 onClose={handleMainMenuClose}
               >
-                <MenuItem onClick={handleNavigateToHealth}>Health</MenuItem>
+                <MenuItem onClick={handleNavigateToPowerwall}>
+                  Powerwall
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToHealth}>App Health</MenuItem>
                 <MenuItem onClick={handleNavigateToSchedules}>
                   Schedules
                 </MenuItem>
