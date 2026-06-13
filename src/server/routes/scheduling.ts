@@ -1,5 +1,4 @@
 import express from "express";
-import App from "~/client/App";
 import { Scheduler } from "~/server/util/scheduler";
 import AppDataSource from "../database/datasource";
 

@@ -1,6 +1,4 @@
-import { getAllLiveStatus } from "~/server/util/automation";
 import AppDataSource from "./database/datasource";
-import { Fleet } from "~/server/util/fleet";
 import { Scheduler } from "./util/scheduler";
 import { pinoHttp } from "pino-http";
 import express from "express";

@@ -22,7 +22,6 @@ const baseApiUrl =
   "https://fleet-api.prd.na.vn.cloud.tesla.com";
 
 export class Fleet {
-  private static instance: Fleet;
   private static instanceMap = new Map<string, Fleet>();
 
   private email: string;
