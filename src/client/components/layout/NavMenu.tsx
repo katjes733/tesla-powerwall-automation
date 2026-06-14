@@ -4,7 +4,7 @@ import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import { Avatar, Divider, Menu, MenuItem, IconButton } from "@mui/material";
 import AppsIcon from "@mui/icons-material/Apps";
-import logo from "../../assets/logo.png";
+
 import { useAuth } from "../auth/AuthContext";
 import { useCallback, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -121,7 +121,7 @@ export default function NavMenu() {
           }}
         >
           <img
-            src={logo}
+            src="/logo.png"
             alt="Tesla Powerwall Automation Logo"
             style={{ height: 64, width: "auto", flexShrink: 0 }}
           />
