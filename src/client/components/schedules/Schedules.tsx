@@ -33,7 +33,13 @@ import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { IconButton } from "@mui/material";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
+import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
+import InputLabel from "@mui/material/InputLabel";
+import Select from "@mui/material/Select";
+import MenuItem from "@mui/material/MenuItem";
+import Checkbox from "@mui/material/Checkbox";
+import OutlinedInput from "@mui/material/OutlinedInput";
 import Slider from "@mui/material/Slider";
 import AddIcon from "@mui/icons-material/Add";
 import { useNotification } from "../notification/NotificationContext";
@@ -617,22 +623,26 @@ function ActionList({
   const theme = useTheme();
   const actions = [
     {
-      key: "backupReserve",
+      key: "setBackupReserve",
       label: "Set backup reserve",
       icon: <BatteryFullIcon />,
     },
     {
-      key: "preserveCharge",
+      key: "setSoftBackupReserve",
       label: "Preserve battery charge",
       icon: <BatteryFullIcon />,
     },
     {
-      key: "operationalMode",
+      key: "setOperationalMode",
       label: "Set operational mode",
       icon: <SettingsIcon />,
     },
-    { key: "energyExports", label: "Set energy exports", icon: <BoltIcon /> },
-    { key: "gridCharging", label: "Set grid charging", icon: <PowerIcon /> },
+    {
+      key: "setEnergyExports",
+      label: "Set energy exports",
+      icon: <BoltIcon />,
+    },
+    { key: "setGridCharging", label: "Set grid charging", icon: <PowerIcon /> },
   ];
   return (
     <>
@@ -697,7 +707,7 @@ function ActionConfigDialog({
       options?: Array<{ key: string; label: string; description: string }>;
     };
   } = {
-    backupReserve: {
+    setBackupReserve: {
       label: "Set Backup Reserve",
       description:
         "Backup reserve determines how much of you Powerwall's stored energy will automatically be saved for backup use. Setting it higher than the current state of charge will charge up the battery from solar or grid.",
@@ -706,12 +716,12 @@ function ActionConfigDialog({
       step: 1,
       unit: "%",
     },
-    preserveCharge: {
+    setSoftBackupReserve: {
       label: "Preserve battery charge",
       description:
         "Set the Powerwall backup reserve to its current state of charge. This will avoid discharging the battery, for example when charging an EV.",
     },
-    operationalMode: {
+    setOperationalMode: {
       label: "Set Operational Mode",
       options: [
         {
@@ -728,7 +738,7 @@ function ActionConfigDialog({
         },
       ],
     },
-    energyExports: {
+    setEnergyExports: {
       label: "Set Energy Exports",
       options: [
         {
@@ -745,7 +755,7 @@ function ActionConfigDialog({
         },
       ],
     },
-    gridCharging: {
+    setGridCharging: {
       label: "Set Grid Charging",
       options: [
         {
@@ -1052,6 +1062,58 @@ function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
   );
 }
 
+function SiteSelector({
+  schedule,
+  setSchedule,
+  availableSites,
+}: {
+  schedule: any;
+  setSchedule: (s: any) => void;
+  availableSites: { id: string; site_name: string; is_online: boolean }[];
+}) {
+  const selected: string[] = schedule?.site_ids ?? [];
+
+  const handleChange = (event: any) => {
+    setSchedule({ ...schedule, site_ids: event.target.value as string[] });
+  };
+
+  const renderValue = (selectedIds: string[]) =>
+    selectedIds
+      .map((id) => availableSites.find((s) => s.id === id)?.site_name ?? id)
+      .join(", ") || "No sites selected";
+
+  return (
+    <FormControl fullWidth size="small" sx={{ mt: 1, mb: 1 }}>
+      <InputLabel id="site-selector-label">Target Sites</InputLabel>
+      <Select
+        labelId="site-selector-label"
+        multiple
+        value={selected}
+        onChange={handleChange}
+        input={<OutlinedInput label="Target Sites" />}
+        renderValue={renderValue}
+      >
+        {availableSites.map((site) => (
+          <MenuItem key={site.id} value={site.id}>
+            <Checkbox checked={selected.includes(site.id)} />
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                bgcolor: site.is_online ? "success.main" : "action.disabled",
+                mr: 1,
+                flexShrink: 0,
+              }}
+            />
+            <ListItemText primary={site.site_name} />
+          </MenuItem>
+        ))}
+      </Select>
+    </FormControl>
+  );
+}
+
 export default function Schedules() {
   const { user } = useAuth();
   const { showNotification } = useNotification();
@@ -1092,13 +1154,16 @@ export default function Schedules() {
   const [actionValues, setActionValues] = useState<{
     [key: string]: string | number | null;
   }>({
-    backupReserve: null,
-    preserveCharge: null,
-    operationalMode: null,
-    energyExports: null,
-    gridCharging: null,
+    setBackupReserve: null,
+    setSoftBackupReserve: null,
+    setOperationalMode: null,
+    setEnergyExports: null,
+    setGridCharging: null,
   });
   const theme = useTheme();
+  const [availableSites, setAvailableSites] = useState<
+    { id: string; site_name: string; is_online: boolean }[]
+  >([]);
 
   const loadSchedules = useCallback(async () => {
     setLoading(true);
@@ -1113,11 +1178,24 @@ export default function Schedules() {
 
   useEffect(() => {
     loadSchedules();
+    axios
+      .get("/api/powerwall/sites")
+      .then((res) => setAvailableSites(res.data.data ?? []))
+      .catch(() => setAvailableSites([]));
   }, [loadSchedules]);
 
   const columns: GridColDef[] = [
     { field: "id", headerName: "ID", flex: 1, minWidth: 80 },
-    { field: "device_id", headerName: "Device ID", flex: 1, minWidth: 80 },
+    {
+      field: "site_ids",
+      headerName: "Sites",
+      flex: 2,
+      minWidth: 150,
+      valueGetter: (value: string[]) =>
+        (value ?? [])
+          .map((id) => availableSites.find((s) => s.id === id)?.site_name ?? id)
+          .join(", "),
+    },
     { field: "cron", headerName: "Cron", flex: 1, minWidth: 100 },
     {
       field: "enabled",
@@ -1354,7 +1432,9 @@ export default function Schedules() {
             setDialogOpen(true);
             const newSchedule = {
               email: user,
-              device_id: "ALL",
+              site_ids: availableSites
+                .filter((s) => s.is_online)
+                .map((s) => s.id),
               cron: null,
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
               enabled: true,
@@ -1381,11 +1461,11 @@ export default function Schedules() {
               gridExportBelow: 8,
             });
             setActionValues({
-              backupReserve: null,
-              preserveCharge: null,
-              operationalMode: null,
-              energyExports: null,
-              gridCharging: null,
+              setBackupReserve: null,
+              setSoftBackupReserve: null,
+              setOperationalMode: null,
+              setEnergyExports: null,
+              setGridCharging: null,
             });
           }}
         >
@@ -1409,6 +1489,11 @@ export default function Schedules() {
       >
         <DialogTitle>Schedule Details</DialogTitle>
         <DialogContent>
+          <SiteSelector
+            schedule={schedule}
+            setSchedule={setSchedule}
+            availableSites={availableSites}
+          />
           <Tabs
             value={dialogTab}
             onChange={(_, v) => setDialogTab(v)}
@@ -1497,7 +1582,9 @@ export default function Schedules() {
                   : dialogTab === 1
                     ? "powerwall"
                     : "flow"
-              ] || !tabValid.actions
+              ] ||
+              !tabValid.actions ||
+              !schedule?.site_ids?.length
             }
             onClick={handleSaveSchedule}
           >

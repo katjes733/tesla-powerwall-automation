@@ -13,7 +13,7 @@ export interface IScheduleAction {
 export interface ISchedule {
   id?: string;
   email: string;
-  device_id: string;
+  site_ids: string[];
   cron: string;
   timezone: string;
   enabled?: boolean;
@@ -35,7 +35,7 @@ export const Schedule = new EntitySchema<IBasicEntity & ISchedule>({
     creation_time: { type: "timestamp with time zone", nullable: false },
     modified_time: { type: "timestamp with time zone", nullable: false },
     email: { type: "varchar", length: 255, nullable: false },
-    device_id: { type: "varchar", length: 255, nullable: false },
+    site_ids: { type: "jsonb", nullable: false },
     cron: { type: "varchar", length: 255, nullable: false },
     timezone: { type: "varchar", length: 255, nullable: false },
     enabled: { type: "boolean", default: true, nullable: false },
@@ -55,8 +55,8 @@ export const Schedule = new EntitySchema<IBasicEntity & ISchedule>({
       unique: false,
     },
     {
-      name: "idx_schedule_device_id",
-      columns: ["device_id"],
+      name: "idx_schedule_site_ids",
+      columns: ["site_ids"],
       unique: false,
     },
     {

@@ -10,13 +10,11 @@ import {
 export async function upsert({
   id,
   email,
-  deviceId,
-  device_id, // TODO: Should be removed. We want to use the DB fields consistently.
+  siteIds,
   cron,
   timezone,
   enabled = true,
   expiresAt,
-  expires_at, // TODO: Should be removed. We want to use the DB fields consistently.
   conditions,
   actions,
   lastRunTime,
@@ -27,13 +25,11 @@ export async function upsert({
 }: {
   id?: string;
   email?: string;
-  deviceId?: string;
-  device_id?: string; // TODO: Should be removed. We want to use the DB fields consistently.
+  siteIds?: string[];
   cron?: string;
   timezone?: string;
   enabled?: boolean;
-  expiresAt?: Date; // TODO: Should be removed. We want to use the DB fields consistently.
-  expires_at?: Date;
+  expiresAt?: Date;
   conditions?: IScheduleCondition[];
   actions?: IScheduleAction[];
   lastRunTime?: Date;
@@ -58,11 +54,11 @@ export async function upsert({
       creation_time: newDate,
       modified_time: newDate,
       email,
-      device_id: device_id || deviceId,
+      site_ids: siteIds,
       cron,
       timezone,
       enabled,
-      expires_at: expires_at || expiresAt,
+      expires_at: expiresAt,
       conditions,
       actions,
       last_run_time: lastRunTime,
@@ -73,12 +69,12 @@ export async function upsert({
     });
     status = 200;
   } else {
-    // Only include provided fields in the update
     const updateFields: Record<string, any> = { modified_time: newDate };
     if (cron !== undefined) updateFields.cron = cron;
     if (timezone !== undefined) updateFields.timezone = timezone;
     if (enabled !== undefined) updateFields.enabled = enabled;
     if (expiresAt !== undefined) updateFields.expires_at = expiresAt;
+    if (siteIds !== undefined) updateFields.site_ids = siteIds;
     if (conditions !== undefined) updateFields.conditions = conditions;
     if (actions !== undefined) updateFields.actions = actions;
     if (lastRunTime !== undefined) updateFields.last_run_time = lastRunTime;
@@ -89,7 +85,6 @@ export async function upsert({
     if (lastSuccessTime !== undefined)
       updateFields.last_success_time = lastSuccessTime;
     if (email !== undefined) updateFields.email = email;
-    if (deviceId !== undefined) updateFields.device_id = deviceId;
     await scheduleRepo.update(recordId, updateFields);
     status = 201;
   }
@@ -100,7 +95,7 @@ export async function upsert({
     data: {
       id: recordId,
       email,
-      deviceId,
+      siteIds,
       cron,
       timezone,
       enabled,

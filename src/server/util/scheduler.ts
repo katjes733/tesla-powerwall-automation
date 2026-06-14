@@ -95,15 +95,10 @@ export class Scheduler {
           );
         }
         try {
+          const siteIds = schedule.site_ids;
           const products = await Fleet.getInstance(schedule.email)
             .getEnergyProducts()
-            .then((allProducts) => {
-              return schedule.device_id === "ALL"
-                ? allProducts
-                : allProducts.filter(
-                    (product) => product.id === schedule.device_id,
-                  );
-            });
+            .then((all) => all.filter((p) => siteIds.includes(p.id)));
 
           let actionsExecuted = 0;
           for (const product of products) {
@@ -217,7 +212,17 @@ export class Scheduler {
       existingTask.stop();
       this.enabledScheduledTasks.delete(schedule.id || "");
     }
-    const result = await upsertScheduleInDb(schedule);
+    const result = await upsertScheduleInDb({
+      id: schedule.id,
+      email: schedule.email,
+      siteIds: schedule.site_ids,
+      cron: schedule.cron,
+      timezone: schedule.timezone,
+      enabled: schedule.enabled,
+      expiresAt: schedule.expires_at,
+      conditions: schedule.conditions,
+      actions: schedule.actions,
+    });
     schedule.id = result?.data?.id ?? schedule.id;
     if (this.schedulingEnabled) {
       await this.initializeOneSchedule(schedule);
