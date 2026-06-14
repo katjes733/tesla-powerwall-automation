@@ -26,15 +26,25 @@ export interface Product {
   gateway_id: string;
 }
 
+export interface UserSettings {
+  [key: string]: unknown;
+}
+
+export interface SiteComponents {
+  disallow_charge_from_grid_with_solar_installed?: boolean;
+  customer_preferred_export_rule?: string; // "pv_only" | "battery_ok"
+  [key: string]: unknown;
+}
+
 export interface SiteInfo {
   id: string;
   site_name: string;
   backup_reserve_percent: number;
   default_real_mode: string;
   installation_date: string;
-  user_settings: Record<string, any>;
+  user_settings: UserSettings;
   app_settings: Record<string, any>;
-  components: Record<string, any>;
+  components: SiteComponents;
   version: string;
   battery_count: number;
   tariff_content: Record<string, any>;

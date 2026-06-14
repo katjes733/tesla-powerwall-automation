@@ -335,9 +335,9 @@ type DynamicSettingsProps = {
   selectedOption: string;
   setSelectedOption: (value: string) => void;
   values: Record<string, number>;
-  setValues: React.Dispatch<
-    React.SetStateAction<PowerwallOptionValuesType | FlowOptionValuesType>
-  >;
+  setValues: (
+    updater: (prev: Record<string, number>) => Record<string, number>,
+  ) => void;
 };
 
 const DynamicSettings = memo(function DynamicSettings({
@@ -500,7 +500,11 @@ function PowerwallSettings({
           selectedOption={powerwallOption}
           setSelectedOption={setPowerwallOption}
           values={powerwallOptionValues}
-          setValues={setPowerwallOptionValues}
+          setValues={(updater) =>
+            setPowerwallOptionValues(
+              (prev) => updater(prev) as PowerwallOptionValuesType,
+            )
+          }
           setSchedule={setSchedule}
         />
       </Box>
@@ -585,7 +589,9 @@ function FlowSettings({
           selectedOption={flowOption}
           setSelectedOption={setFlowOption}
           values={flowOptionValues}
-          setValues={setFlowOptionValues}
+          setValues={(updater) =>
+            setFlowOptionValues((prev) => updater(prev) as FlowOptionValuesType)
+          }
           setSchedule={setSchedule}
         />
       </Box>

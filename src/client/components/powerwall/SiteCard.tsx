@@ -158,6 +158,21 @@ export default function SiteCard({ product, live, info }: Props) {
                   {info.backup_reserve_percent}%
                 </Typography>
               </Box>
+              {info.components
+                ?.disallow_charge_from_grid_with_solar_installed !==
+                undefined && (
+                <Box sx={{ display: "flex", justifyContent: "space-between" }}>
+                  <Typography variant="body2" color="text.secondary">
+                    Grid charging
+                  </Typography>
+                  <Typography variant="body2">
+                    {info.components
+                      .disallow_charge_from_grid_with_solar_installed
+                      ? "Disabled"
+                      : "Enabled"}
+                  </Typography>
+                </Box>
+              )}
               <Box sx={{ display: "flex", justifyContent: "space-between" }}>
                 <Typography variant="body2" color="text.secondary">
                   Batteries

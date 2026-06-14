@@ -3,7 +3,7 @@ import { schedule as scheduleTask } from "node-cron";
 import moment from "moment-timezone";
 import type {
   ISchedule,
-  IScheduleConfiguration,
+  IScheduleAction,
 } from "~/server/database/models/schedule";
 import { getAllEmails as getAllEmailsFromDb } from "~/server/util/routes/refreshToken";
 import {
@@ -53,7 +53,7 @@ export class Scheduler {
   }
 
   private isValidConfigurationItem(
-    config: IScheduleConfiguration,
+    config: IScheduleAction,
     schedule: ISchedule,
   ): boolean {
     if (!config.action || !config.value) {
@@ -100,7 +100,7 @@ export class Scheduler {
             });
 
           for (const product of products) {
-            for (const config of schedule.configuration || []) {
+            for (const config of schedule.actions || []) {
               if (!this.isValidConfigurationItem(config, schedule)) {
                 continue;
               }

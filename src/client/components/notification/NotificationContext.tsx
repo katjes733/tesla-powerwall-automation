@@ -31,7 +31,11 @@ export const NotificationProvider = ({
   });
 
   const showNotification = useCallback(
-    (message: string, severity = "info", duration = 3000) => {
+    (
+      message: string,
+      severity: "error" | "warning" | "info" | "success" = "info",
+      duration = 3000,
+    ) => {
       setNotification({ open: true, message, severity, duration });
     },
     [],
