@@ -8,6 +8,7 @@
     "tesla-powerwall-automation": "build/main.js"
   },
   "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"bun run dev:server\" \"bun run dev:client\"",
     "docker:up": "docker-compose --env-file .env up -d",
     "docker:down": "docker-compose --env-file .env down",
     "build": "bun build src/server/main.ts --outdir build --target bun --minify",
@@ -18,7 +19,7 @@
     "prettier": "bun x prettier --check src/* tests/*",
     "prettier:fix": "bun x prettier --write src/* tests/*",
     "start": "bun run src/server/main.ts",
-    "dev:server": "cross-env NODE_ENV=development nodemon --watch src/server --ext ts --exec 'bun run src/server/main.ts'",
+    "dev:server": "cross-env NODE_ENV=development nodemon --watch src/server --watch .env --ext ts,env --exec 'bun run src/server/main.ts'",
     "stylelint": "stylelint 'src/**/*.{css,scss}' --allow-empty-input",
     "stylelint:fix": "bun run stylelint -- --fix",
     "test": "bun test",
@@ -56,6 +57,7 @@
     "@typescript-eslint/parser": "^8.36.0",
     "@vitejs/plugin-react": "^4.6.0",
     "bun-types": "^1.2.18",
+    "concurrently": "^10.0.3",
     "cross-env": "^7.0.3",
     "eslint": "^9.30.1",
     "eslint-plugin-react-hooks": "^5.2.0",

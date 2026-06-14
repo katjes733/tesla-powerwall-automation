@@ -132,14 +132,16 @@ export class Scheduler {
               `Scheduled task for email ${schedule.email} with ID ${schedule.id} completed but no actions were executed — check action key names`,
             );
           }
-          upsertScheduleInDb({
-            id: schedule.id,
-            lastRunTime: now.toDate(),
-            nextRunTime: task.getNextRun() || undefined,
-            ...(process.env.DRY_RUN !== "true" && {
-              lastSuccessTime: now.toDate(),
-            }),
-          });
+          if (schedule.id) {
+            upsertScheduleInDb({
+              id: schedule.id,
+              lastRunTime: now.toDate(),
+              nextRunTime: task.getNextRun() || undefined,
+              ...(process.env.DRY_RUN !== "true" && {
+                lastSuccessTime: now.toDate(),
+              }),
+            });
+          }
         } catch (error: any) {
           const lastError = error.message || "Unknown error";
           logger.error(
@@ -150,13 +152,15 @@ export class Scheduler {
             `[${new Date().toLocaleString()}] ${lastError}`,
             schedule.email,
           );
-          upsertScheduleInDb({
-            id: schedule.id,
-            lastRunTime: now.toDate(),
-            nextRunTime: task.getNextRun() || undefined,
-            lastError,
-            lastErrorTime: now.toDate(),
-          });
+          if (schedule.id) {
+            upsertScheduleInDb({
+              id: schedule.id,
+              lastRunTime: now.toDate(),
+              nextRunTime: task.getNextRun() || undefined,
+              lastError,
+              lastErrorTime: now.toDate(),
+            });
+          }
         }
       },
       { timezone: schedule.timezone },
@@ -213,10 +217,12 @@ export class Scheduler {
       existingTask.stop();
       this.enabledScheduledTasks.delete(schedule.id || "");
     }
+    const result = await upsertScheduleInDb(schedule);
+    schedule.id = result?.data?.id ?? schedule.id;
     if (this.schedulingEnabled) {
       await this.initializeOneSchedule(schedule);
     }
-    return upsertScheduleInDb(schedule);
+    return result;
   }
 
   async delete(scheduleId: string) {
