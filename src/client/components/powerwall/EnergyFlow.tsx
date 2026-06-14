@@ -87,7 +87,7 @@ interface FlowLineProps {
 
 function FlowLine({ path, watts, strokeRef, reverse = false }: FlowLineProps) {
   if (Math.abs(watts) < 50) return null;
-  const dur = Math.max(1.5, 3.5 - (Math.abs(watts) / 5000) * 2);
+  const dur = Math.max(1.5, 3.5 - (Math.abs(watts) / 15000) * 2);
   const period = 20;
   return (
     <path
@@ -243,7 +243,7 @@ function SegmentPulse({
 // One source pulse fans out to all destinations simultaneously.
 function FlowSourcePulse({ route }: { route: GroupedRoute }) {
   if (route.watts < 50) return null;
-  const dur = Math.max(1.5, 3.5 - (route.watts / 5000) * 2);
+  const dur = Math.max(1.5, 3.5 - (route.watts / 15000) * 2);
   return (
     <>
       <SegmentPulse
