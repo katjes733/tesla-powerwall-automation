@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "./AuthContext";
 import Box from "@mui/material/Box";
 import TextField from "@mui/material/TextField";
@@ -25,38 +25,51 @@ const LoginForm = React.memo(
     onEmailChange,
     onPasswordChange,
     onSubmit,
-  }: LoginFormProps) => (
-    <form onSubmit={onSubmit}>
-      <TextField
-        label="Email"
-        variant="outlined"
-        fullWidth
-        margin="normal"
-        value={email}
-        onChange={onEmailChange}
-        slotProps={{
-          htmlInput: { autoComplete: "email" },
-        }}
-      />
-      <TextField
-        label="Password"
-        type="password"
-        variant="outlined"
-        fullWidth
-        margin="normal"
-        value={password}
-        onChange={onPasswordChange}
-        slotProps={{
-          htmlInput: { autoComplete: "current-password" },
-        }}
-      />
-      <Box mt={2} display="flex" justifyContent="center">
-        <Button type="submit" variant="contained" color="primary">
-          Login
-        </Button>
-      </Box>
-    </form>
-  ),
+  }: LoginFormProps) => {
+    const formRef = useRef<HTMLFormElement>(null);
+    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        formRef.current?.requestSubmit();
+      }
+    }, []);
+
+    return (
+      <form ref={formRef} onSubmit={onSubmit}>
+        <TextField
+          label="Email"
+          type="email"
+          variant="outlined"
+          fullWidth
+          margin="normal"
+          value={email}
+          onChange={onEmailChange}
+          onKeyDown={handleKeyDown}
+          slotProps={{
+            htmlInput: { autoComplete: "email" },
+          }}
+        />
+        <TextField
+          label="Password"
+          type="password"
+          variant="outlined"
+          fullWidth
+          margin="normal"
+          value={password}
+          onChange={onPasswordChange}
+          onKeyDown={handleKeyDown}
+          slotProps={{
+            htmlInput: { autoComplete: "current-password" },
+          }}
+        />
+        <Box mt={2} display="flex" justifyContent="center">
+          <Button type="submit" variant="contained" color="primary">
+            Login
+          </Button>
+        </Box>
+      </form>
+    );
+  },
 );
 
 type SignupFormProps = {
