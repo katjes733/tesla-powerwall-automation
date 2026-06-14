@@ -7,20 +7,13 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
-import BatteryChargingFullIcon from "@mui/icons-material/BatteryChargingFull";
-import HomeIcon from "@mui/icons-material/Home";
-import PowerIcon from "@mui/icons-material/Power";
-import WbSunnyIcon from "@mui/icons-material/WbSunny";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
+import EnergyFlow from "./EnergyFlow";
 
 interface Props {
   product: Product;
   live: LiveStatus | null;
   info: SiteInfo | null;
-}
-
-function kw(watts: number): string {
-  return `${(Math.abs(watts) / 1000).toFixed(2)} kW`;
 }
 
 function batteryColor(pct: number): "success" | "warning" | "error" {
@@ -45,55 +38,6 @@ function modeLabel(mode: string): string {
   return map[mode] ?? mode;
 }
 
-interface FlowCellProps {
-  icon: React.ReactNode;
-  label: string;
-  value: string | null;
-  direction?: "in" | "out" | "none";
-  color?: string;
-}
-
-function FlowCell({ icon, label, value, direction, color }: FlowCellProps) {
-  const theme = useTheme();
-  const dirSymbol = direction === "in" ? " ↓" : direction === "out" ? " ↑" : "";
-  return (
-    <Box
-      sx={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 0.5,
-        p: 1,
-        borderRadius: 1,
-        bgcolor: theme.palette.action.hover,
-        minWidth: 100,
-        flex: 1,
-      }}
-    >
-      <Box sx={{ color: color ?? "text.secondary" }}>{icon}</Box>
-      <Typography variant="caption" color="text.secondary">
-        {label}
-      </Typography>
-      <Typography variant="body2" fontWeight={600}>
-        {value !== null ? (
-          <>
-            {value}
-            <Typography
-              component="span"
-              variant="caption"
-              color="text.secondary"
-            >
-              {dirSymbol}
-            </Typography>
-          </>
-        ) : (
-          "–"
-        )}
-      </Typography>
-    </Box>
-  );
-}
-
 export default function SiteCard({ product, live, info }: Props) {
   const theme = useTheme();
 
@@ -115,30 +59,6 @@ export default function SiteCard({ product, live, info }: Props) {
 
   const soc = live?.percentage_charged ?? 0;
   const socColor = isConnected ? batteryColor(soc) : "inherit";
-
-  const solarFlow = live
-    ? { value: kw(live.solar_power), dir: "out" as const }
-    : null;
-  const gridFlow = live
-    ? {
-        value: kw(live.grid_power),
-        dir: live.grid_power >= 0 ? ("in" as const) : ("out" as const),
-      }
-    : null;
-  const batteryFlow = live
-    ? {
-        value: kw(live.battery_power),
-        dir:
-          live.battery_power > 100
-            ? ("in" as const)
-            : live.battery_power < -100
-              ? ("out" as const)
-              : ("none" as const),
-      }
-    : null;
-  const homeFlow = live
-    ? { value: kw(live.load_power), dir: "none" as const }
-    : null;
 
   return (
     <Card
@@ -207,39 +127,16 @@ export default function SiteCard({ product, live, info }: Props) {
           </Typography>
         </Box>
 
-        {/* Power flows */}
-        <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-          <FlowCell
-            icon={<WbSunnyIcon />}
-            label="Solar"
-            value={solarFlow?.value ?? null}
-            direction={solarFlow?.dir}
-            color="#f59e0b"
-          />
-          <FlowCell
-            icon={<PowerIcon />}
-            label="Grid"
-            value={gridFlow?.value ?? null}
-            direction={gridFlow?.dir}
-            color={theme.palette.secondary.main}
-          />
-        </Box>
-        <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-          <FlowCell
-            icon={<HomeIcon />}
-            label="Home"
-            value={homeFlow?.value ?? null}
-            direction={homeFlow?.dir}
-            color={theme.palette.text.secondary}
-          />
-          <FlowCell
-            icon={<BatteryChargingFullIcon />}
-            label="Battery"
-            value={batteryFlow?.value ?? null}
-            direction={batteryFlow?.dir}
-            color={theme.palette.primary.main}
-          />
-        </Box>
+        {/* Energy flow diagram */}
+        <EnergyFlow
+          solar={live?.solar_power ?? 0}
+          grid={live?.grid_power ?? 0}
+          battery={live?.battery_power ?? 0}
+          home={live?.load_power ?? 0}
+          batteryPct={live?.percentage_charged ?? 0}
+          batteryCount={info?.battery_count ?? 0}
+          connected={isConnected}
+        />
 
         {info && (
           <>
