@@ -94,6 +94,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, [bc, history]);
 
   useEffect(() => {
+    const interceptor = axiosInstance.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (
+          error.response?.status === 401 &&
+          !error.config?.url?.includes("/api/session/") &&
+          window.location.pathname !== "/login"
+        ) {
+          logoutActions();
+          navigate("/login");
+        }
+        return Promise.reject(error);
+      },
+    );
+    return () => axiosInstance.interceptors.response.eject(interceptor);
+  }, [navigate]);
+
+  useEffect(() => {
     axiosInstance
       .get("/api/session/me", { withCredentials: true })
       .then((response) => {

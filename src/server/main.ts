@@ -15,7 +15,7 @@ import path from "path";
 
 const httpLogger = pinoHttp({
   logger,
-  customLogLevel: (req, res, err) => {
+  customLogLevel: (_req, res, err) => {
     if (err || res.statusCode >= 500) {
       return "error";
     } else if (res.statusCode >= 400) {
@@ -59,7 +59,7 @@ app.use("/api/auth", SignupVerificationRouter);
 if (process.env.NODE_ENV !== "development") {
   logger.info("Serving static files from 'public' directory");
   app.use(express.static(path.join(process.cwd(), "public")));
-  app.use((req, res) => {
+  app.use((_req, res) => {
     res.sendFile(path.join(process.cwd(), "public", "index.html"));
   });
 } else {

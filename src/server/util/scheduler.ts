@@ -99,6 +99,7 @@ export class Scheduler {
                   );
             });
 
+          let actionsExecuted = 0;
           for (const product of products) {
             for (const config of schedule.actions || []) {
               if (!this.isValidConfigurationItem(config, schedule)) {
@@ -109,11 +110,18 @@ export class Scheduler {
                 .getActionMap()
                 [config.action](product, parseInt(config.value));
               /* eslint-enable no-unexpected-multiline */
+              actionsExecuted++;
             }
           }
-          logger.info(
-            `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully`,
-          );
+          if (actionsExecuted > 0) {
+            logger.info(
+              `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully (${actionsExecuted} action(s) applied)`,
+            );
+          } else {
+            logger.warn(
+              `Scheduled task for email ${schedule.email} with ID ${schedule.id} completed but no actions were executed — check action key names`,
+            );
+          }
           upsertScheduleInDb({
             id: schedule.id,
             lastRunTime: now.toDate(),
@@ -141,19 +149,27 @@ export class Scheduler {
       },
       { timezone: schedule.timezone },
     );
+    logger.info(
+      `Registered schedule ID ${schedule.id} | cron: "${schedule.cron}" | timezone: ${schedule.timezone} | next run: ${task.getNextRun()?.toISOString() ?? "unknown"}`,
+    );
     this.enabledScheduledTasks.set(schedule.id || "", task);
   }
 
   async initialize(schedulingEnabled = true) {
     this.schedulingEnabled = schedulingEnabled;
     this.validEmails = await getAllEmailsFromDb();
+    logger.info(
+      `Found ${this.validEmails.length} valid email(s) for scheduling${this.validEmails.length ? `: ${this.validEmails.join(", ")}` : ""}`,
+    );
     if (!this.schedulingEnabled) {
       logger.info("Scheduling is disabled. No tasks will be initialized.");
       return;
     }
     logger.info("Initializing scheduled tasks...");
     this.enabledScheduledTasks.clear();
-    for (const schedule of await getAllSchedulesFromDb()) {
+    const schedules = await getAllSchedulesFromDb();
+    logger.info(`Found ${schedules.length} schedule(s) in database.`);
+    for (const schedule of schedules) {
       await this.initializeOneSchedule(schedule);
     }
   }
