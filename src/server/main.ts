@@ -98,6 +98,12 @@ server.listen(port, () => {
 
 await AppDataSource.getInstance(false);
 
+if (process.env.DRY_RUN === "true") {
+  logger.warn(
+    "DRY RUN mode is enabled. No Tesla API write calls will be made.",
+  );
+}
+
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   Scheduler.getInstance().initialize();
 } else {

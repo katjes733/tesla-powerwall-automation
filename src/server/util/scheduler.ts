@@ -85,9 +85,15 @@ export class Scheduler {
           task.destroy();
           return;
         }
-        logger.info(
-          `Executing scheduled task for email ${schedule.email} with ID ${schedule.id}`,
-        );
+        if (process.env.DRY_RUN === "true") {
+          logger.info(
+            `[DRY RUN] Evaluating scheduled task for email ${schedule.email} with ID ${schedule.id} — no writes will be made`,
+          );
+        } else {
+          logger.info(
+            `Executing scheduled task for email ${schedule.email} with ID ${schedule.id}`,
+          );
+        }
         try {
           const products = await Fleet.getInstance(schedule.email)
             .getEnergyProducts()
@@ -113,7 +119,11 @@ export class Scheduler {
               actionsExecuted++;
             }
           }
-          if (actionsExecuted > 0) {
+          if (process.env.DRY_RUN === "true") {
+            logger.info(
+              `[DRY RUN] Evaluation complete for schedule ID ${schedule.id} — no changes sent to Tesla API`,
+            );
+          } else if (actionsExecuted > 0) {
             logger.info(
               `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully (${actionsExecuted} action(s) applied)`,
             );
@@ -126,7 +136,9 @@ export class Scheduler {
             id: schedule.id,
             lastRunTime: now.toDate(),
             nextRunTime: task.getNextRun() || undefined,
-            lastSuccessTime: now.toDate(),
+            ...(process.env.DRY_RUN !== "true" && {
+              lastSuccessTime: now.toDate(),
+            }),
           });
         } catch (error: any) {
           const lastError = error.message || "Unknown error";

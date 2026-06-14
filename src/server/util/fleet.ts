@@ -255,6 +255,23 @@ export class Fleet {
     const body = JSON.stringify({
       backup_reserve_percent: percent,
     });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: `Set backup reserve to ${percent}%`,
+          apiCall: {
+            method: "POST",
+            url: url.toString(),
+            body: { backup_reserve_percent: percent },
+          },
+        },
+        `[DRY RUN] Would set backup reserve to ${percent}% for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
     try {
       const response = await retry(
         async () => {
@@ -306,6 +323,28 @@ export class Fleet {
     if (liveStatus.percentage_charged >= percent) {
       logger.info(
         `Battery level is ${liveStatus.percentage_charged}%, which is already above the soft backup reserve of ${percent}%. Not setting soft backup reserve.`,
+      );
+      return;
+    }
+    if (process.env.DRY_RUN === "true") {
+      const url = new URL(
+        `/api/1/energy_sites/${product.energy_site_id}/backup`,
+        baseApiUrl,
+      );
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          currentChargePercent: liveStatus.percentage_charged,
+          intent: `Set soft backup reserve to ${percent}% (battery at ${liveStatus.percentage_charged}%, below threshold)`,
+          apiCall: {
+            method: "POST",
+            url: url.toString(),
+            body: { backup_reserve_percent: percent },
+          },
+        },
+        `[DRY RUN] Would set backup reserve to ${percent}% for site "${product.site_name}" — battery is at ${liveStatus.percentage_charged}% (below ${percent}% threshold)`,
       );
       return;
     }
