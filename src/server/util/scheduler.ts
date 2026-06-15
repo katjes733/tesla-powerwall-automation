@@ -49,10 +49,7 @@ function evaluatePowerwallConditions(
     case "charged":
       return liveStatus.percentage_charged >= (primary.value as number);
     case "discharged":
-      logger.warn(
-        `Condition "discharged" is not yet evaluated — treating as passed`,
-      );
-      return true;
+      return liveStatus.percentage_charged <= (primary.value as number);
     case "backup":
       logger.warn(
         `Condition "backup" is not yet evaluated — treating as passed`,
