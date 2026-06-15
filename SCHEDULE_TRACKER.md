@@ -46,7 +46,7 @@ Conditions are stored in `schedule.conditions` (JSONB array) and evaluated on ev
 |---|---|---|---|---|
 | Charged up to X% | `charged` | ✅ | ✅ | Rising-edge trigger: fires once when `percentage_charged ≥ value`, resets when it drops below |
 | Discharged down to X% | `discharged` | ✅ | ✅ | Rising-edge trigger: fires once when `percentage_charged ≤ value`, resets when it rises above |
-| Discharged down to backup reserve | `backup` | ✅ | ⚠️ Stub | Logs a warning; treated as always-passed — needs `getSiteInfo()` for backup reserve level |
+| Discharged down to backup reserve | `backup` | ✅ | ✅ | Rising-edge trigger: calls `getSiteInfo()` per tick to get the current `backup_reserve_percent` dynamically; fires once when `percentage_charged ≤ backup_reserve_percent` |
 | Only between hours (optional) | `betweenHours` | ✅ | ✅ | Evaluated as a secondary gate alongside the primary condition; supports overnight windows |
 
 ## Conditions: Flow Tab
@@ -70,8 +70,8 @@ Same root cause as Powerwall conditions — `schedule.conditions` is never read 
 | Category | Total items | Complete | Not implemented |
 |---|---|---|---|
 | Actions | 5 | 3 | 2 |
-| Powerwall conditions | 4 | 3 | 1 |
+| Powerwall conditions | 4 | 4 | 0 |
 | Flow conditions | 9 | 0 | 9 |
-| **Total** | **18** | **6** | **12** |
+| **Total** | **18** | **7** | **11** |
 
-Three actions and three Powerwall conditions (`charged`, `discharged`, `betweenHours`) execute end-to-end with a rising-edge trigger. Next steps: wire the `backup` condition (needs `getSiteInfo()` for the reserve level), implement the two remaining Fleet methods (`setEnergyExports`, `setGridCharging`), and extend condition evaluation to the Flow tab.
+All four Powerwall conditions and three actions execute end-to-end. Next steps: implement the two remaining Fleet methods (`setEnergyExports`, `setGridCharging`) and extend condition evaluation to the Flow tab.

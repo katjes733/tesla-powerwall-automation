@@ -15,11 +15,13 @@ import {
 import { sendEmail } from "./mailing";
 import { Fleet } from "~/server/util/fleet";
 
-function evaluatePowerwallConditions(
+async function evaluatePowerwallConditions(
   conditions: IScheduleCondition[],
   liveStatus: { percentage_charged: number },
   timezone: string,
-): boolean {
+  fleet: Fleet,
+  product: { energy_site_id: number; site_name: string },
+): Promise<boolean> {
   const primary = conditions.find((c) => c.condition !== "betweenHours");
   const timeWindow = conditions.find((c) => c.condition === "betweenHours");
 
@@ -50,11 +52,16 @@ function evaluatePowerwallConditions(
       return liveStatus.percentage_charged >= (primary.value as number);
     case "discharged":
       return liveStatus.percentage_charged <= (primary.value as number);
-    case "backup":
-      logger.warn(
-        `Condition "backup" is not yet evaluated — treating as passed`,
-      );
-      return true;
+    case "backup": {
+      const siteInfo = await fleet.getSiteInfo(product as any);
+      if (!siteInfo) {
+        logger.warn(
+          `Cannot evaluate "backup" condition for site "${product.site_name}" — site info unavailable`,
+        );
+        return false;
+      }
+      return liveStatus.percentage_charged <= siteInfo.backup_reserve_percent;
+    }
     default:
       logger.warn(
         `Unknown condition "${primary.condition}" — treating as passed`,
@@ -166,10 +173,12 @@ export class Scheduler {
                 continue;
               }
 
-              const conditionMet = evaluatePowerwallConditions(
+              const conditionMet = await evaluatePowerwallConditions(
                 schedule.conditions!,
                 liveStatus,
                 schedule.timezone,
+                Fleet.getInstance(schedule.email),
+                product,
               );
               const wasTriggered = triggeredPerProduct.get(product.id) ?? false;
 
