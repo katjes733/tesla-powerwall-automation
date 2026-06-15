@@ -6,6 +6,7 @@ import type {
   IScheduleAction,
   IScheduleCondition,
 } from "~/server/database/models/schedule";
+import type { LiveStatus } from "~/server/types/common";
 import { getAllEmails as getAllEmailsFromDb } from "~/server/util/routes/refreshToken";
 import {
   getAll as getAllSchedulesFromDb,
@@ -15,9 +16,9 @@ import {
 import { sendEmail } from "./mailing";
 import { Fleet } from "~/server/util/fleet";
 
-async function evaluatePowerwallConditions(
+async function evaluateConditions(
   conditions: IScheduleCondition[],
-  liveStatus: { percentage_charged: number },
+  liveStatus: LiveStatus,
   timezone: string,
   fleet: Fleet,
   product: { energy_site_id: number; site_name: string },
@@ -62,6 +63,22 @@ async function evaluatePowerwallConditions(
       }
       return liveStatus.percentage_charged <= siteInfo.backup_reserve_percent;
     }
+    case "homeUsageAbove":
+      return liveStatus.load_power / 1000 > (primary.value as number);
+    case "homeUsageBelow":
+      return liveStatus.load_power / 1000 <= (primary.value as number);
+    case "solarGenerationAbove":
+      return liveStatus.solar_power / 1000 > (primary.value as number);
+    case "solarGenerationBelow":
+      return liveStatus.solar_power / 1000 <= (primary.value as number);
+    case "gridImportAbove":
+      return liveStatus.grid_power / 1000 > (primary.value as number);
+    case "gridImportBelow":
+      return liveStatus.grid_power / 1000 <= (primary.value as number);
+    case "gridExportAbove":
+      return -liveStatus.grid_power / 1000 > (primary.value as number);
+    case "gridExportBelow":
+      return -liveStatus.grid_power / 1000 <= (primary.value as number);
     default:
       logger.warn(
         `Unknown condition "${primary.condition}" — treating as passed`,
@@ -173,7 +190,7 @@ export class Scheduler {
                 continue;
               }
 
-              const conditionMet = await evaluatePowerwallConditions(
+              const conditionMet = await evaluateConditions(
                 schedule.conditions!,
                 liveStatus,
                 schedule.timezone,

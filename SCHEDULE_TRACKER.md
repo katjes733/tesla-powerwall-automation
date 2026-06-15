@@ -51,19 +51,19 @@ Conditions are stored in `schedule.conditions` (JSONB array) and evaluated on ev
 
 ## Conditions: Flow Tab
 
-Same root cause as Powerwall conditions — `schedule.conditions` is never read by the scheduler. Evaluating these would require `Fleet.getLiveStatus()` at tick time to get real-time kW readings (`solar_power`, `load_power`, `grid_power`, etc.).
+Flow conditions share the same `evaluateConditions()` evaluator in `scheduler.ts` as Powerwall conditions. Tesla's API returns power in **watts**; the UI stores thresholds in **kW** — the evaluator divides by 1000 when comparing. Grid power sign convention (confirmed from `EnergyFlow.tsx`): positive = importing, negative = exporting.
 
 | Condition (UI Label) | UI Key | Stored in DB | Evaluated at Runtime | Notes |
 |---|---|---|---|---|
-| When home usage rises above X kW | `homeUsageAbove` | ✅ | ❌ | Guard: `load_power > value` |
-| When home usage drops to or below X kW | `homeUsageBelow` | ✅ | ❌ | Guard: `load_power ≤ value` |
-| When solar generation rises above X kW | `solarGenerationAbove` | ✅ | ❌ | Guard: `solar_power > value` |
-| When solar generation drops to or below X kW | `solarGenerationBelow` | ✅ | ❌ | Guard: `solar_power ≤ value` |
-| When grid import rises above X kW | `gridImportAbove` | ✅ | ❌ | Guard: `grid_power > value` (import) |
-| When grid import drops to or below X kW | `gridImportBelow` | ✅ | ❌ | Guard: `grid_power ≤ value` (import) |
-| When grid export rises above X kW | `gridExportAbove` | ✅ | ❌ | Guard: `grid_power > value` (export) |
-| When grid export drops to or below X kW | `gridExportBelow` | ✅ | ❌ | Guard: `grid_power ≤ value` (export) |
-| Only between hours (optional) | `betweenHours` | ✅ | ❌ | Time-window guard; stored alongside the flow condition |
+| When home usage rises above X kW | `homeUsageAbove` | ✅ | ✅ | Rising-edge: `load_power / 1000 > value` |
+| When home usage drops to or below X kW | `homeUsageBelow` | ✅ | ✅ | Rising-edge: `load_power / 1000 ≤ value` |
+| When solar generation rises above X kW | `solarGenerationAbove` | ✅ | ✅ | Rising-edge: `solar_power / 1000 > value` |
+| When solar generation drops to or below X kW | `solarGenerationBelow` | ✅ | ✅ | Rising-edge: `solar_power / 1000 ≤ value` |
+| When grid import rises above X kW | `gridImportAbove` | ✅ | ✅ | Rising-edge: `grid_power / 1000 > value` (positive = import) |
+| When grid import drops to or below X kW | `gridImportBelow` | ✅ | ✅ | Rising-edge: `grid_power / 1000 ≤ value` |
+| When grid export rises above X kW | `gridExportAbove` | ✅ | ✅ | Rising-edge: `-grid_power / 1000 > value` (negative = export) |
+| When grid export drops to or below X kW | `gridExportBelow` | ✅ | ✅ | Rising-edge: `-grid_power / 1000 ≤ value` |
+| Only between hours (optional) | `betweenHours` | ✅ | ✅ | Shared secondary gate — same evaluator and shape as Powerwall tab |
 
 ## Summary
 
@@ -71,7 +71,7 @@ Same root cause as Powerwall conditions — `schedule.conditions` is never read 
 |---|---|---|---|
 | Actions | 5 | 5 | 0 |
 | Powerwall conditions | 4 | 4 | 0 |
-| Flow conditions | 9 | 0 | 9 |
-| **Total** | **18** | **9** | **9** |
+| Flow conditions | 9 | 9 | 0 |
+| **Total** | **18** | **18** | **0** |
 
-All five actions and all four Powerwall conditions execute end-to-end. Next step: extend condition evaluation to the Flow tab (9 conditions).
+All actions and all conditions across both tabs execute end-to-end.
