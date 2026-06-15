@@ -33,8 +33,8 @@ This document tracks which actions and conditions are fully wired up end-to-end 
 | Set backup reserve | `setBackupReserve` | `setBackupReserve` | ✅ | ✅ Complete | |
 | Preserve battery charge | `setSoftBackupReserve` | `setSoftBackupReserve` | ✅ | ✅ Complete | Checks live battery % before setting reserve |
 | Set operational mode | `setOperationalMode` | `setOperationalMode` | ✅ | ✅ Complete | Maps `selfPowered` → `self_consumption`, `timeBasedControl` → `autonomous` |
-| Set energy exports | `setEnergyExports` | `setEnergyExports` | ❌ | ❌ Not implemented | — |
-| Set grid charging | `setGridCharging` | `setGridCharging` | ❌ | ❌ Not implemented | — |
+| Set energy exports | `setEnergyExports` | `setEnergyExports` | ✅ | ✅ Complete | Maps `solarOnly` → `pv_only`, `everything` → `battery_ok`; uses `POST grid_import_export` |
+| Set grid charging | `setGridCharging` | `setGridCharging` | ✅ | ✅ Complete | Maps `enabled` → `disallow=false`, `disabled` → `disallow=true`; uses `POST grid_import_export` |
 
 ## Conditions: Powerwall Tab
 
@@ -69,9 +69,9 @@ Same root cause as Powerwall conditions — `schedule.conditions` is never read 
 
 | Category | Total items | Complete | Not implemented |
 |---|---|---|---|
-| Actions | 5 | 3 | 2 |
+| Actions | 5 | 5 | 0 |
 | Powerwall conditions | 4 | 4 | 0 |
 | Flow conditions | 9 | 0 | 9 |
-| **Total** | **18** | **7** | **11** |
+| **Total** | **18** | **9** | **9** |
 
-All four Powerwall conditions and three actions execute end-to-end. Next steps: implement the two remaining Fleet methods (`setEnergyExports`, `setGridCharging`) and extend condition evaluation to the Flow tab.
+All five actions and all four Powerwall conditions execute end-to-end. Next step: extend condition evaluation to the Flow tab (9 conditions).

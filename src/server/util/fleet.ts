@@ -359,6 +359,148 @@ export class Fleet {
     await this.setBackupReserve(product, percent);
   }
 
+  async setEnergyExports(product: Product, rule: string): Promise<void> {
+    const ruleMap: Record<string, string> = {
+      solarOnly: "pv_only",
+      everything: "battery_ok",
+    };
+    const apiRule = ruleMap[rule];
+    if (!apiRule) {
+      throw new Error(`Unknown energy export rule: ${rule}`);
+    }
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/grid_import_export`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultPostOptions();
+    const body = JSON.stringify({ customer_preferred_export_rule: apiRule });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: `Set energy exports to ${rule} (${apiRule})`,
+          apiCall: {
+            method: "POST",
+            url,
+            body: { customer_preferred_export_rule: apiRule },
+          },
+        },
+        `[DRY RUN] Would set energy exports to "${rule}" (${apiRule}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
+    try {
+      const response = await retry(
+        async () => {
+          const res = await fetch(url, { ...options, body });
+          if (!res.ok) {
+            throw new Error(
+              `Error setting energy exports for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return res;
+        },
+        3,
+        2000,
+        2,
+      );
+      if (response.ok) {
+        logger.info(
+          `Energy exports set to "${rule}" (${apiRule}) successfully for Energy Site ${product.energy_site_id}.`,
+        );
+      } else {
+        const errorText = await response.text();
+        logger.error(
+          `Failed to set energy exports for Energy Site ${product.energy_site_id}: ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      const errorMsg = `Error setting energy exports after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+    }
+  }
+
+  async setGridCharging(product: Product, setting: string): Promise<void> {
+    const disallow = setting === "disabled";
+    if (setting !== "enabled" && setting !== "disabled") {
+      throw new Error(`Unknown grid charging setting: ${setting}`);
+    }
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/grid_import_export`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultPostOptions();
+    const body = JSON.stringify({
+      disallow_charge_from_grid_with_solar_installed: disallow,
+    });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: `Set grid charging to ${setting} (disallow=${disallow})`,
+          apiCall: {
+            method: "POST",
+            url,
+            body: { disallow_charge_from_grid_with_solar_installed: disallow },
+          },
+        },
+        `[DRY RUN] Would set grid charging to "${setting}" (disallow=${disallow}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
+    try {
+      const response = await retry(
+        async () => {
+          const res = await fetch(url, { ...options, body });
+          if (!res.ok) {
+            throw new Error(
+              `Error setting grid charging for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return res;
+        },
+        3,
+        2000,
+        2,
+      );
+      if (response.ok) {
+        logger.info(
+          `Grid charging set to "${setting}" (disallow=${disallow}) successfully for Energy Site ${product.energy_site_id}.`,
+        );
+      } else {
+        const errorText = await response.text();
+        logger.error(
+          `Failed to set grid charging for Energy Site ${product.energy_site_id}: ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      const errorMsg = `Error setting grid charging after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+    }
+  }
+
   async setOperationalMode(product: Product, mode: string): Promise<void> {
     const modeMap: Record<string, string> = {
       selfPowered: "self_consumption",
