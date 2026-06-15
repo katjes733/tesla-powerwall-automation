@@ -1,1 +1,1 @@
-preload = ["./src/bootstrap/logger-global.ts"]
+preload = ["./src/server/bootstrap/logger-global.ts"]

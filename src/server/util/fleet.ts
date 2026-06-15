@@ -1,0 +1,575 @@
+import { jwtDecode } from "jwt-decode";
+import type {
+  FleetOptions,
+  FleetOptionsInput,
+  JWT,
+  LiveStatus,
+  Product,
+  RefreshTokenData,
+  SiteInfo,
+  TokenData,
+} from "~/server/types/common";
+import { getNewTokenWithRefreshToken } from "~/server/util/auth";
+import { retry } from "~/server/util/retry";
+import { sendEmail } from "./mailing";
+import {
+  upsert as upsertToken,
+  getByEmail as getRefreshTokenByEmail,
+} from "~/server/util/routes/refreshToken";
+
+const baseApiUrl =
+  process.env.TESLA_API_BASE_URL ||
+  "https://fleet-api.prd.na.vn.cloud.tesla.com";
+
+export class Fleet {
+  private static instanceMap = new Map<string, Fleet>();
+
+  private email: string;
+  private token: string = "";
+  private tokenExpiresAt: number = 0;
+  private refreshToken: string = "";
+  private options: FleetOptions;
+
+  private energyProducts: Product[] = [];
+  private _actionMap: Record<string, Function>;
+
+  private constructor(email: string, options?: FleetOptionsInput) {
+    this.email = email;
+    this.options = {
+      mailOnError: options?.mailOnError ?? false,
+      throwOnError: options?.throwOnError ?? true,
+    };
+    this._actionMap = {};
+    Object.getOwnPropertyNames(Fleet.prototype)
+      .filter(
+        (key) =>
+          typeof (this as any)[key] === "function" &&
+          key !== "constructor" &&
+          key.startsWith("set"),
+      )
+      .forEach((key) => {
+        this._actionMap[key] = (this as any)[key].bind(this);
+      });
+  }
+
+  public static getInstance(email: string, options?: FleetOptionsInput): Fleet {
+    if (!Fleet.instanceMap.has(email)) {
+      Fleet.instanceMap.set(email, new Fleet(email, options));
+    }
+    return Fleet.instanceMap.get(email) as Fleet;
+  }
+
+  public getActionMap() {
+    return this._actionMap;
+  }
+
+  async getToken() {
+    if (!this.refreshToken) {
+      const result = await getRefreshTokenByEmail(this.email);
+      if (result) {
+        const { refreshToken } = result as RefreshTokenData;
+        this.refreshToken = refreshToken;
+      } else {
+        throw new Error("Refresh token not found for email: " + this.email);
+      }
+    }
+
+    if (this.token && this.tokenExpiresAt > Date.now()) {
+      return this.token;
+    }
+
+    const tokenResponse = await getNewTokenWithRefreshToken(this.refreshToken);
+    if (!tokenResponse.ok) {
+      const errorMsg = `Failed to obtain new token with refresh token: ${tokenResponse.status} ${tokenResponse.statusText}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      throw new Error(errorMsg);
+    }
+    const tokenData = (await tokenResponse.json()) as TokenData;
+    this.token = tokenData.access_token;
+    this.tokenExpiresAt = jwtDecode<JWT>(this.token).exp * 1000;
+    this.refreshToken = tokenData.refresh_token;
+    await upsertToken({
+      email: this.email,
+      refreshToken: this.refreshToken,
+      expiresAt: new Date(this.tokenExpiresAt),
+    });
+
+    logger.info("New token obtained and stored successfully.");
+
+    return this.token;
+  }
+
+  async getDefaultGetOptions() {
+    return {
+      // signal: AbortSignal.timeout(5000),
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${await this.getToken()}`,
+      },
+    };
+  }
+
+  async getDefaultPostOptions() {
+    return {
+      // signal: AbortSignal.timeout(5000),
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${await this.getToken()}`,
+      },
+    };
+  }
+
+  async getEnergyProducts(): Promise<Product[]> {
+    const url = new URL("/api/1/products", baseApiUrl).toString();
+    const options = await this.getDefaultGetOptions();
+    try {
+      const { response } = await retry<Record<string, any>>(
+        async () => {
+          const res = await fetch(url, options);
+          if (!res.ok) {
+            throw new Error(
+              `Error getting Energy Products: ${res.status} ${res.statusText}`,
+            );
+          }
+          return (await res.json()) as Record<string, any>;
+        },
+        3,
+        2000,
+        2,
+      );
+      const products = response as Product[];
+      this.energyProducts = products.filter(
+        (product) => product.energy_site_id,
+      );
+      return this.energyProducts;
+    } catch (error: any) {
+      const errorMsg = `Error getting Energy Products after retries: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+      return [];
+    }
+  }
+
+  async getSiteInfo(product: Product): Promise<SiteInfo | null> {
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/site_info`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultGetOptions();
+    try {
+      const { response } = await retry<Record<string, any>>(
+        async () => {
+          const res = await fetch(url, options);
+          if (!res.ok) {
+            throw new Error(
+              `Error getting Site Info for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return (await res.json()) as Record<string, any>;
+        },
+        3,
+        2000,
+        2,
+      );
+      const siteInfo = response as SiteInfo;
+      return siteInfo;
+    } catch (error: any) {
+      const errorMsg = `Error getting Site Info for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+      return null;
+    }
+  }
+
+  async getLiveStatus(product: Product): Promise<LiveStatus | null> {
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/live_status`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultGetOptions();
+    try {
+      const { response } = await retry<Record<string, any>>(
+        async () => {
+          const res = await fetch(url, options);
+          if (!res.ok) {
+            throw new Error(
+              `Error getting Live Status for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return (await res.json()) as Record<string, any>;
+        },
+        3,
+        2000,
+        2,
+      );
+      return response as LiveStatus;
+    } catch (error: any) {
+      const errorMsg = `Error getting Live Status for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+      return null;
+    }
+  }
+
+  async setBackupReserve(
+    product: Product,
+    value: string | number,
+  ): Promise<void> {
+    const percent = typeof value === "string" ? parseInt(value, 10) : value;
+    if (percent < 0 && percent > 100) {
+      throw new Error("Percent must be between 0 and 100.");
+    }
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/backup`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultPostOptions();
+    const body = JSON.stringify({
+      backup_reserve_percent: percent,
+    });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: `Set backup reserve to ${percent}%`,
+          apiCall: {
+            method: "POST",
+            url: url.toString(),
+            body: { backup_reserve_percent: percent },
+          },
+        },
+        `[DRY RUN] Would set backup reserve to ${percent}% for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
+    try {
+      const response = await retry(
+        async () => {
+          const res = await fetch(url, { ...options, body });
+          if (!res.ok) {
+            throw new Error(
+              `Error setting Backup Reserve for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return res;
+        },
+        3,
+        2000,
+        2,
+      );
+
+      if (response.ok) {
+        logger.info(
+          `Backup reserve set to ${percent}% successfully for Energy Site ${product.energy_site_id}.`,
+        );
+      } else {
+        const errorText = await response.text();
+        logger.error(
+          `Failed to set backup reserve for Energy Site ${product.energy_site_id}: ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      const errorMsg = `Error setting backup reserve after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+    }
+  }
+
+  async setSoftBackupReserve(
+    product: Product,
+    value: string | number,
+  ): Promise<void> {
+    const percent = typeof value === "string" ? parseInt(value, 10) : value;
+    const liveStatus = await this.getLiveStatus(product);
+    if (!liveStatus) {
+      throw new Error(
+        `Live status not available for Energy Site ${product.energy_site_id}.`,
+      );
+    }
+    if (liveStatus.percentage_charged >= percent) {
+      logger.info(
+        `Battery level is ${liveStatus.percentage_charged}%, which is already above the soft backup reserve of ${percent}%. Not setting soft backup reserve.`,
+      );
+      return;
+    }
+    if (process.env.DRY_RUN === "true") {
+      const url = new URL(
+        `/api/1/energy_sites/${product.energy_site_id}/backup`,
+        baseApiUrl,
+      );
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          currentChargePercent: liveStatus.percentage_charged,
+          intent: `Set soft backup reserve to ${percent}% (battery at ${liveStatus.percentage_charged}%, below threshold)`,
+          apiCall: {
+            method: "POST",
+            url: url.toString(),
+            body: { backup_reserve_percent: percent },
+          },
+        },
+        `[DRY RUN] Would set backup reserve to ${percent}% for site "${product.site_name}" — battery is at ${liveStatus.percentage_charged}% (below ${percent}% threshold)`,
+      );
+      return;
+    }
+    await this.setBackupReserve(product, percent);
+  }
+
+  async setEnergyExports(product: Product, rule: string): Promise<void> {
+    const ruleMap: Record<string, string> = {
+      solarOnly: "pv_only",
+      everything: "battery_ok",
+    };
+    const apiRule = ruleMap[rule];
+    if (!apiRule) {
+      throw new Error(`Unknown energy export rule: ${rule}`);
+    }
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/grid_import_export`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultPostOptions();
+    const body = JSON.stringify({ customer_preferred_export_rule: apiRule });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: `Set energy exports to ${rule} (${apiRule})`,
+          apiCall: {
+            method: "POST",
+            url,
+            body: { customer_preferred_export_rule: apiRule },
+          },
+        },
+        `[DRY RUN] Would set energy exports to "${rule}" (${apiRule}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
+    try {
+      const response = await retry(
+        async () => {
+          const res = await fetch(url, { ...options, body });
+          if (!res.ok) {
+            throw new Error(
+              `Error setting energy exports for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return res;
+        },
+        3,
+        2000,
+        2,
+      );
+      if (response.ok) {
+        logger.info(
+          `Energy exports set to "${rule}" (${apiRule}) successfully for Energy Site ${product.energy_site_id}.`,
+        );
+      } else {
+        const errorText = await response.text();
+        logger.error(
+          `Failed to set energy exports for Energy Site ${product.energy_site_id}: ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      const errorMsg = `Error setting energy exports after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+    }
+  }
+
+  async setGridCharging(product: Product, setting: string): Promise<void> {
+    const disallow = setting === "disabled";
+    if (setting !== "enabled" && setting !== "disabled") {
+      throw new Error(`Unknown grid charging setting: ${setting}`);
+    }
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/grid_import_export`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultPostOptions();
+    const body = JSON.stringify({
+      disallow_charge_from_grid_with_solar_installed: disallow,
+    });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: `Set grid charging to ${setting} (disallow=${disallow})`,
+          apiCall: {
+            method: "POST",
+            url,
+            body: { disallow_charge_from_grid_with_solar_installed: disallow },
+          },
+        },
+        `[DRY RUN] Would set grid charging to "${setting}" (disallow=${disallow}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
+    try {
+      const response = await retry(
+        async () => {
+          const res = await fetch(url, { ...options, body });
+          if (!res.ok) {
+            throw new Error(
+              `Error setting grid charging for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return res;
+        },
+        3,
+        2000,
+        2,
+      );
+      if (response.ok) {
+        logger.info(
+          `Grid charging set to "${setting}" (disallow=${disallow}) successfully for Energy Site ${product.energy_site_id}.`,
+        );
+      } else {
+        const errorText = await response.text();
+        logger.error(
+          `Failed to set grid charging for Energy Site ${product.energy_site_id}: ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      const errorMsg = `Error setting grid charging after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+    }
+  }
+
+  async setOperationalMode(product: Product, mode: string): Promise<void> {
+    const modeMap: Record<string, string> = {
+      selfPowered: "self_consumption",
+      timeBasedControl: "autonomous",
+    };
+    const apiMode = modeMap[mode];
+    if (!apiMode) {
+      throw new Error(`Unknown operational mode: ${mode}`);
+    }
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/operation`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultPostOptions();
+    const body = JSON.stringify({ default_real_mode: apiMode });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: `Set operational mode to ${mode} (${apiMode})`,
+          apiCall: {
+            method: "POST",
+            url,
+            body: { default_real_mode: apiMode },
+          },
+        },
+        `[DRY RUN] Would set operational mode to "${mode}" (${apiMode}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
+    try {
+      const response = await retry(
+        async () => {
+          const res = await fetch(url, { ...options, body });
+          if (!res.ok) {
+            throw new Error(
+              `Error setting operational mode for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return res;
+        },
+        3,
+        2000,
+        2,
+      );
+      if (response.ok) {
+        logger.info(
+          `Operational mode set to "${mode}" (${apiMode}) successfully for Energy Site ${product.energy_site_id}.`,
+        );
+      } else {
+        const errorText = await response.text();
+        logger.error(
+          `Failed to set operational mode for Energy Site ${product.energy_site_id}: ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      const errorMsg = `Error setting operational mode after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+    }
+  }
+}

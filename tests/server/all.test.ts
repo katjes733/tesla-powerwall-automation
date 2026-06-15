@@ -10,6 +10,7 @@ import * as pathModule from "path";
 const srcDir = pathModule.join(process.cwd(), "src");
 
 const fileMatchRegex = /^(?!.*\.test\.(js|ts)$).*?\.(js|ts)$/;
+const entryPoints = new Set(["main.ts", "main.js"]);
 
 async function importAll(dir: string): Promise<void> {
   const promises: Promise<unknown>[] = [];
@@ -17,7 +18,7 @@ async function importAll(dir: string): Promise<void> {
     const filePath = pathModule.join(dir, file);
     if (fs.statSync(filePath).isDirectory()) {
       promises.push(importAll(filePath));
-    } else if (fileMatchRegex.test(file)) {
+    } else if (fileMatchRegex.test(file) && !entryPoints.has(file)) {
       promises.push(
         import(filePath).catch((err) =>
           console.error(`Failed to import ${filePath}:`, err),

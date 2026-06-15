@@ -9,6 +9,8 @@ been addressed, or that the new feature works as planned.
 
 **CHECKLIST:**
 
-- [ ] Code is well-documented
-- [ ] Tests have been added or updated
-- [ ] Changes have been tested locally
+- [ ] Code is well-documented (or self-explanatory)
+- [ ] Tests added/updated as needed
+- [ ] Coverage checks pass (do not lower thresholds; keep requirements unchanged)
+- [ ] Lint/format checks pass (`bun verify`)
+- [ ] Changes tested locally (include above what you ran)
