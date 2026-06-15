@@ -4,6 +4,7 @@ import moment from "moment-timezone";
 import type {
   ISchedule,
   IScheduleAction,
+  IScheduleCondition,
 } from "~/server/database/models/schedule";
 import { getAllEmails as getAllEmailsFromDb } from "~/server/util/routes/refreshToken";
 import {
@@ -13,6 +14,57 @@ import {
 } from "~/server/util/routes/schedule";
 import { sendEmail } from "./mailing";
 import { Fleet } from "~/server/util/fleet";
+
+function evaluatePowerwallConditions(
+  conditions: IScheduleCondition[],
+  liveStatus: { percentage_charged: number },
+  timezone: string,
+): boolean {
+  const primary = conditions.find((c) => c.condition !== "betweenHours");
+  const timeWindow = conditions.find((c) => c.condition === "betweenHours");
+
+  if (!primary) {
+    logger.warn(
+      `Schedule has only a "betweenHours" condition with no primary condition — treating as always-pass`,
+    );
+    return true;
+  }
+
+  if (timeWindow) {
+    const { from, to } = timeWindow.value as { from: string; to: string };
+    const [fh, fm] = from.split(":").map(Number);
+    const [th, tm] = to.split(":").map(Number);
+    const now = moment().tz(timezone);
+    const nowMin = now.hours() * 60 + now.minutes();
+    const fromMin = fh * 60 + fm;
+    const toMin = th * 60 + tm;
+    const inWindow =
+      toMin > fromMin
+        ? nowMin >= fromMin && nowMin < toMin
+        : nowMin >= fromMin || nowMin < toMin;
+    if (!inWindow) return false;
+  }
+
+  switch (primary.condition) {
+    case "charged":
+      return liveStatus.percentage_charged >= (primary.value as number);
+    case "discharged":
+      logger.warn(
+        `Condition "discharged" is not yet evaluated — treating as passed`,
+      );
+      return true;
+    case "backup":
+      logger.warn(
+        `Condition "backup" is not yet evaluated — treating as passed`,
+      );
+      return true;
+    default:
+      logger.warn(
+        `Unknown condition "${primary.condition}" — treating as passed`,
+      );
+      return true;
+  }
+}
 
 export class Scheduler {
   private static instance: Scheduler;
@@ -75,6 +127,7 @@ export class Scheduler {
     if (!this.isValidSchedule(schedule)) {
       return;
     }
+    const triggeredPerProduct = new Map<string, boolean>();
     const task = scheduleTask(
       schedule.cron,
       async () => {
@@ -100,8 +153,54 @@ export class Scheduler {
             .getEnergyProducts()
             .then((all) => all.filter((p) => siteIds.includes(p.id)));
 
+          const hasConditions =
+            schedule.conditions && schedule.conditions.length > 0;
           let actionsExecuted = 0;
+
           for (const product of products) {
+            if (hasConditions) {
+              const liveStatus = await Fleet.getInstance(
+                schedule.email,
+              ).getLiveStatus(product);
+              if (!liveStatus) {
+                logger.warn(
+                  `Cannot evaluate conditions for schedule ${schedule.id} — live status unavailable for site "${product.site_name}"`,
+                );
+                continue;
+              }
+
+              const conditionMet = evaluatePowerwallConditions(
+                schedule.conditions!,
+                liveStatus,
+                schedule.timezone,
+              );
+              const wasTriggered = triggeredPerProduct.get(product.id) ?? false;
+
+              if (!conditionMet) {
+                if (wasTriggered) {
+                  logger.info(
+                    `Condition cleared for schedule ${schedule.id} on site "${product.site_name}" — resetting trigger`,
+                  );
+                  triggeredPerProduct.set(product.id, false);
+                }
+                continue;
+              }
+
+              if (wasTriggered) {
+                if (process.env.DRY_RUN === "true") {
+                  logger.info(
+                    `[DRY RUN] Condition still met for schedule ${schedule.id} on site "${product.site_name}" — skipping (already triggered)`,
+                  );
+                }
+                continue;
+              }
+
+              triggeredPerProduct.set(product.id, true);
+              logger.info(
+                `Condition met for schedule ${schedule.id} on site "${product.site_name}" — firing actions`,
+              );
+            }
+
             for (const config of schedule.actions || []) {
               if (!this.isValidConfigurationItem(config, schedule)) {
                 continue;
@@ -109,7 +208,7 @@ export class Scheduler {
               /* eslint-disable no-unexpected-multiline */
               await Fleet.getInstance(schedule.email)
                 .getActionMap()
-                [config.action](product, parseInt(config.value));
+                [config.action](product, config.value);
               /* eslint-enable no-unexpected-multiline */
               actionsExecuted++;
             }

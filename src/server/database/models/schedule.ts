@@ -3,7 +3,7 @@ import type { IBasicEntity } from "~/server/types/common";
 
 export interface IScheduleCondition {
   condition: string;
-  value: string;
+  value: number | { from: string; to: string };
 }
 export interface IScheduleAction {
   action: string;

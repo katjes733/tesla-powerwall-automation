@@ -243,7 +243,11 @@ export class Fleet {
     }
   }
 
-  async setBackupReserve(product: Product, percent: number): Promise<void> {
+  async setBackupReserve(
+    product: Product,
+    value: string | number,
+  ): Promise<void> {
+    const percent = typeof value === "string" ? parseInt(value, 10) : value;
     if (percent < 0 && percent > 100) {
       throw new Error("Percent must be between 0 and 100.");
     }
@@ -313,7 +317,11 @@ export class Fleet {
     }
   }
 
-  async setSoftBackupReserve(product: Product, percent: number): Promise<void> {
+  async setSoftBackupReserve(
+    product: Product,
+    value: string | number,
+  ): Promise<void> {
+    const percent = typeof value === "string" ? parseInt(value, 10) : value;
     const liveStatus = await this.getLiveStatus(product);
     if (!liveStatus) {
       throw new Error(
@@ -349,5 +357,77 @@ export class Fleet {
       return;
     }
     await this.setBackupReserve(product, percent);
+  }
+
+  async setOperationalMode(product: Product, mode: string): Promise<void> {
+    const modeMap: Record<string, string> = {
+      selfPowered: "self_consumption",
+      timeBasedControl: "autonomous",
+    };
+    const apiMode = modeMap[mode];
+    if (!apiMode) {
+      throw new Error(`Unknown operational mode: ${mode}`);
+    }
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/operation`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultPostOptions();
+    const body = JSON.stringify({ default_real_mode: apiMode });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: `Set operational mode to ${mode} (${apiMode})`,
+          apiCall: {
+            method: "POST",
+            url,
+            body: { default_real_mode: apiMode },
+          },
+        },
+        `[DRY RUN] Would set operational mode to "${mode}" (${apiMode}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
+    try {
+      const response = await retry(
+        async () => {
+          const res = await fetch(url, { ...options, body });
+          if (!res.ok) {
+            throw new Error(
+              `Error setting operational mode for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return res;
+        },
+        3,
+        2000,
+        2,
+      );
+      if (response.ok) {
+        logger.info(
+          `Operational mode set to "${mode}" (${apiMode}) successfully for Energy Site ${product.energy_site_id}.`,
+        );
+      } else {
+        const errorText = await response.text();
+        logger.error(
+          `Failed to set operational mode for Energy Site ${product.energy_site_id}: ${errorText}`,
+        );
+      }
+    } catch (error: any) {
+      const errorMsg = `Error setting operational mode after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
+      logger.error(errorMsg);
+      await sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        this.email,
+        this.options.mailOnError,
+      );
+      if (this.options.throwOnError) {
+        throw new Error(errorMsg);
+      }
+    }
   }
 }

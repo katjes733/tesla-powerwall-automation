@@ -2,8 +2,6 @@
 
 - [Schedule Implementation Tracker](#schedule-implementation-tracker)
   - [Overview](#overview)
-  - [Known Bugs](#known-bugs)
-    - [Action key mismatch](#action-key-mismatch)
   - [Actions](#actions)
   - [Conditions: Powerwall Tab](#conditions-powerwall-tab)
   - [Conditions: Flow Tab](#conditions-flow-tab)
@@ -24,52 +22,32 @@ This document tracks which actions and conditions are fully wired up end-to-end 
 - Fleet API wrapper: `src/server/util/fleet.ts`
 - DB model: `src/server/database/models/schedule.ts`
 
-## Known Bugs
-
-### Action key mismatch
-
-**All actions are silently skipped at runtime**, even for Fleet methods that exist.
-
-The scheduler resolves actions by looking up `config.action` directly in `Fleet._actionMap` (`scheduler.ts` line 65). The `_actionMap` is built by reflecting over Fleet prototype methods whose names start with `set` — so its keys are the method names themselves (e.g. `setBackupReserve`).
-
-However, the UI stores action keys without the `set` prefix (e.g. `backupReserve`). These never match, so the scheduler logs a warning and skips every action on every tick.
-
-| Affected file | Location | Role |
-|---|---|---|
-| `src/server/util/scheduler.ts` | lines 65 and 110 | action lookup and invocation |
-| `src/server/util/fleet.ts` | lines 43–52 | `_actionMap` construction |
-
-**Fix options:**
-- Rename the UI action keys to match method names (e.g. `backupReserve` → `setBackupReserve`)
-- Or add a `set` + capitalise transform in the scheduler before the lookup
-
 ## Actions
 
 **Status legend:**
 - `✅ Complete` — stored AND executed correctly end-to-end
-- `⚠️ Partial` — Fleet method exists but is unreachable due to the key mismatch bug above
 - `❌ Not implemented` — no Fleet method exists; execution logic is entirely missing
 
-| Action (UI Label) | UI Key (stored in DB) | Required Fleet Method | Fleet Method Exists | Execution Status | Notes |
+| Action (UI Label) | UI Key (stored in DB) | Fleet Method | Implemented | Execution Status | Notes |
 |---|---|---|---|---|---|
-| Set backup reserve | `backupReserve` | `setBackupReserve` | ✅ | ⚠️ Partial | Blocked by key mismatch bug |
-| Preserve battery charge | `preserveCharge` | `setSoftBackupReserve` | ✅ | ⚠️ Partial | Blocked by key mismatch bug; method checks live battery % before setting reserve |
-| Set operational mode | `operationalMode` | `setOperationalMode` | ❌ | ❌ Not implemented | — |
-| Set energy exports | `energyExports` | `setEnergyExports` | ❌ | ❌ Not implemented | — |
-| Set grid charging | `gridCharging` | `setGridCharging` | ❌ | ❌ Not implemented | — |
+| Set backup reserve | `setBackupReserve` | `setBackupReserve` | ✅ | ✅ Complete | |
+| Preserve battery charge | `setSoftBackupReserve` | `setSoftBackupReserve` | ✅ | ✅ Complete | Checks live battery % before setting reserve |
+| Set operational mode | `setOperationalMode` | `setOperationalMode` | ✅ | ✅ Complete | Maps `selfPowered` → `self_consumption`, `timeBasedControl` → `autonomous` |
+| Set energy exports | `setEnergyExports` | `setEnergyExports` | ❌ | ❌ Not implemented | — |
+| Set grid charging | `setGridCharging` | `setGridCharging` | ❌ | ❌ Not implemented | — |
 
 ## Conditions: Powerwall Tab
 
-Conditions are stored in `schedule.conditions` (JSONB array). The scheduler never reads this field — it proceeds straight to action execution on every cron tick regardless of battery state.
+Conditions are stored in `schedule.conditions` (JSONB array) and evaluated on every cron tick via `evaluatePowerwallConditions()` in `scheduler.ts`. A **rising-edge trigger** (`triggeredPerProduct` map, closure-scoped per schedule task) ensures each action fires once when the condition transitions from unmet → met, is suppressed while the condition remains met, and resets automatically when the condition clears — ready to fire again on the next rising edge.
 
-Evaluating these conditions would require calling `Fleet.getLiveStatus()` at tick time to get the current `percentage_charged` value.
+`betweenHours` is always a secondary gate; it is never the sole condition. The evaluator checks `betweenHours` first (no API call needed), then calls `Fleet.getLiveStatus()` to evaluate the primary battery condition.
 
 | Condition (UI Label) | UI Key | Stored in DB | Evaluated at Runtime | Notes |
 |---|---|---|---|---|
-| Charged up to X% | `charged` | ✅ | ❌ | Guard: run only when battery ≥ X% |
-| Discharged down to X% | `discharged` | ✅ | ❌ | Guard: run only when battery ≤ X% |
-| Discharged down to backup reserve | `backup` | ✅ | ❌ | Guard: run only when battery ≤ backup reserve level |
-| Only between hours (optional) | `betweenHours` | ✅ | ❌ | Time-window guard; stored alongside the charge condition |
+| Charged up to X% | `charged` | ✅ | ✅ | Rising-edge trigger: fires once when `percentage_charged ≥ value`, resets when it drops below |
+| Discharged down to X% | `discharged` | ✅ | ⚠️ Stub | Logs a warning; treated as always-passed — not yet wired to `percentage_charged ≤ value` |
+| Discharged down to backup reserve | `backup` | ✅ | ⚠️ Stub | Logs a warning; treated as always-passed — needs `getSiteInfo()` for backup reserve level |
+| Only between hours (optional) | `betweenHours` | ✅ | ✅ | Evaluated as a secondary gate alongside the primary condition; supports overnight windows |
 
 ## Conditions: Flow Tab
 
@@ -89,11 +67,11 @@ Same root cause as Powerwall conditions — `schedule.conditions` is never read 
 
 ## Summary
 
-| Category | Total items | Complete | Partial (bug) | Not implemented |
-|---|---|---|---|---|
-| Actions | 5 | 0 | 2 | 3 |
-| Powerwall conditions | 4 | 0 | 0 | 4 |
-| Flow conditions | 9 | 0 | 0 | 9 |
-| **Total** | **18** | **0** | **2** | **16** |
+| Category | Total items | Complete | Not implemented |
+|---|---|---|---|
+| Actions | 5 | 3 | 2 |
+| Powerwall conditions | 4 | 2 | 2 |
+| Flow conditions | 9 | 0 | 9 |
+| **Total** | **18** | **5** | **13** |
 
-No schedule action or condition executes end-to-end today. The highest-leverage first step is fixing the action key mismatch bug, which would immediately unblock the two existing Fleet methods (`setBackupReserve`, `setSoftBackupReserve`) without any further code changes.
+Three actions and two Powerwall conditions (`charged`, `betweenHours`) execute end-to-end with a rising-edge trigger. Next steps: wire `discharged` and `backup` conditions, implement the two remaining Fleet methods (`setEnergyExports`, `setGridCharging`), and extend condition evaluation to the Flow tab.
