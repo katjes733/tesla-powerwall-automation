@@ -1,6 +1,12 @@
 # tesla-powerwall-automation
 
 - [tesla-powerwall-automation](#tesla-powerwall-automation)
+  - [Overview](#overview)
+  - [Quick Setup](#quick-setup)
+    - [Prerequisites](#prerequisites)
+    - [First-time API setup](#first-time-api-setup)
+    - [Running the app](#running-the-app)
+    - [Environment variables](#environment-variables)
   - [Tesla Fleet API onboarding](#tesla-fleet-api-onboarding)
     - [Preparation](#preparation)
       - [Project Site](#project-site)
@@ -10,6 +16,81 @@
       - [Retrieve client credentials](#retrieve-client-credentials)
       - [Register the region](#register-the-region)
   - [Tesla Fleet API authentication](#tesla-fleet-api-authentication)
+
+## Overview
+
+Tesla Powerwall Automation is a full-stack web application for automating your Tesla Powerwall through a flexible schedule system. Rather than relying on the fixed routines in the Tesla app, it lets you define exactly when and under what conditions your Powerwall should change behavior — and then executes those changes automatically via the Tesla Fleet API.
+
+You create schedules that combine a cron expression, a set of conditions, and one or more actions. Conditions cover battery state (charged up to X%, discharged down to X%, discharged to backup reserve), real-time energy flow (home usage, solar generation, grid import and export in kW), and an optional time window. When a condition transitions from unmet to met, the corresponding action fires once — setting the backup reserve percentage, switching the operational mode, toggling grid charging, or controlling energy exports. The action is then suppressed until the condition clears and re-triggers, so the API is never hammered unnecessarily.
+
+Alongside scheduling, the application provides a real-time dashboard showing battery state of charge, solar generation, home consumption, and grid import/export for every registered site. All scheduling configuration is done through a purpose-built UI — no config files or manual API calls required during day-to-day use.
+
+Built with Bun, Express, TypeORM + PostgreSQL on the backend; React 19, Vite, and Material-UI on the frontend. Docker Compose provides the database. Schedules run via `node-cron`; Pino handles structured logging throughout.
+
+## Quick Setup
+
+### Prerequisites
+
+- [Bun](https://bun.sh/) — runtime and package manager
+- Docker and Docker Compose — for the PostgreSQL database
+- A Tesla developer account with a registered Fleet API application (see [Tesla Fleet API onboarding](#tesla-fleet-api-onboarding) below for the one-time registration steps)
+
+### First-time API setup
+
+Before running the application for the first time, complete the [Tesla Fleet API onboarding](#tesla-fleet-api-onboarding) section to register your application with Tesla and obtain your `TESLA_CLIENT_ID`, `TESLA_CLIENT_SECRET`, and a user refresh token. This is a one-time process per developer account.
+
+### Running the app
+
+1. Clone the repository and install dependencies:
+
+   ```sh
+   bun install
+   ```
+
+2. Copy the sample environment file and fill in your credentials:
+
+   ```sh
+   cp env/sample.env .env
+   ```
+
+3. Start the PostgreSQL database:
+
+   ```sh
+   bun run docker:up
+   ```
+
+4. Obtain a Tesla refresh token (interactive OAuth flow — one time per user account):
+
+   ```sh
+   bun run new-refresh-token
+   ```
+
+5. Start the development server:
+
+   ```sh
+   bun run dev
+   ```
+
+6. Open the UI at `http://localhost:5173`.
+
+> **Tip:** Set `DRY_RUN=true` in `.env` during initial testing. The scheduler will log every intended API call without actually sending it to Tesla, so you can verify your schedules and conditions behave as expected before going live.
+
+### Environment variables
+
+The full list of variables is in `env/sample.env`. The essentials:
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `TESLA_CLIENT_ID` | ✅ | OAuth 2.0 Client ID from developer.tesla.com |
+| `TESLA_CLIENT_SECRET` | ✅ | OAuth 2.0 Client Secret |
+| `TESLA_API_BASE_URL` | ✅ | Regional Fleet API endpoint (e.g. `https://fleet-api.prd.na.vn.cloud.tesla.com` for North America) |
+| `DB_HOST` | ✅ | PostgreSQL host |
+| `DB_USERNAME` | ✅ | PostgreSQL username |
+| `DB_PASSWORD` | ✅ | PostgreSQL password |
+| `DB_NAME` | ✅ | PostgreSQL database name |
+| `SCHEDULED_JOBS_DISABLED` | — | Set to `true` to disable all cron jobs (default: `false`) |
+| `DRY_RUN` | — | Set to `true` to log intended API calls without executing them |
+| `SESSION_SECRET` | — | HTTP session secret (defaults to a built-in value if unset) |
 
 ## Tesla Fleet API onboarding
 
