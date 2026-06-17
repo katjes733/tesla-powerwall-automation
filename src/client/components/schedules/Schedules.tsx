@@ -31,6 +31,8 @@ import ListItemText from "@mui/material/ListItemText";
 import Avatar from "@mui/material/Avatar";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import { IconButton } from "@mui/material";
+import Switch from "@mui/material/Switch";
+import Tooltip from "@mui/material/Tooltip";
 import Radio from "@mui/material/Radio";
 import RadioGroup from "@mui/material/RadioGroup";
 import FormControl from "@mui/material/FormControl";
@@ -46,6 +48,7 @@ import { useNotification } from "../notification/NotificationContext";
 import { v4 as uuidv4 } from "uuid";
 import Badge from "@mui/material/Badge";
 import CheckIcon from "@mui/icons-material/Check";
+import Alert from "@mui/material/Alert";
 
 type SettingsProps = {
   schedule: any;
@@ -96,6 +99,128 @@ function parseTimeAndDaysToCron(time: string, days: string[]) {
 function isFixedTime(cron: string) {
   const [minute, hour] = cron.split(" ");
   return /^\d+$/.test(minute) && /^\d+$/.test(hour);
+}
+
+function humanizeDays(days: string[]): string {
+  if (days.length === 7) return "every day";
+  const weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  const weekend = ["Sat", "Sun"];
+  if (
+    days.length === 5 &&
+    weekdays.every((d) => days.includes(d)) &&
+    !days.includes("Sat") &&
+    !days.includes("Sun")
+  )
+    return "weekdays";
+  if (days.length === 2 && weekend.every((d) => days.includes(d)))
+    return "weekends";
+  return days.join(", ");
+}
+
+function humanizeCondition(cond: any): string {
+  const { condition, value } = cond;
+  const map: Record<string, string> = {
+    charged: `battery ≥ ${value}%`,
+    discharged: `battery ≤ ${value}%`,
+    backup: "battery at backup reserve",
+    homeUsageAbove: `home usage > ${value} kW`,
+    homeUsageBelow: `home usage ≤ ${value} kW`,
+    solarGenerationAbove: `solar > ${value} kW`,
+    solarGenerationBelow: `solar ≤ ${value} kW`,
+    gridImportAbove: `grid import > ${value} kW`,
+    gridImportBelow: `grid import ≤ ${value} kW`,
+    gridExportAbove: `grid export > ${value} kW`,
+    gridExportBelow: `grid export ≤ ${value} kW`,
+    betweenHours: `between ${value?.from}–${value?.to}`,
+    inSeasonalGridChargeWindow: "within peak charge windows",
+  };
+  return map[condition] ?? condition;
+}
+
+function humanizeAction(action: any): string {
+  const { action: key, value } = action;
+  switch (key) {
+    case "setBackupReserve":
+      return `set backup reserve to ${value}%`;
+    case "setSoftBackupReserve":
+      return `set soft backup reserve to ${value}%`;
+    case "setOperationalMode":
+      return value === "selfPowered"
+        ? "switch to self-powered"
+        : "switch to time-based control";
+    case "setEnergyExports":
+      return value === "solarOnly"
+        ? "export solar only"
+        : "export solar + battery";
+    case "setGridCharging":
+      return `${value} grid charging`;
+    case "setSmartGridCharging": {
+      try {
+        const parsed = JSON.parse(value);
+        return `smart charge to ${parsed.targetSoc}% SOC`;
+      } catch {
+        return "smart grid charging";
+      }
+    }
+    default:
+      return key;
+  }
+}
+
+function summarizeSchedule(schedule: any): string {
+  const actions: any[] = schedule.actions ?? [];
+  const conditions: any[] = schedule.conditions ?? [];
+  const actionStr = actions.map(humanizeAction).join(", ");
+
+  const isSmartCharging = actions.some(
+    (a) => a.action === "setSmartGridCharging",
+  );
+  if (isSmartCharging) {
+    let targetSoc: number | null = null;
+    try {
+      const sa = actions.find((a) => a.action === "setSmartGridCharging");
+      if (sa) targetSoc = JSON.parse(sa.value).targetSoc;
+    } catch {
+      /* ignore */
+    }
+    const soc = targetSoc != null ? `${targetSoc}%` : "?%";
+    if (conditions.some((c) => c.condition === "inSeasonalGridChargeWindow"))
+      return `Smart: charge to ${soc} SOC before peak (TOU)`;
+    const between = conditions.find((c) => c.condition === "betweenHours");
+    if (between) {
+      const { time, days } = parseCronToTimeAndDays(
+        schedule.cron ?? "* * * * *",
+      );
+      const dayStr = days.length ? ` on ${humanizeDays(days)}` : "";
+      return `Smart: charge to ${soc} SOC by ${between.value?.to ?? time}${dayStr}`;
+    }
+    return `Smart: charge to ${soc} SOC`;
+  }
+
+  if (!schedule.cron || schedule.cron === "* * * * *") {
+    const condStr = conditions.map(humanizeCondition).join(" and ");
+    return condStr ? `When ${condStr} → ${actionStr}` : actionStr;
+  }
+
+  const { time, days } = parseCronToTimeAndDays(schedule.cron);
+  const dayStr = days.length ? humanizeDays(days) : "every day";
+  const condStr = conditions.map(humanizeCondition).join(" and ");
+  const whenStr = `Every ${dayStr} at ${time}`;
+  return condStr
+    ? `${whenStr}, if ${condStr} → ${actionStr}`
+    : `${whenStr} → ${actionStr}`;
+}
+
+function timeAgo(date: Date | string): string {
+  const diffMs = Date.now() - new Date(date).getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  if (diffSecs < 60) return "just now";
+  const diffMins = Math.floor(diffSecs / 60);
+  if (diffMins < 60) return `${diffMins}m ago`;
+  const diffHours = Math.floor(diffMins / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
 }
 
 type TabOptions = {
@@ -772,14 +897,35 @@ function ActionConfigDialog({
         },
       ],
     },
-    // Add configs for other actions as needed
+    setSmartGridCharging: {
+      label: "Smart Grid Charging",
+      description:
+        "Charges the battery to the target level before each on-peak period. Grid charging supplements solar only when solar alone cannot reach the target in time. Automatically disabled when the peak period begins.",
+      min: 0,
+      max: 100,
+      step: 1,
+      unit: "%",
+    },
   };
   const [tempValue, setTempValue] = useState<string | number | null>(null);
   useEffect(() => {
     if (selectedAction !== null) {
       const config = actionConfig[selectedAction];
-      let initial: string | number | null = actionValues[selectedAction];
-      if (initial == null) {
+      let raw: string | number | null = actionValues[selectedAction];
+      let initial: string | number | null;
+      if (selectedAction === "setSmartGridCharging") {
+        // Value is a JSON string; extract targetSoc for the slider.
+        if (raw != null) {
+          try {
+            initial = (JSON.parse(raw as string) as { targetSoc: number })
+              .targetSoc;
+          } catch {
+            initial = config.max ?? 90;
+          }
+        } else {
+          initial = config.max ?? 90;
+        }
+      } else if (raw == null) {
         if (config.options && config.options.length > 0) {
           initial = null;
         } else if (config.max !== undefined) {
@@ -787,6 +933,8 @@ function ActionConfigDialog({
         } else {
           initial = 0;
         }
+      } else {
+        initial = raw;
       }
       setTempValue(initial);
     } else {
@@ -924,8 +1072,12 @@ function ActionConfigDialog({
           variant="contained"
           color="primary"
           onClick={() => {
+            const serialized =
+              selectedAction === "setSmartGridCharging"
+                ? JSON.stringify({ targetSoc: Number(tempValue) })
+                : tempValue;
             setActionValues((prev) => {
-              const updated = { ...prev, [selectedAction]: tempValue };
+              const updated = { ...prev, [selectedAction]: serialized };
               setSchedule((prevSchedule: any) => ({
                 ...prevSchedule,
                 actions: Object.entries(updated)
@@ -1062,6 +1214,390 @@ function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
   );
 }
 
+type SeasonalWindow = { seasonName: string; from: string; to: string };
+
+type TariffInfo = { hasTou: boolean; seasons: string[] } | null;
+
+type SmartSettingsProps = {
+  schedule: any;
+  setSchedule: (row: any) => void;
+  setTabValid: (valid: boolean) => void;
+  actionValues: { [key: string]: string | number | null };
+  setSelectedAction: (action: string | null) => void;
+  tariffInfo: TariffInfo;
+  smartMode: "tou" | "customDays";
+  setSmartMode: (mode: "tou" | "customDays") => void;
+  smartDays: string[];
+  setSmartDays: (days: string[]) => void;
+  smartWindow: { from: string; to: string };
+  setSmartWindow: (w: { from: string; to: string }) => void;
+  smartSeasonalWindows: SeasonalWindow[];
+  setSmartSeasonalWindows: (windows: SeasonalWindow[]) => void;
+};
+
+function SmartSettings({
+  schedule,
+  setSchedule,
+  setTabValid,
+  actionValues,
+  setSelectedAction,
+  tariffInfo,
+  smartMode,
+  setSmartMode,
+  smartDays,
+  setSmartDays,
+  smartWindow,
+  setSmartWindow,
+  smartSeasonalWindows,
+  setSmartSeasonalWindows,
+}: SmartSettingsProps) {
+  const theme = useTheme();
+
+  const updateScheduleForCurrentMode = useCallback(
+    (
+      mode: "tou" | "customDays",
+      days: string[],
+      window: { from: string; to: string },
+      seasonalWindows: SeasonalWindow[],
+    ) => {
+      if (mode === "tou") {
+        setSchedule((prev: any) => ({
+          ...prev,
+          cron: "* * * * *",
+          conditions:
+            seasonalWindows.length > 0
+              ? [
+                  {
+                    condition: "inSeasonalGridChargeWindow",
+                    value: seasonalWindows,
+                  },
+                ]
+              : [],
+        }));
+      } else {
+        const dowMap = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        const dow =
+          days.length === 0
+            ? "*"
+            : days.map((d) => String(dowMap.indexOf(d))).join(",");
+        const cron = `* * * * ${dow}`;
+        const conditions =
+          window.from && window.to
+            ? [
+                {
+                  condition: "betweenHours",
+                  value: { from: window.from, to: window.to },
+                },
+              ]
+            : [];
+        setSchedule((prev: any) => ({ ...prev, cron, conditions }));
+      }
+    },
+    [setSchedule],
+  );
+
+  useEffect(() => {
+    const hasSmartAction = actionValues.setSmartGridCharging != null;
+    const modeValid =
+      smartMode === "tou"
+        ? tariffInfo?.hasTou === true
+        : smartDays.length > 0 && smartWindow.to !== "";
+    setTabValid(hasSmartAction && modeValid);
+  }, [
+    actionValues.setSmartGridCharging,
+    smartMode,
+    tariffInfo,
+    smartDays,
+    smartWindow,
+    setTabValid,
+  ]);
+
+  const handleModeChange = (newMode: "tou" | "customDays") => {
+    setSmartMode(newMode);
+    updateScheduleForCurrentMode(
+      newMode,
+      smartDays,
+      smartWindow,
+      smartSeasonalWindows,
+    );
+  };
+
+  const handleDaysChange = (_: any, newDays: string[]) => {
+    setSmartDays(newDays);
+    updateScheduleForCurrentMode(
+      "customDays",
+      newDays,
+      smartWindow,
+      smartSeasonalWindows,
+    );
+  };
+
+  const handleWindowChange = (field: "from" | "to", val: string) => {
+    const newWindow = { ...smartWindow, [field]: val };
+    setSmartWindow(newWindow);
+    updateScheduleForCurrentMode(
+      "customDays",
+      smartDays,
+      newWindow,
+      smartSeasonalWindows,
+    );
+  };
+
+  const handleSeasonalWindowChange = (
+    seasonName: string,
+    field: "from" | "to",
+    val: string,
+  ) => {
+    const newWindows = smartSeasonalWindows.map((w) =>
+      w.seasonName === seasonName ? { ...w, [field]: val } : w,
+    );
+    setSmartSeasonalWindows(newWindows);
+    updateScheduleForCurrentMode("tou", smartDays, smartWindow, newWindows);
+  };
+
+  const smartActionValue = actionValues.setSmartGridCharging;
+  let targetSocLabel: string | null = null;
+  if (smartActionValue != null) {
+    try {
+      const parsed = JSON.parse(smartActionValue as string) as {
+        targetSoc: number;
+      };
+      targetSocLabel = `Target: ${parsed.targetSoc}%`;
+    } catch {
+      targetSocLabel = null;
+    }
+  }
+
+  return (
+    <Box>
+      <Typography variant="subtitle1" mt={1}>
+        Mode
+      </Typography>
+      <RadioGroup
+        row
+        value={smartMode}
+        onChange={(e) =>
+          handleModeChange(e.target.value as "tou" | "customDays")
+        }
+        sx={{ mt: 0.5, mb: 1 }}
+      >
+        <FormControlLabel
+          value="tou"
+          control={<Radio size="small" />}
+          label="Follow TOU schedule"
+        />
+        <FormControlLabel
+          value="customDays"
+          control={<Radio size="small" />}
+          label="Custom days"
+        />
+      </RadioGroup>
+
+      {smartMode === "tou" && !tariffInfo?.hasTou && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          No Time-of-Use tariff found for this site. Configure a TOU tariff in
+          the Tesla app to use this mode.
+        </Alert>
+      )}
+
+      {smartMode === "customDays" && (
+        <Box mb={2}>
+          <Box display="flex" alignItems="center" gap={1} mb={1}>
+            <CalendarTodayIcon fontSize="small" />
+            <Typography variant="body2">Days</Typography>
+          </Box>
+          <ToggleButtonGroup
+            value={smartDays}
+            onChange={handleDaysChange}
+            size="small"
+            exclusive={false}
+            sx={{ gap: 1 }}
+          >
+            {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
+              <ToggleButton
+                key={day}
+                value={day}
+                sx={{
+                  borderRadius: "50%",
+                  width: 40,
+                  height: 40,
+                  p: 0,
+                  fontWeight: 500,
+                  "&.Mui-selected": {
+                    backgroundColor: theme.palette.action.selected,
+                    color: theme.palette.primary.main,
+                  },
+                  "&.MuiToggleButtonGroup-firstButton": { borderRadius: "50%" },
+                  "&.MuiToggleButtonGroup-middleButton": {
+                    borderRadius: "50%",
+                  },
+                  "&.MuiToggleButtonGroup-lastButton": { borderRadius: "50%" },
+                }}
+              >
+                {day}
+              </ToggleButton>
+            ))}
+          </ToggleButtonGroup>
+        </Box>
+      )}
+
+      <Box
+        sx={{
+          bgcolor: alpha(
+            theme.palette.background.paper,
+            theme.palette.mode === "light" ? 0.5 : 0.2,
+          ),
+          borderRadius: 2,
+          p: 2,
+          mb: 2,
+          border: 1,
+          borderColor: "divider",
+        }}
+      >
+        <Box display="flex" alignItems="center" gap={1} mb={1}>
+          <BoltIcon fontSize="small" />
+          <Typography variant="body2">
+            Allowed Grid Charge Hours
+            {smartMode === "customDays" ? " (optional)" : ""}
+          </Typography>
+        </Box>
+
+        {smartMode === "tou" && (tariffInfo?.seasons ?? []).length > 0 ? (
+          <Box>
+            {/* Single grid so header and data columns always share the same widths */}
+            <Box
+              display="grid"
+              gridTemplateColumns="auto max-content max-content"
+              columnGap={1}
+              rowGap={1}
+              alignItems="center"
+            >
+              <Typography variant="caption" color="text.secondary">
+                Season
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Earliest
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Latest
+              </Typography>
+              {smartSeasonalWindows.map((sw) => (
+                <>
+                  <Typography
+                    key={`${sw.seasonName}-label`}
+                    variant="body2"
+                    sx={{ textTransform: "capitalize" }}
+                  >
+                    {sw.seasonName}
+                  </Typography>
+                  <TextField
+                    key={`${sw.seasonName}-from`}
+                    type="time"
+                    size="small"
+                    value={sw.from}
+                    onChange={(e) =>
+                      handleSeasonalWindowChange(
+                        sw.seasonName,
+                        "from",
+                        e.target.value,
+                      )
+                    }
+                  />
+                  <TextField
+                    key={`${sw.seasonName}-to`}
+                    type="time"
+                    size="small"
+                    value={sw.to}
+                    onChange={(e) =>
+                      handleSeasonalWindowChange(
+                        sw.seasonName,
+                        "to",
+                        e.target.value,
+                      )
+                    }
+                  />
+                </>
+              ))}
+            </Box>
+            <Typography
+              variant="caption"
+              color="text.secondary"
+              mt={1}
+              display="block"
+            >
+              Leave blank to allow grid charging any time off-peak
+            </Typography>
+          </Box>
+        ) : smartMode === "tou" ? (
+          <Typography variant="body2" color="text.secondary">
+            Season information will appear once a TOU tariff is detected.
+          </Typography>
+        ) : (
+          <Box display="flex" alignItems="center" gap={1}>
+            <TextField
+              type="time"
+              size="small"
+              label="Earliest"
+              value={smartWindow.from}
+              onChange={(e) => handleWindowChange("from", e.target.value)}
+              sx={{ width: 130 }}
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+            <TextField
+              type="time"
+              size="small"
+              label="Latest / Charge by"
+              value={smartWindow.to}
+              onChange={(e) => handleWindowChange("to", e.target.value)}
+              sx={{ width: 160 }}
+              slotProps={{ inputLabel: { shrink: true } }}
+            />
+          </Box>
+        )}
+      </Box>
+
+      <Typography variant="subtitle1">Actions</Typography>
+      <List disablePadding>
+        <ListItem
+          component="button"
+          secondaryAction={<ChevronRightIcon />}
+          sx={{ bgcolor: theme.palette.action.hover, borderRadius: 2, mt: 1 }}
+          onClick={() => setSelectedAction("setSmartGridCharging")}
+        >
+          <ListItemAvatar>
+            <Badge
+              color="success"
+              overlap="circular"
+              badgeContent={
+                smartActionValue != null ? (
+                  <CheckIcon sx={{ fontSize: 14 }} />
+                ) : null
+              }
+              anchorOrigin={{ vertical: "top", horizontal: "right" }}
+              sx={{
+                "& .MuiBadge-badge": {
+                  minWidth: 16,
+                  height: 16,
+                  padding: 0,
+                  borderRadius: "50%",
+                },
+              }}
+            >
+              <Avatar>
+                <BoltIcon />
+              </Avatar>
+            </Badge>
+          </ListItemAvatar>
+          <ListItemText
+            primary="Smart Grid Charging"
+            secondary={targetSocLabel}
+          />
+        </ListItem>
+      </List>
+    </Box>
+  );
+}
+
 function SiteSelector({
   schedule,
   setSchedule,
@@ -1147,6 +1683,7 @@ export default function Schedules() {
     powerwall: false,
     flow: false,
     actions: false,
+    smart: false,
   });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<any | null>(null);
@@ -1159,7 +1696,18 @@ export default function Schedules() {
     setOperationalMode: null,
     setEnergyExports: null,
     setGridCharging: null,
+    setSmartGridCharging: null,
   });
+  const [smartMode, setSmartMode] = useState<"tou" | "customDays">("tou");
+  const [smartDays, setSmartDays] = useState<string[]>([]);
+  const [smartWindow, setSmartWindow] = useState<{ from: string; to: string }>({
+    from: "",
+    to: "",
+  });
+  const [smartSeasonalWindows, setSmartSeasonalWindows] = useState<
+    SeasonalWindow[]
+  >([]);
+  const [tariffInfo, setTariffInfo] = useState<TariffInfo>(null);
   const theme = useTheme();
   const [availableSites, setAvailableSites] = useState<
     { id: string; site_name: string; is_online: boolean }[]
@@ -1187,6 +1735,69 @@ export default function Schedules() {
   const columns: GridColDef[] = [
     { field: "id", headerName: "ID", flex: 1, minWidth: 80 },
     {
+      field: "enabled",
+      headerName: "",
+      width: 60,
+      sortable: false,
+      renderCell: (params) => (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100%",
+            width: "100%",
+          }}
+        >
+          <Switch
+            checked={params.row.enabled ?? true}
+            size="small"
+            onClick={(e) => e.stopPropagation()}
+            onChange={() => handleToggleEnabled(params.row)}
+          />
+        </Box>
+      ),
+    },
+    {
+      field: "summary",
+      headerName: "Schedule",
+      flex: 3,
+      minWidth: 260,
+      sortable: false,
+      renderCell: (params) => {
+        const summary = summarizeSchedule(params.row);
+        return (
+          <Tooltip title={summary} placement="top">
+            <Box
+              sx={{
+                display: "flex",
+                alignItems: "center",
+                height: "100%",
+                width: "100%",
+                overflow: "hidden",
+              }}
+            >
+              <Typography
+                variant="body2"
+                sx={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  width: "100%",
+                  color:
+                    params.row.enabled === false
+                      ? "text.disabled"
+                      : "text.primary",
+                }}
+              >
+                {summary}
+              </Typography>
+            </Box>
+          </Tooltip>
+        );
+      },
+    },
+    {
       field: "site_ids",
       headerName: "Sites",
       flex: 2,
@@ -1195,69 +1806,113 @@ export default function Schedules() {
         (value ?? [])
           .map((id) => availableSites.find((s) => s.id === id)?.site_name ?? id)
           .join(", "),
+      renderCell: (params) => (
+        <Tooltip title={params.value} placement="top">
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+              width: "100%",
+              overflow: "hidden",
+            }}
+          >
+            <Typography
+              variant="body2"
+              sx={{
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                width: "100%",
+              }}
+            >
+              {params.value}
+            </Typography>
+          </Box>
+        </Tooltip>
+      ),
     },
-    { field: "cron", headerName: "Cron", flex: 1, minWidth: 100 },
     {
-      field: "enabled",
-      headerName: "Enabled",
+      field: "status",
+      headerName: "Status",
       flex: 1,
-      minWidth: 80,
-      type: "boolean",
-    },
-    {
-      field: "conditions",
-      headerName: "Conditions",
-      flex: 1,
-      minWidth: 80,
-    },
-    {
-      field: "actions",
-      headerName: "Actions",
-      flex: 1,
-      minWidth: 80,
-    },
-    {
-      field: "last_success_time",
-      headerName: "Last Success",
-      flex: 2,
-      minWidth: 160,
-      valueFormatter: (isoDateString: any) =>
-        isoDateString
-          ? new Date(isoDateString).toLocaleString(undefined, {
-              timeZoneName: "short",
-            })
-          : "",
-    },
-    {
-      field: "last_error_time",
-      headerName: "Last Error",
-      flex: 2,
-      minWidth: 160,
-      valueFormatter: (isoDateString: any) =>
-        isoDateString
-          ? new Date(isoDateString).toLocaleString(undefined, {
-              timeZoneName: "short",
-            })
-          : "",
+      minWidth: 120,
+      sortable: false,
+      renderCell: (params) => {
+        const successDate = params.row.last_success_time
+          ? new Date(params.row.last_success_time)
+          : null;
+        const errorDate = params.row.last_error_time
+          ? new Date(params.row.last_error_time)
+          : null;
+
+        let dotColor: string;
+        let label: string;
+        let tooltipText: string;
+
+        if (!successDate && !errorDate) {
+          dotColor = "text.disabled";
+          label = "Never run";
+          tooltipText = "This schedule has not run yet";
+        } else if (successDate && (!errorDate || successDate > errorDate)) {
+          dotColor = "success.main";
+          label = timeAgo(successDate);
+          tooltipText = `Last run: ${successDate.toLocaleString(undefined, { timeZoneName: "short" })}`;
+        } else {
+          dotColor = "error.main";
+          label = timeAgo(errorDate!);
+          tooltipText = `${params.row.last_error ?? "Unknown error"}\n${errorDate!.toLocaleString(undefined, { timeZoneName: "short" })}`;
+        }
+
+        return (
+          <Tooltip title={tooltipText} placement="left">
+            <Box display="flex" alignItems="center" height="100%" gap={0.75}>
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  bgcolor: dotColor,
+                  flexShrink: 0,
+                }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                {label}
+              </Typography>
+            </Box>
+          </Tooltip>
+        );
+      },
     },
     {
       field: "edit",
-      headerName: "Edit",
-      flex: 1,
-      minWidth: 100,
+      headerName: "",
+      width: 100,
       sortable: false,
       renderCell: (params) => {
         const getTabForSchedule = (schedule: any) => {
+          if (
+            (schedule?.actions ?? []).some(
+              (a: any) => a.action === "setSmartGridCharging",
+            )
+          )
+            return 3;
           if (schedule?.conditions && Array.isArray(schedule.conditions)) {
             const condKey = schedule.conditions[0]?.condition;
-            if (tabOptions.flow.some((opt) => opt.key === condKey)) return 2; // Flow tab
+            if (tabOptions.flow.some((opt) => opt.key === condKey)) return 2;
             if (tabOptions.powerwall.some((opt) => opt.key === condKey))
-              return 1; // Powerwall tab
+              return 1;
           }
-          return 0; // Time tab
+          return 0;
         };
         return (
-          <>
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              height: "100%",
+            }}
+          >
             <IconButton
               onClick={(event) => {
                 event.stopPropagation();
@@ -1285,7 +1940,7 @@ export default function Schedules() {
             >
               <DeleteIcon />
             </IconButton>
-          </>
+          </Box>
         );
       },
     },
@@ -1349,6 +2004,22 @@ export default function Schedules() {
       });
   };
 
+  const handleToggleEnabled = useCallback(
+    async (scheduleRow: any) => {
+      const updated = { ...scheduleRow, enabled: !scheduleRow.enabled };
+      setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      try {
+        await axios.post("/api/schedule/upsert", updated);
+      } catch {
+        setRows((prev) =>
+          prev.map((r) => (r.id === scheduleRow.id ? scheduleRow : r)),
+        );
+        showNotification("Failed to update schedule", "error", 5000);
+      }
+    },
+    [showNotification],
+  );
+
   useEffect(() => {
     setTabValid((prev) => ({
       ...prev,
@@ -1366,6 +2037,21 @@ export default function Schedules() {
     }
     if (dialogTab === 0 && schedule && schedule.conditions !== null) {
       setSchedule((prev: any) => ({ ...prev, conditions: null }));
+    }
+    if (dialogTab === 3 && schedule) {
+      // For a new schedule (no smart conditions yet), apply sensible defaults.
+      const hasSmartCond = (schedule.conditions ?? []).some(
+        (c: any) =>
+          c.condition === "inSeasonalGridChargeWindow" ||
+          c.condition === "betweenHours",
+      );
+      if (!hasSmartCond) {
+        setSchedule((prev: any) => ({
+          ...prev,
+          cron: "* * * * *",
+          conditions: [],
+        }));
+      }
     }
   }, [dialogTab, schedule]);
 
@@ -1403,11 +2089,69 @@ export default function Schedules() {
     // eslint-disable-next-line
   }, [dialogTab]);
 
+  // Initialize smart UI state when opening an existing smart schedule.
+  useEffect(() => {
+    if (!dialogOpen || dialogTab !== 3 || !schedule) return;
+    const conditions: any[] = schedule.conditions ?? [];
+    const inSeasonalCond = conditions.find(
+      (c) => c.condition === "inSeasonalGridChargeWindow",
+    );
+    const betweenHoursCond = conditions.find(
+      (c) => c.condition === "betweenHours",
+    );
+    if (inSeasonalCond) {
+      setSmartMode("tou");
+      setSmartSeasonalWindows(
+        Array.isArray(inSeasonalCond.value) ? inSeasonalCond.value : [],
+      );
+    } else if (betweenHoursCond) {
+      setSmartMode("customDays");
+      setSmartWindow(betweenHoursCond.value as { from: string; to: string });
+      const dayPart = (schedule.cron ?? "* * * * *").split(" ")[4] ?? "*";
+      if (dayPart !== "*") {
+        const dowMap = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+        setSmartDays(
+          dayPart
+            .split(",")
+            .map((d: string) => dowMap[Number(d)])
+            .filter(Boolean),
+        );
+      }
+    }
+    // eslint-disable-next-line
+  }, [dialogOpen, dialogTab]);
+
+  // Fetch tariff info when the smart tab is open and a site is selected.
+  useEffect(() => {
+    if (dialogTab !== 3) return;
+    const siteId = schedule?.site_ids?.[0];
+    if (!siteId) {
+      setTariffInfo(null);
+      return;
+    }
+    axios
+      .get(`/api/powerwall/tariff-info`, { params: { siteId } })
+      .then((res) => setTariffInfo(res.data.data ?? null))
+      .catch(() => setTariffInfo(null));
+    // eslint-disable-next-line
+  }, [dialogTab, schedule?.site_ids?.[0]]);
+
+  // Populate seasonal windows from tariff seasons (add new seasons, keep existing values).
+  useEffect(() => {
+    if (!tariffInfo?.seasons) return;
+    setSmartSeasonalWindows((prev) => {
+      const existing = new Map(prev.map((w) => [w.seasonName, w]));
+      return tariffInfo.seasons.map(
+        (name) => existing.get(name) ?? { seasonName: name, from: "", to: "" },
+      );
+    });
+  }, [tariffInfo]);
+
   console.log("schedule", schedule);
   // console.log("actionValues", actionValues);
 
   return (
-    <Box sx={{ p: 3 }}>
+    <Box sx={{ p: 3, width: "60%", mx: "auto" }}>
       <Typography variant="h4" gutterBottom>
         Schedules
       </Typography>
@@ -1466,7 +2210,12 @@ export default function Schedules() {
               setOperationalMode: null,
               setEnergyExports: null,
               setGridCharging: null,
+              setSmartGridCharging: null,
             });
+            setSmartMode("tou");
+            setSmartDays([]);
+            setSmartWindow({ from: "", to: "" });
+            setSmartSeasonalWindows([]);
           }}
         >
           <AddIcon sx={{ fontSize: 24 }} />
@@ -1479,7 +2228,6 @@ export default function Schedules() {
           loading={loading}
           getRowId={(row) => row.id}
           columnVisibilityModel={{ id: false }}
-          checkboxSelection
         />
       </Box>
       <Dialog
@@ -1502,6 +2250,7 @@ export default function Schedules() {
             <Tab key="time" label="Time" />
             <Tab key="powerwall" label="Powerwall" />
             <Tab key="flow" label="Flow" />
+            <Tab key="smart" label="Smart" />
           </Tabs>
           {dialogTab === 0 && (
             <Box mt={2}>
@@ -1569,6 +2318,28 @@ export default function Schedules() {
               />
             </Box>
           )}
+          {dialogTab === 3 && (
+            <Box mt={2}>
+              <SmartSettings
+                schedule={schedule}
+                setSchedule={setSchedule}
+                setTabValid={(valid) =>
+                  setTabValid((v) => ({ ...v, smart: valid }))
+                }
+                actionValues={actionValues}
+                setSelectedAction={setSelectedAction}
+                tariffInfo={tariffInfo}
+                smartMode={smartMode}
+                setSmartMode={setSmartMode}
+                smartDays={smartDays}
+                setSmartDays={setSmartDays}
+                smartWindow={smartWindow}
+                setSmartWindow={setSmartWindow}
+                smartSeasonalWindows={smartSeasonalWindows}
+                setSmartSeasonalWindows={setSmartSeasonalWindows}
+              />
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
           <Button
@@ -1576,15 +2347,15 @@ export default function Schedules() {
             color="primary"
             sx={{ borderRadius: "10" }}
             disabled={
-              !tabValid[
-                dialogTab === 0
-                  ? "time"
-                  : dialogTab === 1
-                    ? "powerwall"
-                    : "flow"
-              ] ||
-              !tabValid.actions ||
-              !schedule?.site_ids?.length
+              (dialogTab === 3
+                ? !tabValid.smart
+                : !tabValid[
+                    dialogTab === 0
+                      ? "time"
+                      : dialogTab === 1
+                        ? "powerwall"
+                        : "flow"
+                  ] || !tabValid.actions) || !schedule?.site_ids?.length
             }
             onClick={handleSaveSchedule}
           >
