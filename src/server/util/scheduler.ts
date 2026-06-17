@@ -176,10 +176,15 @@ export class Scheduler {
 
           const hasConditions =
             schedule.conditions && schedule.conditions.length > 0;
+          // Smart schedules run on every tick and pass conditions to the action
+          // as context rather than using them to gate execution.
+          const isSmartSchedule = (schedule.actions ?? []).some(
+            (a) => a.action === "setSmartGridCharging",
+          );
           let actionsExecuted = 0;
 
           for (const product of products) {
-            if (hasConditions) {
+            if (hasConditions && !isSmartSchedule) {
               const liveStatus = await Fleet.getInstance(
                 schedule.email,
               ).getLiveStatus(product);
@@ -231,7 +236,11 @@ export class Scheduler {
               /* eslint-disable no-unexpected-multiline */
               await Fleet.getInstance(schedule.email)
                 .getActionMap()
-                [config.action](product, config.value);
+                [config.action](
+                  product,
+                  config.value,
+                  schedule.conditions ?? [],
+                );
               /* eslint-enable no-unexpected-multiline */
               actionsExecuted++;
             }
@@ -325,7 +334,10 @@ export class Scheduler {
   }
 
   async upsert(schedule: ISchedule) {
-    if (!this.isValidSchedule(schedule)) {
+    if (!this.validEmails.includes(schedule.email)) {
+      logger.warn(
+        `Schedule for email ${schedule.email} has no corresponding refresh token.`,
+      );
       return;
     }
     const existingTask = this.enabledScheduledTasks.get(schedule.id || "");
@@ -346,7 +358,7 @@ export class Scheduler {
       actions: schedule.actions,
     });
     schedule.id = result?.data?.id ?? schedule.id;
-    if (this.schedulingEnabled) {
+    if (this.schedulingEnabled && this.isValidSchedule(schedule)) {
       await this.initializeOneSchedule(schedule);
     }
     return result;

@@ -30,10 +30,70 @@ export interface UserSettings {
   [key: string]: unknown;
 }
 
+export interface Gateway {
+  device_id: string;
+  part_name?: string;
+  is_active: boolean;
+  leader_device_id?: string;
+  // PW3 lead gateway reports total system capacity in Wh; absent/0 on non-lead units.
+  nameplate_energy_watts?: number;
+}
+
+export interface Battery {
+  device_id: string;
+  part_name?: string; // "Powerwall 2" | "Unknown" (expansion) | undefined
+  is_active: boolean;
+  // PW2 batteries report their individual capacity in Wh; always 0 on PW3 expansion packs.
+  nameplate_energy?: number;
+}
+
 export interface SiteComponents {
   disallow_charge_from_grid_with_solar_installed?: boolean;
   customer_preferred_export_rule?: string; // "pv_only" | "battery_ok"
+  gateways?: Gateway[];
+  batteries?: Battery[];
   [key: string]: unknown;
+}
+
+export interface TouPeriod {
+  fromDayOfWeek: number;
+  toDayOfWeek: number;
+  fromHour: number;
+  toHour: number;
+  fromMinute: number;
+  toMinute: number;
+}
+
+export interface TariffSeason {
+  fromDay: number;
+  fromMonth: number;
+  toDay: number;
+  toMonth: number;
+  tou_periods: {
+    // Tesla API returns uppercase keys (ON_PEAK); lowercase kept for compat.
+    on_peak?: TouPeriod[];
+    ON_PEAK?: TouPeriod[];
+    [key: string]: TouPeriod[] | undefined;
+  };
+}
+
+export interface TariffContent {
+  // Tesla API returns seasons directly at the top level of tariff_content.
+  seasons?: Record<string, TariffSeason>;
+  // Some firmware versions nest seasons under utility_rates; support both.
+  utility_rates?: {
+    seasons?: Record<string, TariffSeason>;
+  };
+}
+
+export interface SolarPowerDataPoint {
+  timestamp: string; // ISO 8601
+  solar_power: number; // Watts
+}
+
+export interface SmartChargingActionConfig {
+  targetSoc: number;
+  solarEfficiencyFactor?: number; // defaults to 0.5; not exposed in UI
 }
 
 export interface SiteInfo {

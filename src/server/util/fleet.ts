@@ -1,4 +1,5 @@
 import { jwtDecode } from "jwt-decode";
+import moment from "moment-timezone";
 import type {
   FleetOptions,
   FleetOptionsInput,
@@ -7,8 +8,14 @@ import type {
   Product,
   RefreshTokenData,
   SiteInfo,
+  SmartChargingActionConfig,
+  SolarPowerDataPoint,
   TokenData,
 } from "~/server/types/common";
+import type {
+  IScheduleCondition,
+  SeasonalWindow,
+} from "~/server/database/models/schedule";
 import { getNewTokenWithRefreshToken } from "~/server/util/auth";
 import { retry } from "~/server/util/retry";
 import { sendEmail } from "./mailing";
@@ -16,6 +23,40 @@ import {
   upsert as upsertToken,
   getByEmail as getRefreshTokenByEmail,
 } from "~/server/util/routes/refreshToken";
+import {
+  calculateChargeRateKw,
+  calculateTotalCapacityKwh,
+} from "~/server/util/chargeRate";
+import {
+  parseTariffContent,
+  hasTouData,
+  isCurrentlyInPeak,
+  findNextPeakStart,
+  getCurrentSeason,
+  isWithinWindow,
+} from "~/server/util/tariff";
+import { redis } from "~/server/util/redis";
+import {
+  estimateSolarKwhFromHistory,
+  type SolarForecastResult,
+} from "~/server/util/solarForecast";
+
+const SITE_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
+const siteInfoCache = new Map<number, { info: SiteInfo; at: number }>();
+
+function buildSolarLabel(
+  forecast: SolarForecastResult | null,
+  linearKwh: number,
+): string {
+  if (forecast) {
+    const scalePart =
+      forecast.scalingFactor !== 1.0
+        ? ` ×${forecast.scalingFactor.toFixed(2)} weather`
+        : "";
+    return `solar forecast ${forecast.estimatedKwh.toFixed(2)}kWh via ${forecast.daysUsed}-day history${scalePart}`;
+  }
+  return `solar forecast ${linearKwh.toFixed(2)}kWh via linear fallback`;
+}
 
 const baseApiUrl =
   process.env.TESLA_API_BASE_URL ||
@@ -167,6 +208,10 @@ export class Fleet {
   }
 
   async getSiteInfo(product: Product): Promise<SiteInfo | null> {
+    const cached = siteInfoCache.get(product.energy_site_id);
+    if (cached && performance.now() - cached.at < SITE_INFO_CACHE_TTL_MS) {
+      return cached.info;
+    }
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/site_info`,
       baseApiUrl,
@@ -188,6 +233,10 @@ export class Fleet {
         2,
       );
       const siteInfo = response as SiteInfo;
+      siteInfoCache.set(product.energy_site_id, {
+        info: siteInfo,
+        at: performance.now(),
+      });
       return siteInfo;
     } catch (error: any) {
       const errorMsg = `Error getting Site Info for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
@@ -241,6 +290,156 @@ export class Fleet {
       }
       return null;
     }
+  }
+
+  // Fetch one day of 5-min power data from the Tesla calendar_history API.
+  // dateStr is a YYYY-MM-DD string in the site's local timezone.
+  private async fetchDayHistory(
+    product: Product,
+    timezone: string,
+    dateStr: string,
+    options: { method: string; headers: Record<string, string> },
+  ): Promise<SolarPowerDataPoint[]> {
+    // Avoid 00:00:00 — the API returns empty data at midnight.
+    const endDate = moment
+      .tz(`${dateStr} 23:45`, "YYYY-MM-DD HH:mm", timezone)
+      .format("YYYY-MM-DDTHH:mm:ssZ");
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/calendar_history`,
+      baseApiUrl,
+    );
+    url.searchParams.set("kind", "power");
+    url.searchParams.set("end_date", endDate);
+    try {
+      const { response } = await retry<Record<string, any>>(
+        async () => {
+          const res = await fetch(url.toString(), options);
+          if (!res.ok) {
+            throw new Error(
+              `Error fetching solar history for site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+            );
+          }
+          return (await res.json()) as Record<string, any>;
+        },
+        3,
+        2000,
+        2,
+      );
+      return (response.time_series ?? []) as SolarPowerDataPoint[];
+    } catch (error: any) {
+      logger.warn(
+        `[solar history] fetch for ${dateStr} failed: ${error.message}`,
+      );
+      return [];
+    }
+  }
+
+  async getSolarHistory(
+    product: Product,
+    timezone: string,
+    days = 7,
+  ): Promise<SolarPowerDataPoint[]> {
+    const cacheKey = `solar_history:${product.energy_site_id}`;
+    const nowLocal = moment().tz(timezone);
+
+    // Cache format: { refreshAfter: ISO string, points: SolarPowerDataPoint[] }.
+    // refreshAfter controls logical freshness; the Redis TTL is intentionally
+    // longer so existing points survive past midnight and can be reused
+    // incrementally — only missing days are fetched on each refresh.
+    let cachedPoints: SolarPowerDataPoint[] = [];
+    try {
+      const raw = await redis.get(cacheKey);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          // Legacy format (raw array) — treat as stale so it re-stores in new format.
+          cachedPoints = parsed as SolarPowerDataPoint[];
+        } else {
+          const cache = parsed as {
+            refreshAfter: string;
+            points: SolarPowerDataPoint[];
+          };
+          if (moment(cache.refreshAfter).isAfter(nowLocal)) {
+            return cache.points; // still fresh
+          }
+          cachedPoints = cache.points;
+        }
+      }
+    } catch {
+      // Redis unavailable — fall through to API fetch.
+    }
+
+    // Determine which of the past `days` completed days are absent from the
+    // cache. On cold start all 7 are missing; in steady state just 1.
+    const neededDates = Array.from({ length: days }, (_, i) =>
+      nowLocal
+        .clone()
+        .subtract(i + 1, "days")
+        .format("YYYY-MM-DD"),
+    );
+    const cachedDateSet = new Set(
+      cachedPoints.map((p) =>
+        moment.tz(p.timestamp, timezone).format("YYYY-MM-DD"),
+      ),
+    );
+    const missingDates = neededDates.filter((d) => !cachedDateSet.has(d));
+
+    const options = await this.getDefaultGetOptions();
+    const newResults = await Promise.all(
+      missingDates.map((date) =>
+        this.fetchDayHistory(product, timezone, date, options),
+      ),
+    );
+    const newPoints = newResults.flat();
+
+    // Merge: keep existing points still within the window, append new ones.
+    const cutoffDate = nowLocal
+      .clone()
+      .subtract(days, "days")
+      .format("YYYY-MM-DD");
+    const keptPoints = cachedPoints.filter(
+      (p) => moment.tz(p.timestamp, timezone).format("YYYY-MM-DD") > cutoffDate,
+    );
+    const allPoints = [...keptPoints, ...newPoints].sort((a, b) =>
+      a.timestamp.localeCompare(b.timestamp),
+    );
+
+    // Log per-day summary for verification against the Tesla app.
+    if (allPoints.length > 0) {
+      const byDay = new Map<string, number>();
+      for (const p of allPoints) {
+        const day = moment.tz(p.timestamp, timezone).format("YYYY-MM-DD");
+        byDay.set(day, (byDay.get(day) ?? 0) + p.solar_power / 1000 / 12); // 5-min intervals → kWh
+      }
+      const summary = [...byDay.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([d, kwh]) => `${d}: ${kwh.toFixed(2)}kWh`)
+        .join(", ");
+      logger.info(
+        `[solar history] ${allPoints.length} points across ${byDay.size} days — ${summary}`,
+      );
+    } else {
+      logger.warn(
+        `Smart charging: solar history unavailable for site "${product.site_name}"; using linear fallback`,
+      );
+    }
+
+    // Persist with a long TTL; refreshAfter drives logical expiry at next midnight.
+    const updatedCache = {
+      refreshAfter: nowLocal.clone().endOf("day").toISOString(),
+      points: allPoints,
+    };
+    try {
+      await redis.setex(
+        cacheKey,
+        (days + 2) * 24 * 3600,
+        JSON.stringify(updatedCache),
+      );
+    } catch {
+      // Redis write failed — non-fatal.
+    }
+
+    return allPoints;
   }
 
   async setBackupReserve(
@@ -477,6 +676,7 @@ export class Fleet {
         2,
       );
       if (response.ok) {
+        siteInfoCache.delete(product.energy_site_id);
         logger.info(
           `Grid charging set to "${setting}" (disallow=${disallow}) successfully for Energy Site ${product.energy_site_id}.`,
         );
@@ -498,6 +698,271 @@ export class Fleet {
       if (this.options.throwOnError) {
         throw new Error(errorMsg);
       }
+    }
+  }
+
+  async setSmartGridCharging(
+    product: Product,
+    value: string,
+    conditions: IScheduleCondition[] = [],
+  ): Promise<void> {
+    let config: SmartChargingActionConfig;
+    try {
+      config = JSON.parse(value) as SmartChargingActionConfig;
+    } catch {
+      logger.error(
+        `Smart charging: invalid config JSON for site "${product.site_name}": ${value}`,
+      );
+      return;
+    }
+    const solarEfficiencyFactor = config.solarEfficiencyFactor ?? 0.5;
+
+    // siteInfo is cached (5-min TTL) so fetching it first is effectively free
+    // after the first tick. timezone is needed for getSolarHistory.
+    const siteInfo = await this.getSiteInfo(product);
+    if (!siteInfo) {
+      logger.warn(
+        `Smart charging: cannot run — site info unavailable for site "${product.site_name}"`,
+      );
+      return;
+    }
+
+    const timezone = siteInfo.installation_time_zone;
+    const [liveStatus, solarHistory] = await Promise.all([
+      this.getLiveStatus(product),
+      this.getSolarHistory(product, timezone),
+    ]);
+
+    if (!liveStatus) {
+      logger.warn(
+        `Smart charging: cannot run — live status unavailable for site "${product.site_name}"`,
+      );
+      return;
+    }
+    const now = moment().tz(timezone);
+    const currentlyAllowed = !(
+      siteInfo.components.disallow_charge_from_grid_with_solar_installed ??
+      false
+    );
+
+    // PW3 reports capacity via nameplate_energy_watts on the lead gateway;
+    // PW2 reports it via nameplate_energy on each battery pod.
+    const totalEnergyKwh = calculateTotalCapacityKwh(siteInfo.components);
+    if (totalEnergyKwh <= 0) {
+      logger.warn(
+        `Smart charging: battery capacity not available for site "${product.site_name}" — skipping tick`,
+      );
+      return;
+    }
+    const energyNeededKwh = Math.max(
+      0,
+      ((config.targetSoc - liveStatus.percentage_charged) / 100) *
+        totalEnergyKwh,
+    );
+
+    const isTouMode = conditions.some(
+      (c) => c.condition === "inSeasonalGridChargeWindow",
+    );
+    const betweenHoursCond = conditions.find(
+      (c) => c.condition === "betweenHours",
+    );
+
+    let desired: "enabled" | "disabled";
+    let reason: string;
+    let solarForecast: SolarForecastResult | null = null;
+
+    if (isTouMode) {
+      const tariff = parseTariffContent(siteInfo.tariff_content);
+      if (!hasTouData(tariff)) {
+        logger.warn(
+          `Smart charging: no TOU data for site "${product.site_name}" — configure a TOU tariff in the Tesla app`,
+        );
+        return;
+      }
+
+      if (isCurrentlyInPeak(tariff!, now)) {
+        desired = "disabled";
+        reason = "currently in on-peak period";
+      } else if (energyNeededKwh <= 0) {
+        desired = "disabled";
+        reason = `target SOC already reached (${liveStatus.percentage_charged.toFixed(1)}%)`;
+      } else {
+        const nextPeakStart = findNextPeakStart(tariff!, now);
+        if (!nextPeakStart) {
+          desired = "disabled";
+          reason = "no upcoming peak found in tariff";
+        } else {
+          const minutesToPeak = nextPeakStart.diff(now, "minutes");
+          const chargeRateKw = calculateChargeRateKw(siteInfo.components);
+          const availableSolarKw = Math.max(
+            0,
+            (liveStatus.solar_power - liveStatus.load_power) / 1000,
+          );
+          const linearSolarKwh =
+            availableSolarKw * (minutesToPeak / 60) * solarEfficiencyFactor;
+          solarForecast = estimateSolarKwhFromHistory(
+            solarHistory,
+            now,
+            nextPeakStart,
+            availableSolarKw,
+            timezone,
+          );
+          const estimatedSolarKwh =
+            solarForecast !== null
+              ? solarForecast.estimatedKwh
+              : linearSolarKwh;
+          const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
+
+          if (estimatedSolarKwh >= energyNeededKwh) {
+            desired = "disabled";
+            reason = `solar expected to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
+          } else {
+            const gridEnergyKwh = energyNeededKwh - estimatedSolarKwh;
+            const gridChargeHours = gridEnergyKwh / chargeRateKw;
+            const latestGridStart = nextPeakStart
+              .clone()
+              .subtract(gridChargeHours, "hours");
+            const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
+
+            let withinWindow = true;
+            const windowCond = conditions.find(
+              (c) => c.condition === "inSeasonalGridChargeWindow",
+            );
+            if (windowCond) {
+              const windows = windowCond.value as SeasonalWindow[];
+              const currentSeason = getCurrentSeason(tariff!, now);
+              const seasonWindow = windows.find(
+                (w) => w.seasonName === currentSeason?.name,
+              );
+              if (seasonWindow) {
+                withinWindow = isWithinWindow(
+                  seasonWindow.from,
+                  seasonWindow.to,
+                  now,
+                );
+              }
+            }
+
+            if (nowIsAtOrAfterLatestStart && withinWindow) {
+              desired = "enabled";
+              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${chargeRateKw}kW (${solarLabel}, peak at ${nextPeakStart.format("HH:mm")})`;
+            } else if (!nowIsAtOrAfterLatestStart) {
+              desired = "disabled";
+              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${chargeRateKw}kW starting ${latestGridStart.format("HH:mm")} (${solarLabel}, peak at ${nextPeakStart.format("HH:mm")})`;
+            } else {
+              desired = "disabled";
+              reason = `outside allowed window — grid start due at ${latestGridStart.format("HH:mm")} but window is closed`;
+            }
+          }
+        }
+      }
+    } else if (betweenHoursCond) {
+      // Custom days mode: betweenHours.to is the charge-by deadline.
+      const window = betweenHoursCond.value as { from: string; to: string };
+      const [th, tm] = window.to.split(":").map(Number);
+      let deadline = now
+        .clone()
+        .hours(th)
+        .minutes(tm)
+        .seconds(0)
+        .milliseconds(0);
+      if (!deadline.isAfter(now)) {
+        deadline = deadline.add(1, "day");
+      }
+
+      if (!now.isBefore(deadline)) {
+        desired = "disabled";
+        reason = `past charge-by deadline ${window.to}`;
+      } else if (energyNeededKwh <= 0) {
+        desired = "disabled";
+        reason = `target SOC already reached (${liveStatus.percentage_charged.toFixed(1)}%)`;
+      } else {
+        const minutesToDeadline = deadline.diff(now, "minutes");
+        const chargeRateKw = calculateChargeRateKw(siteInfo.components);
+        const availableSolarKw = Math.max(
+          0,
+          (liveStatus.solar_power - liveStatus.load_power) / 1000,
+        );
+        const linearSolarKwh =
+          availableSolarKw * (minutesToDeadline / 60) * solarEfficiencyFactor;
+        solarForecast = estimateSolarKwhFromHistory(
+          solarHistory,
+          now,
+          deadline,
+          availableSolarKw,
+          timezone,
+        );
+        const estimatedSolarKwh =
+          solarForecast !== null ? solarForecast.estimatedKwh : linearSolarKwh;
+        const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
+
+        if (estimatedSolarKwh >= energyNeededKwh) {
+          desired = "disabled";
+          reason = `solar expected to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
+        } else {
+          const gridEnergyKwh = energyNeededKwh - estimatedSolarKwh;
+          const gridChargeHours = gridEnergyKwh / chargeRateKw;
+          const latestGridStart = deadline
+            .clone()
+            .subtract(gridChargeHours, "hours");
+          const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
+          const withinWindow = isWithinWindow(window.from, window.to, now);
+
+          if (nowIsAtOrAfterLatestStart && withinWindow) {
+            desired = "enabled";
+            reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${chargeRateKw}kW (${solarLabel}, deadline ${window.to})`;
+          } else if (!nowIsAtOrAfterLatestStart) {
+            desired = "disabled";
+            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${chargeRateKw}kW starting ${latestGridStart.format("HH:mm")} (${solarLabel}, deadline ${window.to})`;
+          } else {
+            desired = "disabled";
+            reason = `outside allowed window — grid start due at ${latestGridStart.format("HH:mm")} but window is closed`;
+          }
+        }
+      }
+    } else {
+      logger.warn(
+        `Smart charging: no recognised condition for site "${product.site_name}" — skipping`,
+      );
+      return;
+    }
+
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          currentlyAllowed,
+          desired,
+          soc: liveStatus.percentage_charged,
+          targetSoc: config.targetSoc,
+          forecastMethod:
+            solarForecast !== null ? "historical" : "linear-fallback",
+          estimatedSolarKwh: solarForecast
+            ? Math.round(solarForecast.estimatedKwh * 100) / 100
+            : null,
+          reason,
+        },
+        `[DRY RUN] Smart charging "${product.site_name}": desired=${desired}, current=${currentlyAllowed ? "enabled" : "disabled"} — ${reason}`,
+      );
+      return;
+    }
+
+    if (desired === "enabled" && !currentlyAllowed) {
+      logger.info(
+        `Smart charging [${product.site_name}]: enabling grid charging — ${reason}`,
+      );
+      await this.setGridCharging(product, "enabled");
+    } else if (desired === "disabled" && currentlyAllowed) {
+      logger.info(
+        `Smart charging [${product.site_name}]: disabling grid charging — ${reason}`,
+      );
+      await this.setGridCharging(product, "disabled");
+    } else {
+      logger.info(
+        `Smart charging [${product.site_name}]: no change (desired=${desired}, current=${currentlyAllowed ? "enabled" : "disabled"}) — ${reason}`,
+      );
     }
   }
 

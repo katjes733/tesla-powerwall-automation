@@ -1,9 +1,11 @@
 import { EntitySchema } from "typeorm";
 import type { IBasicEntity } from "~/server/types/common";
 
+export type SeasonalWindow = { seasonName: string; from: string; to: string };
+
 export interface IScheduleCondition {
   condition: string;
-  value: number | { from: string; to: string };
+  value: number | { from: string; to: string } | SeasonalWindow[];
 }
 export interface IScheduleAction {
   action: string;

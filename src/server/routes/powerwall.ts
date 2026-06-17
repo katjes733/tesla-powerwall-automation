@@ -1,5 +1,10 @@
 import express from "express";
 import { Fleet } from "~/server/util/fleet";
+import {
+  parseTariffContent,
+  hasTouData,
+  getSeasonNames,
+} from "~/server/util/tariff";
 
 export const router = express.Router();
 
@@ -29,6 +34,41 @@ router.get("/sites", async (req, res) => {
     });
   } catch (error: any) {
     logger.error(error, "Error fetching powerwall sites");
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+router.get("/tariff-info", async (req, res) => {
+  const email = req.session.user;
+  if (!email) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+  const siteId = req.query.siteId as string | undefined;
+  if (!siteId) {
+    res
+      .status(400)
+      .json({ success: false, message: "siteId query parameter required" });
+    return;
+  }
+  try {
+    const fleet = Fleet.getInstance(email, {
+      throwOnError: false,
+      mailOnError: false,
+    });
+    const products = await fleet.getEnergyProducts();
+    const product = products.find((p) => p.id === siteId);
+    if (!product) {
+      res.status(404).json({ success: false, message: "Site not found" });
+      return;
+    }
+    const siteInfo = await fleet.getSiteInfo(product);
+    const tariff = parseTariffContent(siteInfo?.tariff_content);
+    const hasTou = hasTouData(tariff);
+    const seasons = tariff ? getSeasonNames(tariff) : [];
+    res.json({ success: true, data: { hasTou, seasons } });
+  } catch (error: any) {
+    logger.error(error, "Error fetching tariff info");
     res.status(500).json({ success: false, message: error.message });
   }
 });
