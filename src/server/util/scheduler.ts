@@ -129,7 +129,7 @@ export class Scheduler {
     config: IScheduleAction,
     schedule: ISchedule,
   ): boolean {
-    if (!config.action || !config.value) {
+    if (!config.action || config.value == null) {
       logger.warn(
         `Invalid configuration for schedule ID ${schedule.id}: ${JSON.stringify(config)}`,
       );
@@ -144,6 +144,155 @@ export class Scheduler {
     return true;
   }
 
+  private async runEvaluation(
+    schedule: ISchedule,
+    triggeredPerProduct: Map<string, boolean>,
+  ): Promise<void> {
+    const now = moment().tz(schedule.timezone);
+    const task = this.enabledScheduledTasks.get(schedule.id ?? "");
+
+    if (schedule.expires_at && now.isAfter(moment(schedule.expires_at))) {
+      logger.warn(`Schedule with ID ${schedule.id} has expired.`);
+      this.enabledScheduledTasks.delete(schedule.id || "");
+      task?.destroy();
+      return;
+    }
+
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        `[DRY RUN] Evaluating scheduled task for email ${schedule.email} with ID ${schedule.id} — no writes will be made`,
+      );
+    } else {
+      logger.info(
+        `Executing scheduled task for email ${schedule.email} with ID ${schedule.id}`,
+      );
+    }
+
+    try {
+      const siteIds = schedule.site_ids;
+      const products = await Fleet.getInstance(schedule.email)
+        .getEnergyProducts()
+        .then((all) => all.filter((p) => siteIds.includes(p.id)));
+
+      const hasConditions =
+        schedule.conditions && schedule.conditions.length > 0;
+      // Smart schedules run on every tick and pass conditions to the action
+      // as context rather than using them to gate execution.
+      const isSmartSchedule = (schedule.actions ?? []).some(
+        (a) => a.action === "setSmartGridCharging",
+      );
+      // Holiday schedules also bypass the rising-edge trigger and own their
+      // today/yesterday logic internally.
+      const isHolidaySchedule = (schedule.actions ?? []).some(
+        (a) => a.action === "setTouHolidayOverride",
+      );
+      let actionsExecuted = 0;
+
+      for (const product of products) {
+        if (hasConditions && !isSmartSchedule && !isHolidaySchedule) {
+          const liveStatus = await Fleet.getInstance(
+            schedule.email,
+          ).getLiveStatus(product);
+          if (!liveStatus) {
+            logger.warn(
+              `Cannot evaluate conditions for schedule ${schedule.id} — live status unavailable for site "${product.site_name}"`,
+            );
+            continue;
+          }
+
+          const conditionMet = await evaluateConditions(
+            schedule.conditions!,
+            liveStatus,
+            schedule.timezone,
+            Fleet.getInstance(schedule.email),
+            product,
+          );
+          const wasTriggered = triggeredPerProduct.get(product.id) ?? false;
+
+          if (!conditionMet) {
+            if (wasTriggered) {
+              logger.info(
+                `Condition cleared for schedule ${schedule.id} on site "${product.site_name}" — resetting trigger`,
+              );
+              triggeredPerProduct.set(product.id, false);
+            }
+            continue;
+          }
+
+          if (wasTriggered) {
+            if (process.env.DRY_RUN === "true") {
+              logger.info(
+                `[DRY RUN] Condition still met for schedule ${schedule.id} on site "${product.site_name}" — skipping (already triggered)`,
+              );
+            }
+            continue;
+          }
+
+          triggeredPerProduct.set(product.id, true);
+          logger.info(
+            `Condition met for schedule ${schedule.id} on site "${product.site_name}" — firing actions`,
+          );
+        }
+
+        for (const config of schedule.actions || []) {
+          if (!this.isValidConfigurationItem(config, schedule)) {
+            continue;
+          }
+          /* eslint-disable no-unexpected-multiline */
+          await Fleet.getInstance(schedule.email)
+            .getActionMap()
+            [config.action](product, config.value, schedule.conditions ?? []);
+          /* eslint-enable no-unexpected-multiline */
+          actionsExecuted++;
+        }
+      }
+
+      if (process.env.DRY_RUN === "true") {
+        logger.info(
+          `[DRY RUN] Evaluation complete for schedule ID ${schedule.id} — no changes sent to Tesla API`,
+        );
+      } else if (actionsExecuted > 0) {
+        logger.info(
+          `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully (${actionsExecuted} action(s) applied)`,
+        );
+      } else {
+        logger.warn(
+          `Scheduled task for email ${schedule.email} with ID ${schedule.id} completed but no actions were executed — check action key names`,
+        );
+      }
+
+      if (schedule.id) {
+        upsertScheduleInDb({
+          id: schedule.id,
+          lastRunTime: now.toDate(),
+          nextRunTime: task?.getNextRun() || undefined,
+          ...(process.env.DRY_RUN !== "true" && {
+            lastSuccessTime: now.toDate(),
+          }),
+        });
+      }
+    } catch (error: any) {
+      const lastError = error.message || "Unknown error";
+      logger.error(
+        `Error executing scheduled task for email ${schedule.email} with ID ${schedule.id}: ${lastError}`,
+      );
+      sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] ${lastError}`,
+        schedule.email,
+      );
+      if (schedule.id) {
+        upsertScheduleInDb({
+          id: schedule.id,
+          lastRunTime: now.toDate(),
+          nextRunTime: task?.getNextRun() || undefined,
+          lastError,
+          lastErrorTime: now.toDate(),
+        });
+      }
+    }
+  }
+
   async initializeOneSchedule(schedule: ISchedule) {
     if (!this.isValidSchedule(schedule)) {
       return;
@@ -151,149 +300,7 @@ export class Scheduler {
     const triggeredPerProduct = new Map<string, boolean>();
     const task = scheduleTask(
       schedule.cron,
-      async () => {
-        const now = moment().tz(schedule.timezone);
-        if (now.isAfter(moment(schedule.expires_at))) {
-          logger.warn(`Schedule with ID ${schedule.id} has expired.`);
-          this.enabledScheduledTasks.delete(schedule.id || "");
-          task.destroy();
-          return;
-        }
-        if (process.env.DRY_RUN === "true") {
-          logger.info(
-            `[DRY RUN] Evaluating scheduled task for email ${schedule.email} with ID ${schedule.id} — no writes will be made`,
-          );
-        } else {
-          logger.info(
-            `Executing scheduled task for email ${schedule.email} with ID ${schedule.id}`,
-          );
-        }
-        try {
-          const siteIds = schedule.site_ids;
-          const products = await Fleet.getInstance(schedule.email)
-            .getEnergyProducts()
-            .then((all) => all.filter((p) => siteIds.includes(p.id)));
-
-          const hasConditions =
-            schedule.conditions && schedule.conditions.length > 0;
-          // Smart schedules run on every tick and pass conditions to the action
-          // as context rather than using them to gate execution.
-          const isSmartSchedule = (schedule.actions ?? []).some(
-            (a) => a.action === "setSmartGridCharging",
-          );
-          // Holiday schedules also bypass the rising-edge trigger and own their
-          // today/yesterday logic internally.
-          const isHolidaySchedule = (schedule.actions ?? []).some(
-            (a) => a.action === "setTouHolidayOverride",
-          );
-          let actionsExecuted = 0;
-
-          for (const product of products) {
-            if (hasConditions && !isSmartSchedule && !isHolidaySchedule) {
-              const liveStatus = await Fleet.getInstance(
-                schedule.email,
-              ).getLiveStatus(product);
-              if (!liveStatus) {
-                logger.warn(
-                  `Cannot evaluate conditions for schedule ${schedule.id} — live status unavailable for site "${product.site_name}"`,
-                );
-                continue;
-              }
-
-              const conditionMet = await evaluateConditions(
-                schedule.conditions!,
-                liveStatus,
-                schedule.timezone,
-                Fleet.getInstance(schedule.email),
-                product,
-              );
-              const wasTriggered = triggeredPerProduct.get(product.id) ?? false;
-
-              if (!conditionMet) {
-                if (wasTriggered) {
-                  logger.info(
-                    `Condition cleared for schedule ${schedule.id} on site "${product.site_name}" — resetting trigger`,
-                  );
-                  triggeredPerProduct.set(product.id, false);
-                }
-                continue;
-              }
-
-              if (wasTriggered) {
-                if (process.env.DRY_RUN === "true") {
-                  logger.info(
-                    `[DRY RUN] Condition still met for schedule ${schedule.id} on site "${product.site_name}" — skipping (already triggered)`,
-                  );
-                }
-                continue;
-              }
-
-              triggeredPerProduct.set(product.id, true);
-              logger.info(
-                `Condition met for schedule ${schedule.id} on site "${product.site_name}" — firing actions`,
-              );
-            }
-
-            for (const config of schedule.actions || []) {
-              if (!this.isValidConfigurationItem(config, schedule)) {
-                continue;
-              }
-              /* eslint-disable no-unexpected-multiline */
-              await Fleet.getInstance(schedule.email)
-                .getActionMap()
-                [config.action](
-                  product,
-                  config.value,
-                  schedule.conditions ?? [],
-                );
-              /* eslint-enable no-unexpected-multiline */
-              actionsExecuted++;
-            }
-          }
-          if (process.env.DRY_RUN === "true") {
-            logger.info(
-              `[DRY RUN] Evaluation complete for schedule ID ${schedule.id} — no changes sent to Tesla API`,
-            );
-          } else if (actionsExecuted > 0) {
-            logger.info(
-              `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully (${actionsExecuted} action(s) applied)`,
-            );
-          } else {
-            logger.warn(
-              `Scheduled task for email ${schedule.email} with ID ${schedule.id} completed but no actions were executed — check action key names`,
-            );
-          }
-          if (schedule.id) {
-            upsertScheduleInDb({
-              id: schedule.id,
-              lastRunTime: now.toDate(),
-              nextRunTime: task.getNextRun() || undefined,
-              ...(process.env.DRY_RUN !== "true" && {
-                lastSuccessTime: now.toDate(),
-              }),
-            });
-          }
-        } catch (error: any) {
-          const lastError = error.message || "Unknown error";
-          logger.error(
-            `Error executing scheduled task for email ${schedule.email} with ID ${schedule.id}: ${lastError}`,
-          );
-          sendEmail(
-            "Powerwall Notification",
-            `[${new Date().toLocaleString()}] ${lastError}`,
-            schedule.email,
-          );
-          if (schedule.id) {
-            upsertScheduleInDb({
-              id: schedule.id,
-              lastRunTime: now.toDate(),
-              nextRunTime: task.getNextRun() || undefined,
-              lastError,
-              lastErrorTime: now.toDate(),
-            });
-          }
-        }
-      },
+      () => this.runEvaluation(schedule, triggeredPerProduct),
       { timezone: schedule.timezone },
     );
     logger.info(
@@ -365,6 +372,20 @@ export class Scheduler {
     schedule.id = result?.data?.id ?? schedule.id;
     if (this.schedulingEnabled && this.isValidSchedule(schedule)) {
       await this.initializeOneSchedule(schedule);
+      // Holiday schedules evaluate immediately on save so same-day changes take
+      // effect without waiting for the midnight cron.
+      if (
+        (schedule.actions ?? []).some(
+          (a) => a.action === "setTouHolidayOverride",
+        )
+      ) {
+        this.runEvaluation(schedule, new Map()).catch((err: any) =>
+          logger.error(
+            err,
+            `Immediate holiday evaluation failed for schedule ${schedule.id}`,
+          ),
+        );
+      }
     }
     return result;
   }
