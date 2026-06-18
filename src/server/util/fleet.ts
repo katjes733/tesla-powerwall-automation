@@ -1119,6 +1119,10 @@ export class Fleet {
         },
         `[DRY RUN] Would POST TOU settings for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
       );
+      logger.debug(
+        { tariff_content_v2: tariffV2 },
+        `[DRY RUN] TOU payload for site "${product.site_name}"`,
+      );
       return;
     }
     await retry(
