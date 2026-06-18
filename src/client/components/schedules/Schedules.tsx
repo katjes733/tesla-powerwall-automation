@@ -3074,8 +3074,25 @@ export default function Schedules() {
     });
   }, [tariffInfo]);
 
-  console.log("schedule", schedule);
-  // console.log("actionValues", actionValues);
+  // Keep schedule.conditions in sync whenever smartSeasonalWindows changes in TOU mode.
+  useEffect(() => {
+    if (dialogTab !== 3 || smartMode !== "tou") return;
+    setSchedule((prev: any) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        conditions:
+          smartSeasonalWindows.length > 0
+            ? [
+                {
+                  condition: "inSeasonalGridChargeWindow",
+                  value: smartSeasonalWindows,
+                },
+              ]
+            : [],
+      };
+    });
+  }, [smartSeasonalWindows, dialogTab, smartMode]);
 
   return (
     <Box sx={{ p: 3, width: "60%", mx: "auto" }}>

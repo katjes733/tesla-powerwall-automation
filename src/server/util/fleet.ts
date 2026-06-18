@@ -765,9 +765,10 @@ export class Fleet {
         totalEnergyKwh,
     );
 
-    const isTouMode = conditions.some(
-      (c) => c.condition === "inSeasonalGridChargeWindow",
-    );
+    // Empty conditions means TOU mode with no time restriction (any time off-peak).
+    const isTouMode =
+      conditions.length === 0 ||
+      conditions.some((c) => c.condition === "inSeasonalGridChargeWindow");
     const betweenHoursCond = conditions.find(
       (c) => c.condition === "betweenHours",
     );
