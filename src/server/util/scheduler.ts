@@ -181,10 +181,15 @@ export class Scheduler {
           const isSmartSchedule = (schedule.actions ?? []).some(
             (a) => a.action === "setSmartGridCharging",
           );
+          // Holiday schedules also bypass the rising-edge trigger and own their
+          // today/yesterday logic internally.
+          const isHolidaySchedule = (schedule.actions ?? []).some(
+            (a) => a.action === "setTouHolidayOverride",
+          );
           let actionsExecuted = 0;
 
           for (const product of products) {
-            if (hasConditions && !isSmartSchedule) {
+            if (hasConditions && !isSmartSchedule && !isHolidaySchedule) {
               const liveStatus = await Fleet.getInstance(
                 schedule.email,
               ).getLiveStatus(product);

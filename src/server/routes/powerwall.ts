@@ -20,9 +20,10 @@ router.get("/sites", async (req, res) => {
       mailOnError: false,
     });
     const products = await fleet.getEnergyProducts();
-    const statuses = await Promise.all(
-      products.map((p) => fleet.getLiveStatus(p)),
-    );
+    const [statuses, siteInfos] = await Promise.all([
+      Promise.all(products.map((p) => fleet.getLiveStatus(p))),
+      Promise.all(products.map((p) => fleet.getSiteInfo(p).catch(() => null))),
+    ]);
     res.json({
       success: true,
       data: products.map((p, i) => ({
@@ -30,6 +31,7 @@ router.get("/sites", async (req, res) => {
         site_name: p.site_name,
         is_online:
           statuses[i] !== null && statuses[i]?.island_status === "on_grid",
+        timezone: siteInfos[i]?.installation_time_zone ?? undefined,
       })),
     });
   } catch (error: any) {

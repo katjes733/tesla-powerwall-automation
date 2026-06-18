@@ -13,9 +13,14 @@ import type {
   TokenData,
 } from "~/server/types/common";
 import type {
+  HolidayEntry,
   IScheduleCondition,
   SeasonalWindow,
 } from "~/server/database/models/schedule";
+import type { ITouBackup } from "~/server/database/models/touBackup";
+import AppDataSource from "~/server/database/datasource";
+import { v4 as uuidv4 } from "uuid";
+import { isObservedHolidayOnDate } from "~/server/util/holidays";
 import { getNewTokenWithRefreshToken } from "~/server/util/auth";
 import { retry } from "~/server/util/retry";
 import { sendEmail } from "./mailing";
@@ -962,6 +967,211 @@ export class Fleet {
     } else {
       logger.info(
         `Smart charging [${product.site_name}]: no change (desired=${desired}, current=${currentlyAllowed ? "enabled" : "disabled"}) — ${reason}`,
+      );
+    }
+  }
+
+  private buildWeekendTariff(tariff: Record<string, any>): Record<string, any> {
+    const VALID_LABELS = new Set([
+      "ON_PEAK",
+      "OFF_PEAK",
+      "PARTIAL_PEAK",
+      "SUPER_OFF_PEAK",
+    ]);
+
+    function processSeasons(seasons: Record<string, any>): Record<string, any> {
+      const result: Record<string, any> = {};
+      for (const [seasonName, season] of Object.entries(seasons)) {
+        const originalPeriods: Record<string, any> =
+          (season as any).tou_periods ?? {};
+        const newPeriods: Record<string, any> = {};
+        for (const label of Object.keys(originalPeriods)) {
+          if (!VALID_LABELS.has(label)) continue;
+          const labelData = originalPeriods[label];
+          const periods: any[] = Array.isArray(labelData)
+            ? labelData
+            : (labelData?.periods ?? []);
+          // Keep only periods that reach weekend days (Sat=6 or Sun=0)
+          const weekendPeriods = periods.filter(
+            (p: any) => (p.toDayOfWeek ?? 6) >= 5,
+          );
+          if (weekendPeriods.length === 0) continue;
+          // Expand each kept period to all days
+          const expandedPeriods = weekendPeriods.map((p: any) => ({
+            ...p,
+            fromDayOfWeek: 0,
+            toDayOfWeek: 6,
+          }));
+          newPeriods[label] = Array.isArray(labelData)
+            ? expandedPeriods
+            : { ...labelData, periods: expandedPeriods };
+        }
+        result[seasonName] = { ...(season as any), tou_periods: newPeriods };
+      }
+      return result;
+    }
+
+    const modified = { ...tariff };
+    if (tariff.seasons && typeof tariff.seasons === "object") {
+      modified.seasons = processSeasons(tariff.seasons);
+    }
+    if (
+      tariff.sell_tariff?.seasons &&
+      typeof tariff.sell_tariff.seasons === "object"
+    ) {
+      modified.sell_tariff = {
+        ...tariff.sell_tariff,
+        seasons: processSeasons(tariff.sell_tariff.seasons),
+      };
+    }
+    return modified;
+  }
+
+  private async applyHolidayTou(
+    product: Product,
+    tariffV2: Record<string, any>,
+  ): Promise<void> {
+    const now = new Date();
+    const db = await AppDataSource.getInstance();
+    const repo = db.getRepository("TouBackup");
+
+    // Save the current tariff as backup before overriding
+    await repo.save({
+      id: uuidv4(),
+      creation_time: now,
+      modified_time: now,
+      email: this.email,
+      site_id: String(product.energy_site_id),
+      tariff_content_v2: tariffV2,
+    } satisfies ITouBackup);
+
+    const modified = this.buildWeekendTariff(tariffV2);
+    await this.postTouSettings(product, modified);
+    logger.info(
+      `Holiday TOU override applied for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+    );
+  }
+
+  private async restoreTou(product: Product): Promise<void> {
+    const db = await AppDataSource.getInstance();
+    const repo = db.getRepository("TouBackup");
+    const backup = await repo.findOne({
+      where: {
+        email: this.email,
+        site_id: String(product.energy_site_id),
+      },
+      order: { creation_time: "DESC" },
+    });
+
+    if (!backup) {
+      logger.warn(
+        `No TOU backup found for site "${product.site_name}" (energy_site_id: ${product.energy_site_id}) — skipping restore`,
+      );
+      return;
+    }
+
+    await this.postTouSettings(
+      product,
+      (backup as ITouBackup).tariff_content_v2,
+    );
+    logger.info(
+      `TOU restored from backup for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+    );
+
+    // Delete the used backup row
+    await repo.delete({ id: (backup as any).id });
+
+    // Stale cleanup: remove any orphaned backups older than 3 days for this email
+    const cutoff = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000);
+    await repo
+      .createQueryBuilder()
+      .delete()
+      .where("email = :email AND creation_time < :cutoff", {
+        email: this.email,
+        cutoff,
+      })
+      .execute();
+  }
+
+  private async postTouSettings(
+    product: Product,
+    tariffV2: Record<string, any>,
+  ): Promise<void> {
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/time_of_use_settings`,
+      baseApiUrl,
+    ).toString();
+    const options = await this.getDefaultPostOptions();
+    const body = JSON.stringify({
+      tou_settings: {
+        optimization_strategy: "economics",
+        tariff_content_v2: tariffV2,
+      },
+    });
+    if (process.env.DRY_RUN === "true") {
+      logger.info(
+        {
+          dryRun: true,
+          site: product.site_name,
+          energySiteId: product.energy_site_id,
+          intent: "POST time_of_use_settings",
+        },
+        `[DRY RUN] Would POST TOU settings for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      );
+      return;
+    }
+    await retry(
+      async () => {
+        const res = await fetch(url, { ...options, body });
+        if (!res.ok) {
+          throw new Error(
+            `Error posting TOU settings for Energy Site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+          );
+        }
+        return res;
+      },
+      3,
+      2000,
+      2,
+    );
+  }
+
+  async setTouHolidayOverride(
+    product: Product,
+    _value: string,
+    conditions: IScheduleCondition[],
+  ): Promise<void> {
+    const holidayCond = conditions.find((c) => c.condition === "holidayList");
+    const entries = (holidayCond?.value as HolidayEntry[] | undefined) ?? [];
+
+    const siteInfo = await this.getSiteInfo(product);
+    const tz = siteInfo?.installation_time_zone ?? "UTC";
+    const now = moment().tz(tz);
+    const today = now.format("YYYY-MM-DD");
+    const yesterday = now.clone().subtract(1, "day").format("YYYY-MM-DD");
+
+    const tariffV2: Record<string, any> | undefined =
+      siteInfo?.tariff_content_v2;
+
+    if (isObservedHolidayOnDate(entries, today)) {
+      logger.info(
+        `Holiday on ${today} for site "${product.site_name}" — overriding TOU to weekend schedule`,
+      );
+      if (!tariffV2) {
+        logger.warn(
+          `No tariff_content_v2 available for site "${product.site_name}" — cannot apply holiday TOU override`,
+        );
+        return;
+      }
+      await this.applyHolidayTou(product, tariffV2);
+    } else if (isObservedHolidayOnDate(entries, yesterday)) {
+      logger.info(
+        `Day after holiday (${yesterday}) for site "${product.site_name}" — restoring original TOU`,
+      );
+      await this.restoreTou(product);
+    } else {
+      logger.debug(
+        `No holiday action needed for ${today} on site "${product.site_name}"`,
       );
     }
   }

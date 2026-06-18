@@ -3,9 +3,29 @@ import type { IBasicEntity } from "~/server/types/common";
 
 export type SeasonalWindow = { seasonName: string; from: string; to: string };
 
+export type HolidayEntry = {
+  name: string;
+  /** "MM-DD" for fixed holidays, or an ordinal descriptor for floating ones:
+   *  "lastMon05" = last Mon in May, "1stMon09" = 1st Mon in Sep,
+   *  "4thThu11" = 4th Thu in Nov, "3rdMon01" = 3rd Mon in Jan, etc.
+   *  Format: "<ordinal><dow><MM>" where ordinal ∈ {1st,2nd,3rd,4th,last},
+   *  dow ∈ {Mon,Tue,Wed,Thu,Fri}, MM = zero-padded month.
+   */
+  date: string;
+  /** "auto": Sat→Fri, Sun→Mon. Only meaningful for fixed dates. */
+  observance: "auto" | "none";
+  source: string;
+  enabled: boolean;
+};
+
 export interface IScheduleCondition {
   condition: string;
-  value: number | { from: string; to: string } | SeasonalWindow[];
+  value:
+    | number
+    | { from: string; to: string }
+    | SeasonalWindow[]
+    | HolidayEntry[]
+    | null;
 }
 export interface IScheduleAction {
   action: string;
