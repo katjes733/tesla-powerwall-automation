@@ -1,6 +1,7 @@
 import { DataSource } from "typeorm";
 import { RefreshToken } from "~/server/database/models/refreshToken";
 import { Schedule } from "~/server/database/models/schedule";
+import { TouBackup } from "~/server/database/models/touBackup";
 import { User } from "~/server/database/models/user";
 import { SignupVerification } from "~/server/database/models/signupVerification";
 
@@ -35,7 +36,13 @@ class AppDataSource {
             // ssl: {
             //   rejectUnauthorized: false,
             // },
-            entities: [RefreshToken, Schedule, User, SignupVerification],
+            entities: [
+              RefreshToken,
+              Schedule,
+              TouBackup,
+              User,
+              SignupVerification,
+            ],
           })
         : (() => {
             throw new Error(

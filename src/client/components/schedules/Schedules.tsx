@@ -50,6 +50,277 @@ import Badge from "@mui/material/Badge";
 import CheckIcon from "@mui/icons-material/Check";
 import Alert from "@mui/material/Alert";
 
+type HolidayEntry = {
+  name: string;
+  date: string;
+  observance: "auto" | "none";
+  source: string;
+  enabled: boolean;
+};
+
+type SiteWithTimezone = {
+  id: string;
+  site_name: string;
+  is_online: boolean;
+  timezone?: string;
+};
+
+const MONTH_NAMES = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const DOW_NAMES: Record<string, string> = {
+  Mon: "Mon",
+  Tue: "Tue",
+  Wed: "Wed",
+  Thu: "Thu",
+  Fri: "Fri",
+};
+
+const ORDINAL_LABELS: Record<string, string> = {
+  "1st": "1st",
+  "2nd": "2nd",
+  "3rd": "3rd",
+  "4th": "4th",
+  last: "last",
+};
+
+function formatHolidayDate(date: string): string {
+  if (/^\d{2}-\d{2}$/.test(date)) {
+    const [mm, dd] = date.split("-").map(Number);
+    return `${MONTH_NAMES[mm - 1]} ${dd}`;
+  }
+  const m = /^(1st|2nd|3rd|4th|last)(Mon|Tue|Wed|Thu|Fri)(\d{2})$/.exec(date);
+  if (m) {
+    const [, ord, dow, mm] = m;
+    return `${ORDINAL_LABELS[ord]} ${DOW_NAMES[dow]} in ${MONTH_NAMES[parseInt(mm, 10) - 1]}`;
+  }
+  return date;
+}
+
+const HOLIDAY_SOURCES = [
+  { value: "US_MAJOR", label: "US Major Utility Holidays" },
+  { value: "US_FEDERAL_ALL", label: "US All Federal Holidays" },
+  { value: "CA_FEDERAL", label: "Canada Federal Holidays" },
+  { value: "CUSTOM", label: "Custom" },
+];
+
+function generateHolidayTemplates(source: string): HolidayEntry[] {
+  switch (source) {
+    case "US_MAJOR":
+      return [
+        {
+          name: "New Year's Day",
+          date: "01-01",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Memorial Day",
+          date: "lastMon05",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Independence Day",
+          date: "07-04",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Labor Day",
+          date: "1stMon09",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Thanksgiving Day",
+          date: "4thThu11",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Christmas Day",
+          date: "12-25",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+      ];
+    case "US_FEDERAL_ALL":
+      return [
+        {
+          name: "New Year's Day",
+          date: "01-01",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Martin Luther King Jr. Day",
+          date: "3rdMon01",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Presidents' Day",
+          date: "3rdMon02",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Memorial Day",
+          date: "lastMon05",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Juneteenth National Independence Day",
+          date: "06-19",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Independence Day",
+          date: "07-04",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Labor Day",
+          date: "1stMon09",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Columbus Day",
+          date: "2ndMon10",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Veterans Day",
+          date: "11-11",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Thanksgiving Day",
+          date: "4thThu11",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Christmas Day",
+          date: "12-25",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+      ];
+    case "CA_FEDERAL":
+      return [
+        {
+          name: "New Year's Day",
+          date: "01-01",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Victoria Day",
+          date: "3rdMon05",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Canada Day",
+          date: "07-01",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Civic Holiday",
+          date: "1stMon08",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Labour Day",
+          date: "1stMon09",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "National Day for Truth and Reconciliation",
+          date: "09-30",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Thanksgiving Day",
+          date: "2ndMon10",
+          observance: "none",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Remembrance Day",
+          date: "11-11",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Christmas Day",
+          date: "12-25",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+        {
+          name: "Boxing Day",
+          date: "12-26",
+          observance: "auto",
+          source,
+          enabled: true,
+        },
+      ];
+    default:
+      return [];
+  }
+}
+
 type SettingsProps = {
   schedule: any;
   setSchedule: (row: any) => void;
@@ -162,6 +433,8 @@ function humanizeAction(action: any): string {
         return "smart grid charging";
       }
     }
+    case "setTouHolidayOverride":
+      return "holiday TOU override";
     default:
       return key;
   }
@@ -171,6 +444,18 @@ function summarizeSchedule(schedule: any): string {
   const actions: any[] = schedule.actions ?? [];
   const conditions: any[] = schedule.conditions ?? [];
   const actionStr = actions.map(humanizeAction).join(", ");
+
+  const isHolidayOverride = actions.some(
+    (a) => a.action === "setTouHolidayOverride",
+  );
+  if (isHolidayOverride) {
+    const holidayCond = conditions.find((c) => c.condition === "holidayList");
+    const entries: HolidayEntry[] = Array.isArray(holidayCond?.value)
+      ? holidayCond.value
+      : [];
+    const count = entries.length;
+    return `Holiday TOU override (${count} holiday${count !== 1 ? "s" : ""})`;
+  }
 
   const isSmartCharging = actions.some(
     (a) => a.action === "setSmartGridCharging",
@@ -1605,12 +1890,23 @@ function SiteSelector({
 }: {
   schedule: any;
   setSchedule: (s: any) => void;
-  availableSites: { id: string; site_name: string; is_online: boolean }[];
+  availableSites: SiteWithTimezone[];
 }) {
   const selected: string[] = schedule?.site_ids ?? [];
 
+  // Determine the locked timezone from already-selected sites.
+  const lockedTimezone =
+    selected.length > 0
+      ? (availableSites.find((s) => s.id === selected[0])?.timezone ?? null)
+      : null;
+
   const handleChange = (event: any) => {
-    setSchedule({ ...schedule, site_ids: event.target.value as string[] });
+    const newIds = event.target.value as string[];
+    // Derive timezone from the first selected site.
+    const firstSite = availableSites.find((s) => s.id === newIds[0]);
+    const tz =
+      firstSite?.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone;
+    setSchedule({ ...schedule, site_ids: newIds, timezone: tz });
   };
 
   const renderValue = (selectedIds: string[]) =>
@@ -1629,24 +1925,575 @@ function SiteSelector({
         input={<OutlinedInput label="Target Sites" />}
         renderValue={renderValue}
       >
-        {availableSites.map((site) => (
-          <MenuItem key={site.id} value={site.id}>
-            <Checkbox checked={selected.includes(site.id)} />
-            <Box
-              sx={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                bgcolor: site.is_online ? "success.main" : "action.disabled",
-                mr: 1,
-                flexShrink: 0,
-              }}
-            />
-            <ListItemText primary={site.site_name} />
-          </MenuItem>
-        ))}
+        {availableSites.map((site) => {
+          const tzMismatch =
+            lockedTimezone !== null &&
+            site.timezone !== undefined &&
+            site.timezone !== lockedTimezone &&
+            !selected.includes(site.id);
+          return (
+            <MenuItem key={site.id} value={site.id} disabled={tzMismatch}>
+              <Checkbox checked={selected.includes(site.id)} />
+              <Box
+                sx={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: "50%",
+                  bgcolor: site.is_online ? "success.main" : "action.disabled",
+                  mr: 1,
+                  flexShrink: 0,
+                }}
+              />
+              <ListItemText
+                primary={site.site_name}
+                secondary={tzMismatch ? "Different timezone" : undefined}
+              />
+            </MenuItem>
+          );
+        })}
       </Select>
     </FormControl>
+  );
+}
+
+type HolidaysSettingsProps = {
+  holidayEntries: HolidayEntry[];
+  setHolidayEntries: (entries: HolidayEntry[]) => void;
+  autoPopulateOpen: boolean;
+  setAutoPopulateOpen: (open: boolean) => void;
+  autoPopulateSource: string;
+  setAutoPopulateSource: (source: string) => void;
+  autoPopulateSelected: HolidayEntry[];
+  setAutoPopulateSelected: (entries: HolidayEntry[]) => void;
+  addHolidayOpen: boolean;
+  setAddHolidayOpen: (open: boolean) => void;
+  newHolidayName: string;
+  setNewHolidayName: (name: string) => void;
+  newHolidayType: "fixed" | "floating";
+  setNewHolidayType: (type: "fixed" | "floating") => void;
+  newHolidayMonth: number;
+  setNewHolidayMonth: (month: number) => void;
+  newHolidayDay: number;
+  setNewHolidayDay: (day: number) => void;
+  newHolidayObservance: "auto" | "none";
+  setNewHolidayObservance: (obs: "auto" | "none") => void;
+  newHolidayOrdinal: string;
+  setNewHolidayOrdinal: (ord: string) => void;
+  newHolidayDow: string;
+  setNewHolidayDow: (dow: string) => void;
+  autoPopulateToolbarSource: string;
+  setAutoPopulateToolbarSource: (source: string) => void;
+};
+
+function HolidaysSettings({
+  holidayEntries,
+  setHolidayEntries,
+  autoPopulateOpen,
+  setAutoPopulateOpen,
+  autoPopulateSource,
+  setAutoPopulateSource,
+  autoPopulateSelected,
+  setAutoPopulateSelected,
+  addHolidayOpen,
+  setAddHolidayOpen,
+  newHolidayName,
+  setNewHolidayName,
+  newHolidayType,
+  setNewHolidayType,
+  newHolidayMonth,
+  setNewHolidayMonth,
+  newHolidayDay,
+  setNewHolidayDay,
+  newHolidayObservance,
+  setNewHolidayObservance,
+  newHolidayOrdinal,
+  setNewHolidayOrdinal,
+  newHolidayDow,
+  setNewHolidayDow,
+  autoPopulateToolbarSource,
+  setAutoPopulateToolbarSource,
+}: HolidaysSettingsProps) {
+  const theme = useTheme();
+
+  const handleDeleteEntry = (idx: number) => {
+    setHolidayEntries(holidayEntries.filter((_, i) => i !== idx));
+  };
+
+  const handleOpenAutoPopulate = () => {
+    setAutoPopulateSource(autoPopulateToolbarSource);
+    const templates = generateHolidayTemplates(autoPopulateToolbarSource);
+    setAutoPopulateSelected(templates);
+    setAutoPopulateOpen(true);
+  };
+
+  const handleAddSelected = () => {
+    const existingKeys = new Set(
+      holidayEntries.map((e) => `${e.date}:${e.name}`),
+    );
+    const newEntries = autoPopulateSelected.filter(
+      (e) => !existingKeys.has(`${e.date}:${e.name}`),
+    );
+    setHolidayEntries([...holidayEntries, ...newEntries]);
+    setAutoPopulateOpen(false);
+  };
+
+  const handleSaveNewHoliday = () => {
+    let dateStr: string;
+    if (newHolidayType === "fixed") {
+      const mm = String(newHolidayMonth).padStart(2, "0");
+      const dd = String(newHolidayDay).padStart(2, "0");
+      dateStr = `${mm}-${dd}`;
+    } else {
+      const mm = String(newHolidayMonth).padStart(2, "0");
+      dateStr = `${newHolidayOrdinal}${newHolidayDow}${mm}`;
+    }
+    const entry: HolidayEntry = {
+      name: newHolidayName.trim(),
+      date: dateStr,
+      observance: newHolidayType === "floating" ? "none" : newHolidayObservance,
+      source: "CUSTOM",
+      enabled: true,
+    };
+    setHolidayEntries([...holidayEntries, entry]);
+    setAddHolidayOpen(false);
+    setNewHolidayName("");
+    setNewHolidayType("fixed");
+    setNewHolidayMonth(1);
+    setNewHolidayDay(1);
+    setNewHolidayObservance("auto");
+    setNewHolidayOrdinal("1st");
+    setNewHolidayDow("Mon");
+  };
+
+  const daysInMonth = (month: number) => {
+    const days30 = [4, 6, 9, 11];
+    if (month === 2) return 28;
+    if (days30.includes(month)) return 30;
+    return 31;
+  };
+
+  return (
+    <Box sx={{ mt: 2 }}>
+      <Alert severity="info" sx={{ mb: 2 }}>
+        Fires at midnight local time every night. On observed holidays the TOU
+        schedule is switched to weekend mode; the original schedule is restored
+        the following midnight.
+      </Alert>
+
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: "center",
+          gap: 1,
+          mb: 1,
+          flexWrap: "wrap",
+        }}
+      >
+        <FormControl size="small" sx={{ minWidth: 220 }}>
+          <InputLabel>Source</InputLabel>
+          <Select
+            value={autoPopulateToolbarSource}
+            label="Source"
+            onChange={(e) => setAutoPopulateToolbarSource(e.target.value)}
+          >
+            {HOLIDAY_SOURCES.map((s) => (
+              <MenuItem key={s.value} value={s.value}>
+                {s.label}
+              </MenuItem>
+            ))}
+          </Select>
+        </FormControl>
+        <Button
+          variant="outlined"
+          size="small"
+          onClick={handleOpenAutoPopulate}
+          disabled={autoPopulateToolbarSource === "CUSTOM"}
+        >
+          Populate
+        </Button>
+        <Button
+          variant="outlined"
+          size="small"
+          startIcon={<AddIcon />}
+          onClick={() => setAddHolidayOpen(true)}
+        >
+          Add custom
+        </Button>
+      </Box>
+
+      {holidayEntries.length === 0 ? (
+        <Alert severity="info" sx={{ mt: 1 }}>
+          No holidays configured. Use "Populate" to add from a template or "+
+          Add custom" to add individual holidays.
+        </Alert>
+      ) : (
+        <Box
+          sx={{
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            overflow: "hidden",
+            mt: 1,
+          }}
+        >
+          <Box
+            sx={{
+              display: "grid",
+              gridTemplateColumns: "1fr 130px 60px 80px 36px",
+              bgcolor: alpha(
+                theme.palette.background.paper,
+                theme.palette.mode === "light" ? 0.5 : 0.2,
+              ),
+              borderBottom: 1,
+              borderColor: "divider",
+              px: 1,
+              py: 0.5,
+            }}
+          >
+            <Typography variant="caption" color="text.secondary">
+              Name
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Date
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Observ.
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              Source
+            </Typography>
+            <span />
+          </Box>
+          {holidayEntries.map((entry, idx) => (
+            <Box
+              key={idx}
+              sx={{
+                display: "grid",
+                gridTemplateColumns: "1fr 130px 60px 80px 36px",
+                alignItems: "center",
+                px: 1,
+                py: 0.25,
+                borderBottom: idx < holidayEntries.length - 1 ? 1 : 0,
+                borderColor: "divider",
+                "&:hover": { bgcolor: alpha(theme.palette.action.hover, 0.04) },
+              }}
+            >
+              <Tooltip title={entry.name} placement="top">
+                <Typography
+                  variant="body2"
+                  sx={{
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {entry.name}
+                </Typography>
+              </Tooltip>
+              <Typography variant="body2" color="text.secondary">
+                {formatHolidayDate(entry.date)}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {/^\d{2}-\d{2}$/.test(entry.date)
+                  ? entry.observance === "auto"
+                    ? "Auto"
+                    : "None"
+                  : "—"}
+              </Typography>
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {entry.source}
+              </Typography>
+              <IconButton size="small" onClick={() => handleDeleteEntry(idx)}>
+                <DeleteIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          ))}
+        </Box>
+      )}
+
+      {/* Auto-populate dialog */}
+      <Dialog
+        open={autoPopulateOpen}
+        onClose={() => setAutoPopulateOpen(false)}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          Add{" "}
+          {HOLIDAY_SOURCES.find((s) => s.value === autoPopulateSource)?.label}
+        </DialogTitle>
+        <DialogContent>
+          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
+            <InputLabel>Source</InputLabel>
+            <Select
+              value={autoPopulateSource}
+              label="Source"
+              onChange={(e) => {
+                setAutoPopulateSource(e.target.value);
+                setAutoPopulateSelected(
+                  generateHolidayTemplates(e.target.value),
+                );
+              }}
+            >
+              {HOLIDAY_SOURCES.filter((s) => s.value !== "CUSTOM").map((s) => (
+                <MenuItem key={s.value} value={s.value}>
+                  {s.label}
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
+            <Button
+              size="small"
+              onClick={() =>
+                setAutoPopulateSelected(
+                  generateHolidayTemplates(autoPopulateSource),
+                )
+              }
+            >
+              Select all
+            </Button>
+            <Button size="small" onClick={() => setAutoPopulateSelected([])}>
+              Deselect all
+            </Button>
+          </Box>
+          {generateHolidayTemplates(autoPopulateSource).map((entry, idx) => {
+            const checked = autoPopulateSelected.some(
+              (s) => s.date === entry.date && s.name === entry.name,
+            );
+            return (
+              <Box
+                key={idx}
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  py: 0.5,
+                  borderBottom: 1,
+                  borderColor: "divider",
+                }}
+              >
+                <Checkbox
+                  checked={checked}
+                  size="small"
+                  onChange={() => {
+                    if (checked) {
+                      setAutoPopulateSelected(
+                        autoPopulateSelected.filter(
+                          (s) =>
+                            !(s.date === entry.date && s.name === entry.name),
+                        ),
+                      );
+                    } else {
+                      setAutoPopulateSelected([...autoPopulateSelected, entry]);
+                    }
+                  }}
+                />
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="body2">{entry.name}</Typography>
+                </Box>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ minWidth: 110 }}
+                >
+                  {formatHolidayDate(entry.date)}
+                </Typography>
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ minWidth: 50 }}
+                >
+                  {/^\d{2}-\d{2}$/.test(entry.date)
+                    ? entry.observance === "auto"
+                      ? "Auto"
+                      : "None"
+                    : "—"}
+                </Typography>
+              </Box>
+            );
+          })}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAutoPopulateOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleAddSelected}
+            disabled={autoPopulateSelected.length === 0}
+          >
+            Add Selected ({autoPopulateSelected.length})
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Add custom holiday dialog */}
+      <Dialog
+        open={addHolidayOpen}
+        onClose={() => setAddHolidayOpen(false)}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>Add Custom Holiday</DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Name"
+            size="small"
+            fullWidth
+            sx={{ mt: 1, mb: 2 }}
+            value={newHolidayName}
+            onChange={(e) => setNewHolidayName(e.target.value)}
+          />
+          <ToggleButtonGroup
+            value={newHolidayType}
+            exclusive
+            size="small"
+            onChange={(_, v) => v && setNewHolidayType(v)}
+            sx={{ mb: 2 }}
+          >
+            <ToggleButton value="fixed">Fixed date</ToggleButton>
+            <ToggleButton value="floating">
+              Floating (weekday rule)
+            </ToggleButton>
+          </ToggleButtonGroup>
+
+          {newHolidayType === "fixed" ? (
+            <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
+              <FormControl size="small" sx={{ flex: 1 }}>
+                <InputLabel>Month</InputLabel>
+                <Select
+                  value={newHolidayMonth}
+                  label="Month"
+                  onChange={(e) => {
+                    setNewHolidayMonth(Number(e.target.value));
+                    setNewHolidayDay(1);
+                  }}
+                >
+                  {MONTH_NAMES.map((m, i) => (
+                    <MenuItem key={i + 1} value={i + 1}>
+                      {m}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ flex: 1 }}>
+                <InputLabel>Day</InputLabel>
+                <Select
+                  value={newHolidayDay}
+                  label="Day"
+                  onChange={(e) => setNewHolidayDay(Number(e.target.value))}
+                >
+                  {Array.from(
+                    { length: daysInMonth(newHolidayMonth) },
+                    (_, i) => (
+                      <MenuItem key={i + 1} value={i + 1}>
+                        {i + 1}
+                      </MenuItem>
+                    ),
+                  )}
+                </Select>
+              </FormControl>
+            </Box>
+          ) : (
+            <Box sx={{ display: "flex", gap: 1, mb: 2, flexWrap: "wrap" }}>
+              <FormControl size="small" sx={{ minWidth: 80 }}>
+                <InputLabel>Ordinal</InputLabel>
+                <Select
+                  value={newHolidayOrdinal}
+                  label="Ordinal"
+                  onChange={(e) => setNewHolidayOrdinal(e.target.value)}
+                >
+                  {["1st", "2nd", "3rd", "4th", "last"].map((o) => (
+                    <MenuItem key={o} value={o}>
+                      {o}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <FormControl size="small" sx={{ minWidth: 80 }}>
+                <InputLabel>Day</InputLabel>
+                <Select
+                  value={newHolidayDow}
+                  label="Day"
+                  onChange={(e) => setNewHolidayDow(e.target.value)}
+                >
+                  {["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => (
+                    <MenuItem key={d} value={d}>
+                      {d}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+              <Typography variant="body2" sx={{ alignSelf: "center" }}>
+                in
+              </Typography>
+              <FormControl size="small" sx={{ minWidth: 90 }}>
+                <InputLabel>Month</InputLabel>
+                <Select
+                  value={newHolidayMonth}
+                  label="Month"
+                  onChange={(e) => setNewHolidayMonth(Number(e.target.value))}
+                >
+                  {MONTH_NAMES.map((m, i) => (
+                    <MenuItem key={i + 1} value={i + 1}>
+                      {m}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
+          )}
+
+          {newHolidayType === "fixed" && (
+            <FormControl component="fieldset">
+              <Typography variant="body2" gutterBottom>
+                Observance
+              </Typography>
+              <RadioGroup
+                value={newHolidayObservance}
+                onChange={(e) =>
+                  setNewHolidayObservance(e.target.value as "auto" | "none")
+                }
+              >
+                <FormControlLabel
+                  value="auto"
+                  control={<Radio size="small" />}
+                  label={
+                    <Typography variant="body2">
+                      Auto (Sat → Fri, Sun → Mon)
+                    </Typography>
+                  }
+                />
+                <FormControlLabel
+                  value="none"
+                  control={<Radio size="small" />}
+                  label={
+                    <Typography variant="body2">None (exact date)</Typography>
+                  }
+                />
+              </RadioGroup>
+            </FormControl>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setAddHolidayOpen(false)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveNewHoliday}
+            disabled={!newHolidayName.trim()}
+          >
+            Save
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   );
 }
 
@@ -1684,6 +2531,7 @@ export default function Schedules() {
     flow: false,
     actions: false,
     smart: false,
+    holiday: false,
   });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<any | null>(null);
@@ -1709,9 +2557,27 @@ export default function Schedules() {
   >([]);
   const [tariffInfo, setTariffInfo] = useState<TariffInfo>(null);
   const theme = useTheme();
-  const [availableSites, setAvailableSites] = useState<
-    { id: string; site_name: string; is_online: boolean }[]
+  const [availableSites, setAvailableSites] = useState<SiteWithTimezone[]>([]);
+  const [holidayEntries, setHolidayEntries] = useState<HolidayEntry[]>([]);
+  const [autoPopulateOpen, setAutoPopulateOpen] = useState(false);
+  const [autoPopulateSource, setAutoPopulateSource] = useState("US_MAJOR");
+  const [autoPopulateSelected, setAutoPopulateSelected] = useState<
+    HolidayEntry[]
   >([]);
+  const [addHolidayOpen, setAddHolidayOpen] = useState(false);
+  const [newHolidayName, setNewHolidayName] = useState("");
+  const [newHolidayType, setNewHolidayType] = useState<"fixed" | "floating">(
+    "fixed",
+  );
+  const [newHolidayMonth, setNewHolidayMonth] = useState(1);
+  const [newHolidayDay, setNewHolidayDay] = useState(1);
+  const [newHolidayObservance, setNewHolidayObservance] = useState<
+    "auto" | "none"
+  >("auto");
+  const [newHolidayOrdinal, setNewHolidayOrdinal] = useState("1st");
+  const [newHolidayDow, setNewHolidayDow] = useState("Mon");
+  const [autoPopulateToolbarSource, setAutoPopulateToolbarSource] =
+    useState("US_MAJOR");
 
   const loadSchedules = useCallback(async () => {
     setLoading(true);
@@ -1893,6 +2759,12 @@ export default function Schedules() {
         const getTabForSchedule = (schedule: any) => {
           if (
             (schedule?.actions ?? []).some(
+              (a: any) => a.action === "setTouHolidayOverride",
+            )
+          )
+            return 4;
+          if (
+            (schedule?.actions ?? []).some(
               (a: any) => a.action === "setSmartGridCharging",
             )
           )
@@ -1917,7 +2789,8 @@ export default function Schedules() {
               onClick={(event) => {
                 event.stopPropagation();
                 setSchedule(params.row);
-                setDialogTab(getTabForSchedule(params.row));
+                const tab = getTabForSchedule(params.row);
+                setDialogTab(tab);
                 setDialogOpen(true);
                 setActionValues(
                   Object.fromEntries(
@@ -1927,6 +2800,16 @@ export default function Schedules() {
                     ]),
                   ),
                 );
+                if (tab === 4) {
+                  const holidayCond = (params.row.conditions ?? []).find(
+                    (c: any) => c.condition === "holidayList",
+                  );
+                  setHolidayEntries(
+                    Array.isArray(holidayCond?.value) ? holidayCond.value : [],
+                  );
+                } else {
+                  setHolidayEntries([]);
+                }
               }}
             >
               <EditIcon />
@@ -2089,6 +2972,50 @@ export default function Schedules() {
     // eslint-disable-next-line
   }, [dialogTab]);
 
+  // Keep holiday tabValid in sync with holidayEntries list.
+  useEffect(() => {
+    setTabValid((prev) => ({ ...prev, holiday: holidayEntries.length > 0 }));
+  }, [holidayEntries]);
+
+  // Initialize holiday UI state when opening an existing holiday schedule.
+  useEffect(() => {
+    if (!dialogOpen || dialogTab !== 4 || !schedule) return;
+    const conditions: any[] = schedule.conditions ?? [];
+    const holidayCond = conditions.find((c) => c.condition === "holidayList");
+    if (Array.isArray(holidayCond?.value)) {
+      setHolidayEntries(holidayCond.value as HolidayEntry[]);
+    }
+    // eslint-disable-next-line
+  }, [dialogOpen, dialogTab]);
+
+  // When switching to the holiday tab on a new schedule, apply fixed defaults.
+  useEffect(() => {
+    if (dialogTab === 4 && schedule) {
+      const hasHolidayCond = (schedule.conditions ?? []).some(
+        (c: any) => c.condition === "holidayList",
+      );
+      if (!hasHolidayCond) {
+        setSchedule((prev: any) => ({
+          ...prev,
+          cron: "0 0 * * *",
+          actions: [{ action: "setTouHolidayOverride", value: "" }],
+          conditions: [{ condition: "holidayList", value: holidayEntries }],
+        }));
+      }
+    }
+    // eslint-disable-next-line
+  }, [dialogTab]);
+
+  // Keep schedule.conditions in sync with holidayEntries when on the holiday tab.
+  useEffect(() => {
+    if (dialogTab !== 4 || !schedule) return;
+    setSchedule((prev: any) => ({
+      ...prev,
+      conditions: [{ condition: "holidayList", value: holidayEntries }],
+    }));
+    // eslint-disable-next-line
+  }, [holidayEntries, dialogTab]);
+
   // Initialize smart UI state when opening an existing smart schedule.
   useEffect(() => {
     if (!dialogOpen || dialogTab !== 3 || !schedule) return;
@@ -2147,8 +3074,25 @@ export default function Schedules() {
     });
   }, [tariffInfo]);
 
-  console.log("schedule", schedule);
-  // console.log("actionValues", actionValues);
+  // Keep schedule.conditions in sync whenever smartSeasonalWindows changes in TOU mode.
+  useEffect(() => {
+    if (dialogTab !== 3 || smartMode !== "tou") return;
+    setSchedule((prev: any) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        conditions:
+          smartSeasonalWindows.length > 0
+            ? [
+                {
+                  condition: "inSeasonalGridChargeWindow",
+                  value: smartSeasonalWindows,
+                },
+              ]
+            : [],
+      };
+    });
+  }, [smartSeasonalWindows, dialogTab, smartMode]);
 
   return (
     <Box sx={{ p: 3, width: "60%", mx: "auto" }}>
@@ -2174,19 +3118,23 @@ export default function Schedules() {
           onClick={() => {
             setDialogTab(0);
             setDialogOpen(true);
+            const onlineSites = availableSites.filter((s) => s.is_online);
+            const firstSite = onlineSites[0];
+            const tz =
+              firstSite?.timezone ??
+              Intl.DateTimeFormat().resolvedOptions().timeZone;
             const newSchedule = {
               email: user,
-              site_ids: availableSites
-                .filter((s) => s.is_online)
-                .map((s) => s.id),
+              site_ids: onlineSites.map((s) => s.id),
               cron: null,
-              timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              timezone: tz,
               enabled: true,
               expires_at: null,
               conditions: null,
               actions: null,
             };
             setSchedule(newSchedule);
+            setHolidayEntries([]);
             setPowerwallOption("charged");
             setPowerwallOptionValues({
               charged: 100,
@@ -2233,7 +3181,9 @@ export default function Schedules() {
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
-        maxWidth="xs"
+        maxWidth="sm"
+        fullWidth
+        slotProps={{ paper: { sx: { maxWidth: 520 } } }}
       >
         <DialogTitle>Schedule Details</DialogTitle>
         <DialogContent>
@@ -2246,11 +3196,13 @@ export default function Schedules() {
             value={dialogTab}
             onChange={(_, v) => setDialogTab(v)}
             aria-label="schedule details tabs"
+            variant="fullWidth"
           >
             <Tab key="time" label="Time" />
             <Tab key="powerwall" label="Powerwall" />
             <Tab key="flow" label="Flow" />
             <Tab key="smart" label="Smart" />
+            <Tab key="holidays" label="Holidays" />
           </Tabs>
           {dialogTab === 0 && (
             <Box mt={2}>
@@ -2340,6 +3292,38 @@ export default function Schedules() {
               />
             </Box>
           )}
+          {dialogTab === 4 && (
+            <Box mt={2}>
+              <HolidaysSettings
+                holidayEntries={holidayEntries}
+                setHolidayEntries={setHolidayEntries}
+                autoPopulateOpen={autoPopulateOpen}
+                setAutoPopulateOpen={setAutoPopulateOpen}
+                autoPopulateSource={autoPopulateSource}
+                setAutoPopulateSource={setAutoPopulateSource}
+                autoPopulateSelected={autoPopulateSelected}
+                setAutoPopulateSelected={setAutoPopulateSelected}
+                addHolidayOpen={addHolidayOpen}
+                setAddHolidayOpen={setAddHolidayOpen}
+                newHolidayName={newHolidayName}
+                setNewHolidayName={setNewHolidayName}
+                newHolidayType={newHolidayType}
+                setNewHolidayType={setNewHolidayType}
+                newHolidayMonth={newHolidayMonth}
+                setNewHolidayMonth={setNewHolidayMonth}
+                newHolidayDay={newHolidayDay}
+                setNewHolidayDay={setNewHolidayDay}
+                newHolidayObservance={newHolidayObservance}
+                setNewHolidayObservance={setNewHolidayObservance}
+                newHolidayOrdinal={newHolidayOrdinal}
+                setNewHolidayOrdinal={setNewHolidayOrdinal}
+                newHolidayDow={newHolidayDow}
+                setNewHolidayDow={setNewHolidayDow}
+                autoPopulateToolbarSource={autoPopulateToolbarSource}
+                setAutoPopulateToolbarSource={setAutoPopulateToolbarSource}
+              />
+            </Box>
+          )}
         </DialogContent>
         <DialogActions>
           <Button
@@ -2347,15 +3331,19 @@ export default function Schedules() {
             color="primary"
             sx={{ borderRadius: "10" }}
             disabled={
-              (dialogTab === 3
-                ? !tabValid.smart
-                : !tabValid[
-                    dialogTab === 0
-                      ? "time"
-                      : dialogTab === 1
-                        ? "powerwall"
-                        : "flow"
-                  ] || !tabValid.actions) || !schedule?.site_ids?.length
+              dialogTab === 4
+                ? !tabValid.holiday || !schedule?.site_ids?.length
+                : dialogTab === 3
+                  ? !tabValid.smart
+                  : !tabValid[
+                      dialogTab === 0
+                        ? "time"
+                        : dialogTab === 1
+                          ? "powerwall"
+                          : "flow"
+                    ] ||
+                    !tabValid.actions ||
+                    !schedule?.site_ids?.length
             }
             onClick={handleSaveSchedule}
           >
