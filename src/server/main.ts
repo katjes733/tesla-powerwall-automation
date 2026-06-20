@@ -36,6 +36,16 @@ if (!sessionSecret) {
   throw new Error("SESSION_SECRET environment variable is required");
 }
 
+const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
+if (
+  !tokenEncryptionKey ||
+  Buffer.from(tokenEncryptionKey, "hex").length !== 32
+) {
+  throw new Error(
+    "TOKEN_ENCRYPTION_KEY must be a 32-byte hex string (64 chars), e.g. openssl rand -hex 32",
+  );
+}
+
 app.use(
   session({
     secret: sessionSecret,

@@ -4,6 +4,7 @@ import { Schedule } from "~/server/database/models/schedule";
 import { TouBackup } from "~/server/database/models/touBackup";
 import { User } from "~/server/database/models/user";
 import { SignupVerification } from "~/server/database/models/signupVerification";
+import { migrateTokenEncryption } from "~/server/database/migrateTokenEncryption";
 
 class AppDataSource {
   private static instance: DataSource | null = null;
@@ -58,7 +59,9 @@ class AppDataSource {
         );
         log("✅ Database schema ensured successfully.");
         await dataSource.synchronize();
-        log("✅ Database migrations completed successfully.");
+        log("✅ Database schema synchronised successfully.");
+        await migrateTokenEncryption(dataSource);
+        log("✅ Token encryption migration completed.");
         AppDataSource.instance = dataSource;
         AppDataSource.initializing = null;
         return dataSource;

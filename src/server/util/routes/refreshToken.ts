@@ -1,6 +1,7 @@
 import { v4 } from "uuid";
 import AppDataSource from "~/server/database/datasource";
 import type { RefreshTokenData } from "~/server/types/common";
+import { encrypt, decryptIfEncrypted } from "~/server/util/tokenCrypto";
 
 export async function upsert({
   id,
@@ -29,14 +30,14 @@ export async function upsert({
       creation_time: newDate,
       modified_time: newDate,
       email,
-      refresh_token: refreshToken,
+      refresh_token: encrypt(refreshToken),
       expires_at: expiresAtDate,
     });
     status = 200;
   } else {
     await tokenRepo.update(recordId, {
       modified_time: newDate,
-      refresh_token: refreshToken,
+      refresh_token: encrypt(refreshToken),
       expires_at: expiresAtDate,
     });
     status = 201;
@@ -67,7 +68,7 @@ export async function getByEmail(email: string) {
         return {
           id: record.id,
           email: record.email,
-          refreshToken: record.refresh_token,
+          refreshToken: decryptIfEncrypted(record.refresh_token),
           expiresAt: record.expires_at,
         } as RefreshTokenData;
       }

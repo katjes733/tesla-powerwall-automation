@@ -3,6 +3,7 @@ import argon2 from "argon2";
 import { v4 } from "uuid";
 import AppDataSource from "~/server/database/datasource";
 import { requireAuth } from "~/server/middleware/auth";
+import { encrypt } from "~/server/util/tokenCrypto";
 
 export const router = express.Router();
 
@@ -55,7 +56,7 @@ router.post("/upsert", async (req, res) => {
       if (user_permissions !== undefined)
         updateFields.user_permissions = user_permissions;
       if (refresh_token !== undefined)
-        updateFields.refresh_token = refresh_token;
+        updateFields.refresh_token = encrypt(refresh_token);
       if (expires_at !== undefined) updateFields.expires_at = expires_at;
 
       userRepo.update(existingUser.id, updateFields);
