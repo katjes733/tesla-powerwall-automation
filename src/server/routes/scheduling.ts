@@ -1,10 +1,13 @@
 import express from "express";
 import { Scheduler } from "~/server/util/scheduler";
 import AppDataSource from "../database/datasource";
+import { requireAuth } from "~/server/middleware/auth";
 
 export const router = express.Router();
 
-router.post("/initialize", function (req, res) {
+router.use(requireAuth);
+
+router.post("/initialize", function (_req, res) {
   Scheduler.getInstance()
     .initialize()
     .then(() => {
@@ -22,7 +25,7 @@ router.post("/initialize", function (req, res) {
     });
 });
 
-router.post("/stop-all", function (req, res) {
+router.post("/stop-all", function (_req, res) {
   Scheduler.getInstance()
     .stopAll()
     .then(() => {
@@ -40,7 +43,7 @@ router.post("/stop-all", function (req, res) {
     });
 });
 
-router.post("/start-all", function (req, res) {
+router.post("/start-all", function (_req, res) {
   Scheduler.getInstance()
     .startAll()
     .then(() => {
@@ -59,7 +62,7 @@ router.post("/start-all", function (req, res) {
 });
 
 router.post("/upsert", function (req, res) {
-  const scheduleData = req.body;
+  const scheduleData = { ...req.body, email: req.session.user as string };
   Scheduler.getInstance()
     .upsert(scheduleData)
     .then((result) => {
@@ -99,9 +102,9 @@ router.post("/delete", function (req, res) {
 
 router.get("/all", async function (req, res) {
   const repo = (await AppDataSource.getInstance()).getRepository("Schedule");
-  const { email } = req.query;
+  const email = req.session.user as string;
   repo
-    .find(email ? { where: { email } } : {})
+    .find({ where: { email } })
     .then((schedules) => {
       res.json({ success: true, data: schedules });
     })

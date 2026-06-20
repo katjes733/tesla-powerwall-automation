@@ -2,6 +2,7 @@ import express from "express";
 import argon2 from "argon2";
 import { v4 } from "uuid";
 import AppDataSource from "~/server/database/datasource";
+import { requireAuth } from "~/server/middleware/auth";
 
 export const router = express.Router();
 
@@ -69,12 +70,8 @@ router.post("/upsert", async (req, res) => {
   }
 });
 
-router.post("/remove", async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    res.status(500).json({ error: "No email specified" });
-    return;
-  }
+router.post("/remove", requireAuth, async (req, res) => {
+  const email = req.session.user as string;
   try {
     const userRepo = (await AppDataSource.getInstance()).getRepository("User");
     await userRepo.delete({ email });
@@ -85,8 +82,9 @@ router.post("/remove", async (req, res) => {
   }
 });
 
-router.post("/change-password", async (req, res) => {
-  const { email, currentPassword, newPassword } = req.body;
+router.post("/change-password", requireAuth, async (req, res) => {
+  const email = req.session.user as string;
+  const { currentPassword, newPassword } = req.body;
 
   const userRepo = (await AppDataSource.getInstance()).getRepository("User");
   const existingUser = await userRepo.findOneBy({ email });
