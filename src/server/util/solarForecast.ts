@@ -54,8 +54,11 @@ export function estimateSolarKwhFromHistory(
   const dailySolarAtNow: number[] = [];
 
   for (const readings of byDate.values()) {
-    const windowReadings = readings.filter(
-      (r) => r.todMins >= nowMins && r.todMins < peakMins,
+    // Handle windows that wrap midnight (nowMins > peakMins, e.g. 22:00 → 08:00).
+    const windowReadings = readings.filter((r) =>
+      nowMins <= peakMins
+        ? r.todMins >= nowMins && r.todMins < peakMins
+        : r.todMins >= nowMins || r.todMins < peakMins,
     );
     // Skip days with no readings in the window or where solar was zero throughout
     // (e.g. night-time windows, fully overcast days, data outages).

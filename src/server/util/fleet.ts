@@ -819,9 +819,12 @@ export class Fleet {
               : linearSolarKwh;
           const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
 
-          if (estimatedSolarKwh >= energyNeededKwh) {
+          // Only early-disable based on solar when the historical forecast is
+          // available — the linear fallback is too imprecise to justify halting
+          // grid charging on its own (it ignores the solar bell curve).
+          if (solarForecast !== null && estimatedSolarKwh >= energyNeededKwh) {
             desired = "disabled";
-            reason = `solar expected to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
+            reason = `solar forecast to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
           } else {
             const gridEnergyKwh = energyNeededKwh - estimatedSolarKwh;
             const gridChargeHours = gridEnergyKwh / chargeRateKw;
@@ -902,9 +905,12 @@ export class Fleet {
           solarForecast !== null ? solarForecast.estimatedKwh : linearSolarKwh;
         const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
 
-        if (estimatedSolarKwh >= energyNeededKwh) {
+        // Only early-disable based on solar when the historical forecast is
+        // available — the linear fallback is too imprecise to justify halting
+        // grid charging on its own (it ignores the solar bell curve).
+        if (solarForecast !== null && estimatedSolarKwh >= energyNeededKwh) {
           desired = "disabled";
-          reason = `solar expected to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
+          reason = `solar forecast to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
         } else {
           const gridEnergyKwh = energyNeededKwh - estimatedSolarKwh;
           const gridChargeHours = gridEnergyKwh / chargeRateKw;
