@@ -31,11 +31,14 @@ app.use(httpLogger);
 
 app.use(express.json());
 app.use(cookieParser());
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  throw new Error("SESSION_SECRET environment variable is required");
+}
+
 app.use(
   session({
-    secret:
-      process.env.SESSION_SECRET ||
-      "8aabb709b741d616652f9f79e76983e93338e4c5a1262946545311880721b6b4",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
