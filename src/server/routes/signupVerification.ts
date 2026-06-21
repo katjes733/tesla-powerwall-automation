@@ -1,4 +1,5 @@
 import express from "express";
+import { timingSafeEqual } from "crypto";
 import { totp, generateKey } from "otp-io";
 import {
   sendCodeLimiter,
@@ -104,7 +105,7 @@ router.post("/verify-code", verifyCodeLimiter, async (req, res) => {
 
   const { code: storedCode, expires_at } = existingSignupVerification;
 
-  if (code !== storedCode) {
+  if (!timingSafeEqual(Buffer.from(code), Buffer.from(storedCode))) {
     res.status(400).json({ error: "Invalid verification code" });
     return;
   }
