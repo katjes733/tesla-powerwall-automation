@@ -54,7 +54,7 @@ app.use(
     cookie: {
       httpOnly: true,
       secure: process.env.SSL_ENABLED === "true",
-      sameSite: "lax",
+      sameSite: "strict",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
   }),
