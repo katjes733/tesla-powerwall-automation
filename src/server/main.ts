@@ -10,6 +10,7 @@ import { router as HealthRouter } from "~/server/routes/health";
 import { router as SessionRouter } from "~/server/routes/session";
 import { router as UserRouter } from "~/server/routes/user";
 import { router as SignupVerificationRouter } from "~/server/routes/signupVerification";
+import helmet from "helmet";
 import http from "http";
 import path from "path";
 
@@ -60,7 +61,7 @@ app.use(
   }),
 );
 
-app.disable("x-powered-by");
+app.use(helmet());
 
 app.use("/api/powerwall", PowerwallRouter);
 app.use("/api/health", HealthRouter);
