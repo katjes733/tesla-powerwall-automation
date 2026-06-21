@@ -30,7 +30,7 @@ const app = express();
 
 app.use(httpLogger);
 
-app.use(express.json());
+app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
 const sessionSecret = process.env.SESSION_SECRET;
 if (!sessionSecret) {
