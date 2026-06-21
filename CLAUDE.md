@@ -97,6 +97,14 @@ Each cron tick:
 2. Iterates `schedule.configuration` items, resolving each `action` string through `Fleet._actionMap`
 3. Writes `last_run_time`, `next_run_time`, and success/error fields back to the DB
 
+## Accepted security findings
+
+Security issues that were consciously assessed and accepted rather than fixed. Do not re-raise these in future audits unless the threat model changes.
+
+**Outbound `fetch()` to Tesla Fleet API carries no custom TLS dispatcher** *(assessed 2026-06-21)*
+
+Node.js / Bun validate TLS certificates by default (`rejectUnauthorized: true`). A custom agent with the same default adds no protection: it cannot defend against a compromised OS trust store (the only meaningful upgrade would be certificate pinning, which is brittle and breaks silently on Tesla cert rotation). There is no `rejectUnauthorized: false` anywhere in the codebase.
+
 ## Key conventions
 
 - **Path alias** — `~/` maps to `src/` (configured in `tsconfig.json` and Vite). Use it for all cross-module imports within `src/`.
