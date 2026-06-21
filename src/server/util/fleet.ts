@@ -133,7 +133,7 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Tesla API token refresh failed. Please check the server logs and re-authenticate if necessary.`,
         this.email,
         this.options.mailOnError,
       );
@@ -204,7 +204,7 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to retrieve energy products from the Tesla API. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
@@ -251,7 +251,7 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to retrieve site info for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
@@ -289,7 +289,7 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to retrieve live status for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
@@ -514,7 +514,7 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to set backup reserve for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
@@ -628,7 +628,7 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to set energy exports for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
@@ -699,7 +699,7 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to set grid charging for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
@@ -1252,7 +1252,7 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to set operational mode for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
