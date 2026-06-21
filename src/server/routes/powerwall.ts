@@ -1,5 +1,9 @@
 import express from "express";
-import { Fleet, isCalibrating } from "~/server/util/fleet";
+import {
+  Fleet,
+  isCalibrating,
+  isDischargeCalibrating,
+} from "~/server/util/fleet";
 import {
   parseTariffContent,
   hasTouData,
@@ -97,7 +101,10 @@ router.get("/status", async (req, res) => {
           product,
           live,
           info,
-          calibrating: live ? isCalibrating(live) : false,
+          calibrating: live
+            ? isCalibrating(live) ||
+              isDischargeCalibrating(product.energy_site_id)
+            : false,
         };
       }),
     );

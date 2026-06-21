@@ -18,7 +18,10 @@ import type {
   SeasonalWindow,
 } from "~/server/database/models/schedule";
 import type { ITouBackup } from "~/server/database/models/touBackup";
-import type { ICalibrationEvent } from "~/server/database/models/calibrationEvent";
+import type {
+  SiteEventType,
+  ISiteEvent,
+} from "~/server/database/models/siteEvent";
 import AppDataSource from "~/server/database/datasource";
 import { IsNull } from "typeorm";
 import { v4 as uuidv4 } from "uuid";
@@ -53,6 +56,17 @@ const siteInfoCache = new Map<number, { info: SiteInfo; at: number }>();
 
 const LIVE_STATUS_CACHE_TTL_MS = 30 * 1000;
 const liveStatusCache = new Map<number, { status: LiveStatus; at: number }>();
+
+// Ring buffer: last N battery_power readings per site (one per minute from cron).
+// Used to detect a sustained discharge during what should be an idle period.
+const DISCHARGE_BUFFER_SIZE = 10;
+const DISCHARGE_MIN_POWER_W = 300;
+const dischargeBuffer = new Map<number, number[]>();
+const dischargeCalibrationActive = new Map<number, boolean>();
+
+export function isDischargeCalibrating(siteId: number): boolean {
+  return dischargeCalibrationActive.get(siteId) ?? false;
+}
 
 function buildSolarLabel(
   forecast: SolarForecastResult | null,
@@ -1298,26 +1312,101 @@ export class Fleet {
     const live = await this.getLiveStatus(product);
     if (!live) return;
 
-    const calibrating = isCalibrating(live);
+    const bmsCalibrating = isCalibrating(live);
     const siteId = String(product.energy_site_id);
     const siteName = product.site_name ?? `Site ${product.energy_site_id}`;
 
+    // Update discharge ring buffer with the latest battery_power reading.
+    const buf = dischargeBuffer.get(product.energy_site_id) ?? [];
+    buf.push(live.battery_power);
+    if (buf.length > DISCHARGE_BUFFER_SIZE) buf.shift();
+    dischargeBuffer.set(product.energy_site_id, buf);
+
+    const bufferFull = buf.length >= DISCHARGE_BUFFER_SIZE;
+    const isOnGrid =
+      live.island_status === "on_grid" && !live.storm_mode_active;
+    const dischargeCalibrating =
+      bufferFull && isOnGrid && buf.every((p) => p > DISCHARGE_MIN_POWER_W);
+
     if (process.env.DRY_RUN === "true") {
-      if (calibrating) {
+      if (bmsCalibrating) {
         logger.info(
-          `[DRY RUN] Calibration detected for site "${siteName}" — no DB write or email`,
+          `[DRY RUN] BMS calibration detected for site "${siteName}" — no DB write or email`,
+        );
+      }
+      if (dischargeCalibrating) {
+        logger.info(
+          `[DRY RUN] Discharge calibration detected for site "${siteName}" (${DISCHARGE_BUFFER_SIZE} consecutive readings >${DISCHARGE_MIN_POWER_W}W) — no DB write or email`,
         );
       }
       return;
     }
 
     const db = await AppDataSource.getInstance();
-    const repo = db.getRepository<ICalibrationEvent>("CalibrationEvent");
+    const repo = db.getRepository<ISiteEvent>("SiteEvent");
+
+    await this.handleSiteEvent(
+      repo,
+      siteId,
+      siteName,
+      "calibration_bms_lock",
+      bmsCalibrating,
+      `Powerwall calibration started — ${siteName}`,
+      `A battery calibration cycle has been detected on "${siteName}".\n\nThe battery will report 0% SOC until the cycle completes. No action is required.`,
+      `Powerwall calibration complete — ${siteName}`,
+      `The battery calibration cycle on "${siteName}" has finished.\n\nNormal operation has resumed.`,
+    );
+
+    // Skip discharge detection until the buffer has enough readings (e.g. after
+    // a server restart) to avoid prematurely closing a stale open event.
+    if (!bufferFull) {
+      logger.debug(
+        `Discharge buffer filling for site "${siteName}" (${buf.length}/${DISCHARGE_BUFFER_SIZE})`,
+      );
+      return;
+    }
+
+    dischargeCalibrationActive.set(
+      product.energy_site_id,
+      dischargeCalibrating,
+    );
+
+    await this.handleSiteEvent(
+      repo,
+      siteId,
+      siteName,
+      "calibration_discharge",
+      dischargeCalibrating,
+      `Powerwall discharge calibration detected — ${siteName}`,
+      `A sustained battery discharge has been detected on "${siteName}" during what should be an idle period.\n\nThe battery has been actively discharging for ${DISCHARGE_BUFFER_SIZE}+ consecutive minutes above ${DISCHARGE_MIN_POWER_W}W. This may indicate a calibration discharge cycle.\n\nNo action is required unless this is unexpected.`,
+      `Powerwall discharge calibration complete — ${siteName}`,
+      `The sustained battery discharge on "${siteName}" has stopped.\n\nNormal standby operation has resumed.`,
+    );
+  }
+
+  private async handleSiteEvent(
+    repo: ReturnType<
+      Awaited<ReturnType<typeof AppDataSource.getInstance>>["getRepository"]
+    >,
+    siteId: string,
+    siteName: string,
+    eventType: SiteEventType,
+    active: boolean,
+    startSubject: string,
+    startBody: string,
+    endSubject: string,
+    endBody: string,
+  ): Promise<void> {
     const openEvent = await repo.findOne({
-      where: { email: this.email, site_id: siteId, ended_at: IsNull() },
+      where: {
+        email: this.email,
+        site_id: siteId,
+        event_payload: IsNull(),
+        event_type: eventType,
+      },
     });
 
-    if (calibrating && !openEvent) {
+    if (active && !openEvent) {
       const now = new Date();
       await repo.save({
         id: uuidv4(),
@@ -1326,25 +1415,26 @@ export class Fleet {
         email: this.email,
         site_id: siteId,
         site_name: siteName,
-        ended_at: null,
-      } satisfies ICalibrationEvent);
-      logger.info(`Calibration started for site "${siteName}"`);
+        event_type: eventType,
+        event_payload: null,
+      } satisfies ISiteEvent);
+      logger.info(`${eventType} event started for site "${siteName}"`);
       await sendEmail(
-        `Powerwall calibration started — ${siteName}`,
-        `A battery calibration cycle has been detected on "${siteName}".\n\nThe battery will report 0% SOC until the cycle completes. No action is required.`,
+        startSubject,
+        startBody,
         this.email,
         this.options.mailOnError,
       );
-    } else if (!calibrating && openEvent) {
+    } else if (!active && openEvent) {
       const now = new Date();
       await repo.update(openEvent.id!, {
         modified_time: now,
-        ended_at: now,
+        event_payload: { ended_at: now.toISOString() },
       });
-      logger.info(`Calibration completed for site "${siteName}"`);
+      logger.info(`${eventType} event completed for site "${siteName}"`);
       await sendEmail(
-        `Powerwall calibration complete — ${siteName}`,
-        `The battery calibration cycle on "${siteName}" has finished.\n\nNormal operation has resumed.`,
+        endSubject,
+        endBody,
         this.email,
         this.options.mailOnError,
       );
