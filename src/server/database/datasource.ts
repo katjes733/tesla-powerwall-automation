@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 import { DataSource } from "typeorm";
 import { RefreshToken } from "~/server/database/models/refreshToken";
 import { Schedule } from "~/server/database/models/schedule";
@@ -20,6 +21,10 @@ class AppDataSource {
       return AppDataSource.initializing;
     }
     const log = silent ? logger.trace.bind(logger) : logger.info.bind(logger);
+    const dbSsl = process.env.DB_SSL === "true";
+    if (dbSsl && !process.env.DB_SSL_CA_PATH) {
+      throw new Error("DB_SSL_CA_PATH must be set when DB_SSL=true");
+    }
     const dataSource =
       process.env.DB_HOST &&
       process.env.DB_USERNAME &&
@@ -34,6 +39,12 @@ class AppDataSource {
             database: process.env.DB_NAME,
             schema: process.env.DB_SCHEMA || "public",
             synchronize: false,
+            ssl: dbSsl
+              ? {
+                  rejectUnauthorized: true,
+                  ca: readFileSync(process.env.DB_SSL_CA_PATH!).toString(),
+                }
+              : false,
             entities: [
               RefreshToken,
               Schedule,

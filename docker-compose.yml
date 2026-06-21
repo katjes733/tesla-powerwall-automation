@@ -9,6 +9,19 @@ services:
       - "${DB_PORT}:5432"
     volumes:
       - db:/var/lib/postgresql/data
+      - ./postgres/certs:/certs:ro
+    entrypoint:
+      - bash
+      - -c
+      - |
+        cp /certs/server.key /tmp/server.key &&
+        chown 999:999 /tmp/server.key &&
+        chmod 600 /tmp/server.key &&
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/certs/server.crt \
+          -c ssl_key_file=/tmp/server.key \
+          -c ssl_ca_file=/certs/ca.crt
   redis:
     image: redis:8.8.0
     ports:

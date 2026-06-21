@@ -14,6 +14,7 @@
     "build": "bun build src/server/main.ts --outdir build --target bun --minify",
     "eslint": "bun x eslint src tests",
     "eslint:fix": "bun eslint -- --quiet --fix",
+    "generate-certs": "bash scripts/generate-certs.sh",
     "new-refresh-token": "bun run scripts/getNewRefreshToken.ts",
     "status": "bun run scripts/status.ts",
     "prettier": "bun x prettier --check src/* tests/*",
