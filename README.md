@@ -6,6 +6,7 @@
     - [Prerequisites](#prerequisites)
     - [First-time API setup](#first-time-api-setup)
     - [Running the app](#running-the-app)
+    - [HTTPS / Self-Signed Certificate](#https--self-signed-certificate)
     - [Environment variables](#environment-variables)
   - [Tesla Fleet API onboarding](#tesla-fleet-api-onboarding)
     - [Preparation](#preparation)
@@ -74,6 +75,60 @@ Before running the application for the first time, complete the [Tesla Fleet API
 6. Open the UI at `http://localhost:5173`.
 
 > **Tip:** Set `DRY_RUN=true` in `.env` during initial testing. The scheduler will log every intended API call without actually sending it to Tesla, so you can verify your schedules and conditions behave as expected before going live.
+
+### HTTPS / Self-Signed Certificate
+
+Running the server over HTTPS enables the session cookie's `secure` flag, which prevents it from being sent over plain HTTP. For production or self-hosted deployments this is strongly recommended.
+
+The server reads three environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SSL_ENABLED` | `false` | Set to `true` to start the server with HTTPS |
+| `SSL_KEY_PATH` | `ssl/key.pem` | Path to the TLS private key, relative to the project root |
+| `SSL_CERT_PATH` | `ssl/cert.pem` | Path to the TLS certificate, relative to the project root |
+
+#### Generate a self-signed certificate
+
+For local testing or private self-hosting, a self-signed certificate is sufficient. Run the following once from the project root:
+
+```sh
+mkdir -p ssl
+openssl req -x509 -newkey rsa:4096 -keyout ssl/key.pem -out ssl/cert.pem \
+  -days 365 -nodes \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=IP:127.0.0.1,DNS:localhost"
+```
+
+> **Note:** The `ssl/` directory is gitignored. Never commit private keys to source control.
+
+#### Enable HTTPS in `.env`
+
+```dotenv
+SSL_ENABLED=true
+SSL_KEY_PATH=ssl/key.pem
+SSL_CERT_PATH=ssl/cert.pem
+```
+
+#### Trust the certificate in your browser
+
+Because the certificate is self-signed, browsers will show a security warning on first visit. One-time steps to suppress it:
+
+- **Chrome / Edge:** Navigate to `https://localhost:3001`, click **Advanced**, then **Proceed to localhost**.
+- **Firefox:** Navigate to `https://localhost:3001`, click **Advanced**, then **Accept the Risk and Continue**.
+- **macOS system trust (optional):** Import `ssl/cert.pem` into Keychain Access (System keychain) and mark it as **Always Trust** to remove the warning across all browsers.
+
+  ```sh
+  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ssl/cert.pem
+  ```
+
+#### Certificate renewal
+
+Self-signed certificates generated with the command above are valid for 365 days. Re-run the `openssl` command to renew and restart the server.
+
+> **Important:** Replacing the certificate does **not** affect session cookies or stored tokens — only the TLS handshake changes.
+
+---
 
 ### Environment variables
 

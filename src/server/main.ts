@@ -47,6 +47,14 @@ if (
   );
 }
 
+const sslEnabled = process.env.SSL_ENABLED === "true";
+if (!sslEnabled && process.env.NODE_ENV !== "development") {
+  logger.warn(
+    "SSL_ENABLED is not set. Session cookies will be transmitted over plain HTTP. " +
+      "Set SSL_ENABLED=true with a valid certificate for production use.",
+  );
+}
+
 app.use(
   session({
     secret: sessionSecret,
@@ -54,7 +62,7 @@ app.use(
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.SSL_ENABLED === "true",
+      secure: sslEnabled,
       sameSite: "strict",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
@@ -83,7 +91,7 @@ if (process.env.NODE_ENV !== "development") {
 const port = process.env.PORT || 3001;
 
 let server = null;
-if (process.env.SSL_ENABLED) {
+if (sslEnabled) {
   const https = require("https");
   const fs = require("fs");
   logger.info(`Current DIR: ${process.cwd()}`);
