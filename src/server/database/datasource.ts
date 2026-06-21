@@ -54,9 +54,11 @@ class AppDataSource {
       .initialize()
       .then(async () => {
         log("✅ Database connection established successfully.");
-        await dataSource.query(
-          `CREATE SCHEMA IF NOT EXISTS "${process.env.DB_SCHEMA || "public"}";`,
-        );
+        const schema = process.env.DB_SCHEMA || "public";
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema)) {
+          throw new Error(`Invalid DB_SCHEMA value: ${schema}`);
+        }
+        await dataSource.query(`CREATE SCHEMA IF NOT EXISTS "${schema}";`);
         log("✅ Database schema ensured successfully.");
         await dataSource.synchronize();
         log("✅ Database schema synchronised successfully.");
