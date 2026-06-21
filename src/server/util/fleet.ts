@@ -67,6 +67,16 @@ const baseApiUrl =
   process.env.TESLA_API_BASE_URL ||
   "https://fleet-api.prd.na.vn.cloud.tesla.com";
 
+export const ALLOWED_ACTIONS = new Set([
+  "setBackupReserve",
+  "setSoftBackupReserve",
+  "setEnergyExports",
+  "setGridCharging",
+  "setSmartGridCharging",
+  "setTouHolidayOverride",
+  "setOperationalMode",
+]);
+
 export class Fleet {
   private static instanceMap = new Map<string, Fleet>();
 
@@ -86,16 +96,9 @@ export class Fleet {
       throwOnError: options?.throwOnError ?? true,
     };
     this._actionMap = {};
-    Object.getOwnPropertyNames(Fleet.prototype)
-      .filter(
-        (key) =>
-          typeof (this as any)[key] === "function" &&
-          key !== "constructor" &&
-          key.startsWith("set"),
-      )
-      .forEach((key) => {
-        this._actionMap[key] = (this as any)[key].bind(this);
-      });
+    for (const key of ALLOWED_ACTIONS) {
+      this._actionMap[key] = (this as any)[key].bind(this);
+    }
   }
 
   public static getInstance(email: string, options?: FleetOptionsInput): Fleet {
