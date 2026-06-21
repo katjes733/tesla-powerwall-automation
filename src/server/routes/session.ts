@@ -2,6 +2,7 @@ import express, { Router } from "express";
 import argon2 from "argon2";
 import AppDataSource from "~/server/database/datasource";
 import type { IUser } from "~/server/database/models/user";
+import { loginLimiter } from "~/server/middleware/rateLimiter";
 
 // Extend express-session types to include 'expiry'
 declare module "express-session" {
@@ -14,7 +15,7 @@ declare module "express-session" {
 
 export const router: Router = express.Router();
 
-router.post("/login", async (req, res) => {
+router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
   if (!email) {
     logger.error(`❌ No email provided.`);

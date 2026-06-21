@@ -1,5 +1,9 @@
 import express from "express";
 import { totp, generateKey } from "otp-io";
+import {
+  sendCodeLimiter,
+  verifyCodeLimiter,
+} from "~/server/middleware/rateLimiter";
 import { randomBytes } from "otp-io/crypto";
 import { v4 } from "uuid";
 import AppDataSource from "~/server/database/datasource";
@@ -9,7 +13,7 @@ import type { ISignupVerification } from "../database/models/signupVerification"
 
 export const router = express.Router();
 
-router.post("/send-code", async (req, res) => {
+router.post("/send-code", sendCodeLimiter, async (req, res) => {
   const { email } = req.body;
   if (!email) {
     res.status(400).json({ error: "Email required" });
@@ -81,7 +85,7 @@ async function upsert(record: ISignupVerification) {
   };
 }
 
-router.post("/verify-code", async (req, res) => {
+router.post("/verify-code", verifyCodeLimiter, async (req, res) => {
   const { email, code } = req.body;
   if (!email || !code) {
     res.status(400).json({ error: "Email and code are required" });
