@@ -61,7 +61,8 @@ export function getCurrentSeason(
 }
 
 function isMomentInPeriod(period: TouPeriod, now: Moment): boolean {
-  const dow = now.day(); // 0=Sun … 6=Sat
+  // Tesla uses ISO weekdays (0=Mon…6=Sun); Moment's isoWeekday() is 1=Mon…7=Sun.
+  const dow = now.isoWeekday() - 1;
   if (dow < period.fromDayOfWeek || dow > period.toDayOfWeek) return false;
   const nowMins = now.hours() * 60 + now.minutes();
   const fromMins = period.fromHour * 60 + period.fromMinute;
@@ -101,7 +102,7 @@ export function findNextPeakStart(
     if (earliest !== null && dayOffset > 0) break;
 
     const candidate = now.clone().add(dayOffset, "days");
-    const dow = candidate.day();
+    const dow = candidate.isoWeekday() - 1; // Tesla: 0=Mon…6=Sun
 
     for (const period of periods) {
       if (dow < period.fromDayOfWeek || dow > period.toDayOfWeek) continue;

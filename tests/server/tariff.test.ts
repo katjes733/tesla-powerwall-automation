@@ -14,6 +14,7 @@ import type { TariffContent } from "~/server/types/common";
 const TZ = "America/Denver";
 
 // Helper: build a minimal TariffContent with on-peak Mon-Fri 17:00-21:00.
+// Day-of-week values use Tesla's API convention: 0=Mon … 6=Sun.
 function makeSummerTariff(): TariffContent {
   return {
     utility_rates: {
@@ -26,8 +27,8 @@ function makeSummerTariff(): TariffContent {
           tou_periods: {
             on_peak: [
               {
-                fromDayOfWeek: 1, // Mon
-                toDayOfWeek: 5, // Fri
+                fromDayOfWeek: 0, // Mon
+                toDayOfWeek: 4, // Fri
                 fromHour: 17,
                 fromMinute: 0,
                 toHour: 21,
@@ -44,8 +45,8 @@ function makeSummerTariff(): TariffContent {
           tou_periods: {
             on_peak: [
               {
-                fromDayOfWeek: 1,
-                toDayOfWeek: 5,
+                fromDayOfWeek: 0,
+                toDayOfWeek: 4,
                 fromHour: 18,
                 fromMinute: 0,
                 toHour: 20,
@@ -147,9 +148,14 @@ describe("isCurrentlyInPeak", () => {
     const now = moment.tz("2024-06-17 21:00", TZ);
     expect(isCurrentlyInPeak(makeSummerTariff(), now)).toBe(false);
   });
-  it("returns false on weekends", () => {
+  it("returns false on Saturday", () => {
     // Saturday June 15, 2024 at 18:00 — inside the time range but not the DOW range
     const now = moment.tz("2024-06-15 18:00", TZ);
+    expect(isCurrentlyInPeak(makeSummerTariff(), now)).toBe(false);
+  });
+  it("returns false on Sunday", () => {
+    // Sunday June 16, 2024 at 18:00 — Tesla DOW 6 (Sun) is outside Mon-Fri range [0,4]
+    const now = moment.tz("2024-06-16 18:00", TZ);
     expect(isCurrentlyInPeak(makeSummerTariff(), now)).toBe(false);
   });
   it("returns false outside the season", () => {
@@ -268,6 +274,12 @@ describe("real SRP E27 tariff shape (top-level seasons + ON_PEAK keys)", () => {
 
   it("isCurrentlyInPeak returns false before Winter on-peak hours", () => {
     const now = moment.tz("2024-06-17 13:00", TZ);
+    expect(isCurrentlyInPeak(srpTariff, now)).toBe(false);
+  });
+
+  it("isCurrentlyInPeak returns false on Sunday during otherwise on-peak hours", () => {
+    // Sunday June 16, 2024 at 16:00 — inside the time window but Sunday is off-peak (Tesla DOW 6 > toDayOfWeek 4)
+    const now = moment.tz("2024-06-16 16:00", TZ);
     expect(isCurrentlyInPeak(srpTariff, now)).toBe(false);
   });
 
