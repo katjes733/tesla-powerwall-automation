@@ -47,6 +47,10 @@ router.post("/upsert", async (req, res) => {
         user_permissions: user_permissions ?? {},
       });
       status = 200;
+      logger.info(
+        { event: "auth.account.created", email, ip: req.ip },
+        "User account created",
+      );
     } else {
       // Only include provided fields in the update
       const updateFields: Record<string, any> = { modified_time: newDate };
@@ -66,19 +70,30 @@ router.post("/upsert", async (req, res) => {
       .status(status)
       .json({ email, action: status === 200 ? "create" : "update" });
   } catch (error: any) {
-    logger.error(`❌ ${error.message}.`);
+    logger.error(
+      { event: "auth.account.upsert.error", email, ip: req.ip, err: error },
+      "Account upsert error",
+    );
     res.status(500).json({ error: error.message });
   }
 });
 
 router.post("/remove", requireAuth, async (req, res) => {
   const email = req.session.user as string;
+  const ip = req.ip;
   try {
     const userRepo = (await AppDataSource.getInstance()).getRepository("User");
     await userRepo.delete({ email });
+    logger.warn(
+      { event: "auth.account.deleted", email, ip },
+      "User account deleted",
+    );
     res.status(200).json({ email, action: "delete" });
   } catch (error: any) {
-    logger.error(`❌ ${error.message}.`);
+    logger.error(
+      { event: "auth.account.delete.error", email, ip, err: error },
+      "Account deletion error",
+    );
     res.status(500).json({ error: error.message });
   }
 });
@@ -99,6 +114,15 @@ router.post("/change-password", requireAuth, async (req, res) => {
     currentPassword,
   );
   if (!isMatch) {
+    logger.warn(
+      {
+        event: "auth.password.change.failure",
+        email,
+        ip: req.ip,
+        reason: "wrong_current_password",
+      },
+      "Password change failed: wrong current password",
+    );
     res.status(400).json({ error: "Incorrect current password" });
     return;
   }
@@ -108,9 +132,16 @@ router.post("/change-password", requireAuth, async (req, res) => {
       modified_time: new Date(),
       password_hash: await argon2.hash(newPassword),
     });
+    logger.info(
+      { event: "auth.password.changed", email, ip: req.ip },
+      "Password changed successfully",
+    );
     res.status(200).json({ email, action: "update" });
   } catch (error: any) {
-    logger.error(`❌ ${error.message}.`);
+    logger.error(
+      { event: "auth.password.change.error", email, ip: req.ip, err: error },
+      "Password change error",
+    );
     res.status(500).json({ error: error.message });
   }
 });

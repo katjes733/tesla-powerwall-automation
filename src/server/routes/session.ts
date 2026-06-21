@@ -17,24 +17,35 @@ export const router: Router = express.Router();
 
 router.post("/login", loginLimiter, async (req, res) => {
   const { email, password } = req.body;
+  const ip = req.ip;
   if (!email) {
-    logger.error(`❌ No email provided.`);
+    logger.warn(
+      { event: "auth.login.failure", ip, reason: "missing_email" },
+      "Login attempt with no email",
+    );
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
+  logger.info({ event: "auth.login.attempt", email, ip }, "Login attempt");
   try {
     const dataSource = await AppDataSource.getInstance();
     const userRepo = dataSource.getRepository<IUser>("User");
     const user = await userRepo.findOneBy({ email });
     if (!user) {
-      logger.error(`❌ User ${email} does not exist.`);
+      logger.warn(
+        { event: "auth.login.failure", email, ip, reason: "user_not_found" },
+        "Login failed: user not found",
+      );
       res.status(401).json({ error: "Invalid credentials" });
       return;
     }
 
     const isValid = await argon2.verify(user.password_hash, password);
     if (!isValid) {
-      logger.error(`❌ User ${user.email} provided invalid credentials.`);
+      logger.warn(
+        { event: "auth.login.failure", email, ip, reason: "invalid_password" },
+        "Login failed: invalid password",
+      );
       res.status(401).json({ error: "Invalid credentials" });
       return;
     }
@@ -43,30 +54,24 @@ router.post("/login", loginLimiter, async (req, res) => {
       user.user_permissions?.type &&
       !["user", "admin"].includes(user.user_permissions?.type)
     ) {
-      logger.error(`❌ User ${user.email} with unknown permission type.`);
+      logger.warn(
+        {
+          event: "auth.login.failure",
+          email,
+          ip,
+          reason: "unknown_permission_type",
+        },
+        "Login failed: unknown permission type",
+      );
       res.status(403).json({ error: "Unknown permission type" });
       return;
     }
 
-    // if (
-    //   !user.user_permissions?.bu ||
-    //   !["im", "gb"].includes(user.user_permissions?.bu)
-    // ) {
-    //   logger.error(`❌ User ${user.email} is not permitted.`);
-    //   res.status(403).json({ error: "Not permitted" });
-    //   return;
-    // }
-
-    // const userInfo = {
-    //   userid: user.id,
-    //   email: user.email,
-    //   type: user.user_permissions?.type || "user",
-    // };
-    // req.session.user = userInfo;
     req.session.user = user.email;
     if (!req.session.expiry) {
-      req.session.expiry = Date.now() + (req.session.cookie.maxAge || 3600000); // Default to 1 hour if not set
+      req.session.expiry = Date.now() + (req.session.cookie.maxAge || 3600000);
     }
+    logger.info({ event: "auth.login.success", email, ip }, "Login successful");
     res.json({
       message: "Logged in",
       user: req.session.user,
@@ -74,7 +79,10 @@ router.post("/login", loginLimiter, async (req, res) => {
     });
     return;
   } catch (error: any) {
-    logger.error(`❌ ${error.message}.`);
+    logger.error(
+      { event: "auth.login.error", email, ip, err: error },
+      "Login error",
+    );
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -105,8 +113,11 @@ router.get("/me", (req, res) => {
 // });
 
 router.post("/logout", (req, res) => {
+  const email = req.session.user;
+  const ip = req.ip;
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ message: "Failed to logout." });
+    logger.info({ event: "auth.logout", email, ip }, "User logged out");
     res.clearCookie("connect.sid");
     return res.json({ message: "Logged out." });
   });
