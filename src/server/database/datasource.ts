@@ -34,9 +34,6 @@ class AppDataSource {
             database: process.env.DB_NAME,
             schema: process.env.DB_SCHEMA || "public",
             synchronize: false,
-            // ssl: {
-            //   rejectUnauthorized: false,
-            // },
             entities: [
               RefreshToken,
               Schedule,
