@@ -140,6 +140,8 @@ export class Fleet {
       throw new Error(errorMsg);
     }
     const tokenData = (await tokenResponse.json()) as TokenData;
+    this.token = "";
+    this.refreshToken = "";
     this.token = tokenData.access_token;
     this.tokenExpiresAt = jwtDecode<JWT>(this.token).exp * 1000;
     this.refreshToken = tokenData.refresh_token;
