@@ -91,6 +91,7 @@ export class Scheduler {
   private static instance: Scheduler;
 
   private enabledScheduledTasks: Map<string, ScheduledTask> = new Map();
+  private calibrationTask: ScheduledTask | null = null;
   private validEmails: string[] = [];
   private schedulingEnabled: boolean = true;
 
@@ -326,6 +327,25 @@ export class Scheduler {
     for (const schedule of schedules) {
       await this.initializeOneSchedule(schedule);
     }
+
+    this.calibrationTask?.stop();
+    this.calibrationTask = scheduleTask("* * * * *", async () => {
+      for (const email of this.validEmails) {
+        try {
+          const fleet = Fleet.getInstance(email, {
+            throwOnError: false,
+            mailOnError: true,
+          });
+          const products = await fleet.getEnergyProducts();
+          for (const product of products) {
+            await fleet.detectCalibration(product);
+          }
+        } catch (err: any) {
+          logger.error(err, `Calibration check failed for ${email}`);
+        }
+      }
+    });
+    logger.info("Calibration detection task initialized.");
   }
 
   async stopAll() {
@@ -334,6 +354,8 @@ export class Scheduler {
       task.stop();
       this.enabledScheduledTasks.delete(id);
     }
+    this.calibrationTask?.stop();
+    this.calibrationTask = null;
     logger.info("All scheduled tasks stopped.");
   }
 

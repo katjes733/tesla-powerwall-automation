@@ -3,6 +3,7 @@ import { DataSource } from "typeorm";
 import { RefreshToken } from "~/server/database/models/refreshToken";
 import { Schedule } from "~/server/database/models/schedule";
 import { TouBackup } from "~/server/database/models/touBackup";
+import { CalibrationEvent } from "~/server/database/models/calibrationEvent";
 import { User } from "~/server/database/models/user";
 import { SignupVerification } from "~/server/database/models/signupVerification";
 import { migrateTokenEncryption } from "~/server/database/migrateTokenEncryption";
@@ -49,6 +50,7 @@ class AppDataSource {
               RefreshToken,
               Schedule,
               TouBackup,
+              CalibrationEvent,
               User,
               SignupVerification,
             ],

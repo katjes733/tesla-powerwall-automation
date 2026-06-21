@@ -1,5 +1,5 @@
 import express from "express";
-import { Fleet } from "~/server/util/fleet";
+import { Fleet, isCalibrating } from "~/server/util/fleet";
 import {
   parseTariffContent,
   hasTouData,
@@ -93,7 +93,12 @@ router.get("/status", async (req, res) => {
           fleet.getLiveStatus(product),
           fleet.getSiteInfo(product),
         ]);
-        return { product, live, info };
+        return {
+          product,
+          live,
+          info,
+          calibrating: live ? isCalibrating(live) : false,
+        };
       }),
     );
     res.json({ success: true, data });

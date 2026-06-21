@@ -20,6 +20,7 @@ interface SiteStatus {
   product: Product;
   live: LiveStatus | null;
   info: SiteInfo | null;
+  calibrating: boolean;
 }
 
 const INTERVAL_OPTIONS = [
@@ -184,12 +185,13 @@ export default function PowerwallStatus() {
                 !hideOffGrid ||
                 (live !== null && live.island_status === "on_grid"),
             )
-            .map(({ product, live, info }) => (
+            .map(({ product, live, info, calibrating }) => (
               <SiteCard
                 key={product.energy_site_id}
                 product={product}
                 live={live}
                 info={info}
+                calibrating={calibrating}
               />
             ))}
         </Box>

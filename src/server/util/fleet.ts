@@ -18,7 +18,9 @@ import type {
   SeasonalWindow,
 } from "~/server/database/models/schedule";
 import type { ITouBackup } from "~/server/database/models/touBackup";
+import type { ICalibrationEvent } from "~/server/database/models/calibrationEvent";
 import AppDataSource from "~/server/database/datasource";
+import { IsNull } from "typeorm";
 import { v4 as uuidv4 } from "uuid";
 import { isObservedHolidayOnDate } from "~/server/util/holidays";
 import { getNewTokenWithRefreshToken } from "~/server/util/auth";
@@ -49,6 +51,9 @@ import {
 const SITE_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
 const siteInfoCache = new Map<number, { info: SiteInfo; at: number }>();
 
+const LIVE_STATUS_CACHE_TTL_MS = 30 * 1000;
+const liveStatusCache = new Map<number, { status: LiveStatus; at: number }>();
+
 function buildSolarLabel(
   forecast: SolarForecastResult | null,
   linearKwh: number,
@@ -66,6 +71,22 @@ function buildSolarLabel(
 const baseApiUrl =
   process.env.TESLA_API_BASE_URL ||
   "https://fleet-api.prd.na.vn.cloud.tesla.com";
+
+/**
+ * Returns true when the live status matches the signature of a Powerwall 3
+ * BMS calibration cycle: SOC frozen at 0%, battery locked out (power = 0),
+ * grid healthy, no storm mode. The battery never truly depletes — Tesla's
+ * firmware reports 0% while the calibration runs, then snaps back to the
+ * actual SOC when complete.
+ */
+export function isCalibrating(live: LiveStatus): boolean {
+  return (
+    live.percentage_charged < 1 &&
+    live.battery_power === 0 &&
+    live.island_status === "on_grid" &&
+    !live.storm_mode_active
+  );
+}
 
 export const ALLOWED_ACTIONS = new Set([
   "setBackupReserve",
@@ -265,6 +286,10 @@ export class Fleet {
   }
 
   async getLiveStatus(product: Product): Promise<LiveStatus | null> {
+    const cached = liveStatusCache.get(product.energy_site_id);
+    if (cached && performance.now() - cached.at < LIVE_STATUS_CACHE_TTL_MS) {
+      return cached.status;
+    }
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/live_status`,
       baseApiUrl,
@@ -285,7 +310,12 @@ export class Fleet {
         2000,
         2,
       );
-      return response as LiveStatus;
+      const liveStatus = response as LiveStatus;
+      liveStatusCache.set(product.energy_site_id, {
+        status: liveStatus,
+        at: performance.now(),
+      });
+      return liveStatus;
     } catch (error: any) {
       const errorMsg = `Error getting Live Status for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
       logger.error(errorMsg);
@@ -1261,6 +1291,63 @@ export class Fleet {
       if (this.options.throwOnError) {
         throw new Error(errorMsg);
       }
+    }
+  }
+
+  async detectCalibration(product: Product): Promise<void> {
+    const live = await this.getLiveStatus(product);
+    if (!live) return;
+
+    const calibrating = isCalibrating(live);
+    const siteId = String(product.energy_site_id);
+    const siteName = product.site_name ?? `Site ${product.energy_site_id}`;
+
+    if (process.env.DRY_RUN === "true") {
+      if (calibrating) {
+        logger.info(
+          `[DRY RUN] Calibration detected for site "${siteName}" — no DB write or email`,
+        );
+      }
+      return;
+    }
+
+    const db = await AppDataSource.getInstance();
+    const repo = db.getRepository<ICalibrationEvent>("CalibrationEvent");
+    const openEvent = await repo.findOne({
+      where: { email: this.email, site_id: siteId, ended_at: IsNull() },
+    });
+
+    if (calibrating && !openEvent) {
+      const now = new Date();
+      await repo.save({
+        id: uuidv4(),
+        creation_time: now,
+        modified_time: now,
+        email: this.email,
+        site_id: siteId,
+        site_name: siteName,
+        ended_at: null,
+      } satisfies ICalibrationEvent);
+      logger.info(`Calibration started for site "${siteName}"`);
+      await sendEmail(
+        `Powerwall calibration started — ${siteName}`,
+        `A battery calibration cycle has been detected on "${siteName}".\n\nThe battery will report 0% SOC until the cycle completes. No action is required.`,
+        this.email,
+        this.options.mailOnError,
+      );
+    } else if (!calibrating && openEvent) {
+      const now = new Date();
+      await repo.update(openEvent.id!, {
+        modified_time: now,
+        ended_at: now,
+      });
+      logger.info(`Calibration completed for site "${siteName}"`);
+      await sendEmail(
+        `Powerwall calibration complete — ${siteName}`,
+        `The battery calibration cycle on "${siteName}" has finished.\n\nNormal operation has resumed.`,
+        this.email,
+        this.options.mailOnError,
+      );
     }
   }
 }
