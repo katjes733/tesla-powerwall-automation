@@ -143,12 +143,29 @@ router.post("/delete", function (req, res) {
 });
 
 router.get("/all", async function (req, res) {
+  const PAGE_SIZE_MAX = 100;
+  const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
+  const pageSize = Math.min(
+    PAGE_SIZE_MAX,
+    Math.max(1, parseInt((req.query.pageSize as string) || "100", 10)),
+  );
+
   const repo = (await AppDataSource.getInstance()).getRepository("Schedule");
   const email = req.session.user as string;
   repo
-    .find({ where: { email } })
-    .then((schedules) => {
-      res.json({ success: true, data: schedules });
+    .findAndCount({
+      where: { email },
+      take: pageSize,
+      skip: (page - 1) * pageSize,
+    })
+    .then(([schedules, total]) => {
+      res.json({
+        success: true,
+        data: schedules,
+        total,
+        page,
+        pageSize,
+      });
     })
     .catch((error) => {
       res.status(500).json({
