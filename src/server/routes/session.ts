@@ -3,6 +3,43 @@ import argon2 from "argon2";
 import AppDataSource from "~/server/database/datasource";
 import type { IUser } from "~/server/database/models/user";
 import { loginLimiter } from "~/server/middleware/rateLimiter";
+import { redis } from "~/server/util/redis";
+
+const LOCKOUT_MAX = 5;
+const LOCKOUT_TTL = 15 * 60; // seconds
+
+function lockoutKey(email: string) {
+  return `lockout:${email}`;
+}
+
+async function isLockedOut(email: string): Promise<boolean> {
+  try {
+    const count = await redis.get(lockoutKey(email));
+    return count !== null && parseInt(count, 10) >= LOCKOUT_MAX;
+  } catch {
+    return false; // fail open — don't block login if Redis is unavailable
+  }
+}
+
+async function recordFailure(email: string): Promise<void> {
+  try {
+    const key = lockoutKey(email);
+    const count = await redis.incr(key);
+    if (count === 1) {
+      await redis.expire(key, LOCKOUT_TTL);
+    }
+  } catch {
+    // Redis unavailable — skip silently
+  }
+}
+
+async function clearLockout(email: string): Promise<void> {
+  try {
+    await redis.del(lockoutKey(email));
+  } catch {
+    // Redis unavailable — skip silently
+  }
+}
 
 // Extend express-session types to include 'expiry'
 declare module "express-session" {
@@ -27,11 +64,24 @@ router.post("/login", loginLimiter, async (req, res) => {
     return;
   }
   logger.info({ event: "auth.login.attempt", email, ip }, "Login attempt");
+
+  if (await isLockedOut(email)) {
+    logger.warn(
+      { event: "auth.login.locked", email, ip },
+      "Login blocked: account temporarily locked",
+    );
+    res
+      .status(429)
+      .json({ error: "Account temporarily locked. Try again in 15 minutes." });
+    return;
+  }
+
   try {
     const dataSource = await AppDataSource.getInstance();
     const userRepo = dataSource.getRepository<IUser>("User");
     const user = await userRepo.findOneBy({ email });
     if (!user) {
+      await recordFailure(email);
       logger.warn(
         { event: "auth.login.failure", email, ip, reason: "user_not_found" },
         "Login failed: user not found",
@@ -42,6 +92,7 @@ router.post("/login", loginLimiter, async (req, res) => {
 
     const isValid = await argon2.verify(user.password_hash, password);
     if (!isValid) {
+      await recordFailure(email);
       logger.warn(
         { event: "auth.login.failure", email, ip, reason: "invalid_password" },
         "Login failed: invalid password",
@@ -67,6 +118,7 @@ router.post("/login", loginLimiter, async (req, res) => {
       return;
     }
 
+    await clearLockout(email);
     req.session.user = user.email;
     if (!req.session.expiry) {
       req.session.expiry = Date.now() + (req.session.cookie.maxAge || 3600000);
