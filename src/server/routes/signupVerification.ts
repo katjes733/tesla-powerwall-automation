@@ -24,7 +24,7 @@ router.post("/send-code", sendCodeLimiter, async (req, res) => {
   const repo = (await AppDataSource.getInstance()).getRepository("User");
   const existingUser = await repo.findOneBy({ email });
   if (existingUser) {
-    res.status(409).json({ error: "User already exists" });
+    res.json({ message: "Verification code sent" });
     return;
   }
 
