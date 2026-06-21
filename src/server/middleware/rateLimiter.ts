@@ -16,7 +16,7 @@ export const loginLimiter = rateLimit({
   limit: 10,
   keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "unknown"),
   store: redisStore("rl:login:"),
-  passOnStoreError: true,
+  passOnStoreError: false,
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: {
@@ -31,7 +31,7 @@ export const sendCodeLimiter = rateLimit({
   keyGenerator: (req: Request) =>
     req.body?.email ?? ipKeyGenerator(req.ip ?? "unknown"),
   store: redisStore("rl:send-code:"),
-  passOnStoreError: true,
+  passOnStoreError: false,
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: {
@@ -46,7 +46,7 @@ export const verifyCodeLimiter = rateLimit({
   keyGenerator: (req: Request) =>
     req.body?.email ?? ipKeyGenerator(req.ip ?? "unknown"),
   store: redisStore("rl:verify-code:"),
-  passOnStoreError: true,
+  passOnStoreError: false,
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: {
