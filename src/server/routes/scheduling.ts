@@ -1,7 +1,9 @@
 import express from "express";
+import { validate as validateCron } from "node-cron";
 import { Scheduler } from "~/server/util/scheduler";
 import AppDataSource from "../database/datasource";
 import { requireAuth } from "~/server/middleware/auth";
+import { ALLOWED_ACTIONS } from "~/server/util/fleet";
 
 export const router = express.Router();
 
@@ -62,6 +64,46 @@ router.post("/start-all", function (_req, res) {
 });
 
 router.post("/upsert", function (req, res) {
+  const { id, cron, timezone, site_ids, actions } = req.body;
+
+  if (cron !== undefined && !validateCron(cron)) {
+    res
+      .status(400)
+      .json({ success: false, message: "Invalid cron expression" });
+    return;
+  }
+
+  if (!id) {
+    if (!cron) {
+      res.status(400).json({ success: false, message: "cron is required" });
+      return;
+    }
+    if (!timezone || typeof timezone !== "string") {
+      res.status(400).json({ success: false, message: "timezone is required" });
+      return;
+    }
+    if (!Array.isArray(site_ids) || site_ids.length === 0) {
+      res.status(400).json({
+        success: false,
+        message: "site_ids must be a non-empty array",
+      });
+      return;
+    }
+  }
+
+  if (Array.isArray(actions)) {
+    const hasInvalidAction = actions.some(
+      (a: any) => !a?.action || !ALLOWED_ACTIONS.has(a.action),
+    );
+    if (hasInvalidAction) {
+      res.status(400).json({
+        success: false,
+        message: "actions contain an invalid action name",
+      });
+      return;
+    }
+  }
+
   const scheduleData = { ...req.body, email: req.session.user as string };
   Scheduler.getInstance()
     .upsert(scheduleData)
