@@ -24,6 +24,10 @@ services:
           -c ssl_ca_file=/certs/ca.crt
   redis:
     image: redis:8.8.0
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: >
+      sh -c "redis-server $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"
     ports:
       - "6379:6379"
 volumes:
