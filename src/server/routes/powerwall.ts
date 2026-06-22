@@ -12,7 +12,7 @@ import {
 
 export const router = express.Router();
 
-router.get("/sites", async (req, res) => {
+router.get("/sites", async (req, res, next) => {
   const email = req.session.user;
   if (!email) {
     res.status(401).json({ success: false, message: "Unauthorized" });
@@ -40,11 +40,11 @@ router.get("/sites", async (req, res) => {
     });
   } catch (error: any) {
     logger.error(error, "Error fetching powerwall sites");
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 });
 
-router.get("/tariff-info", async (req, res) => {
+router.get("/tariff-info", async (req, res, next) => {
   const email = req.session.user;
   if (!email) {
     res.status(401).json({ success: false, message: "Unauthorized" });
@@ -75,11 +75,11 @@ router.get("/tariff-info", async (req, res) => {
     res.json({ success: true, data: { hasTou, seasons } });
   } catch (error: any) {
     logger.error(error, "Error fetching tariff info");
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 });
 
-router.get("/status", async (req, res) => {
+router.get("/status", async (req, res, next) => {
   const email = req.session.user;
   if (!email) {
     res.status(401).json({ success: false, message: "Unauthorized" });
@@ -111,6 +111,6 @@ router.get("/status", async (req, res) => {
     res.json({ success: true, data });
   } catch (error: any) {
     logger.error(error, "Error fetching powerwall status");
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 });

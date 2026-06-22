@@ -8,7 +8,7 @@ import { maskEmail } from "~/server/util/maskEmail";
 
 export const router = express.Router();
 
-router.post("/upsert", async (req, res) => {
+router.post("/upsert", async (req, res, next) => {
   const {
     email,
     password,
@@ -85,11 +85,11 @@ router.post("/upsert", async (req, res) => {
       },
       "Account upsert error",
     );
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.post("/remove", requireAuth, async (req, res) => {
+router.post("/remove", requireAuth, async (req, res, next) => {
   const email = req.session.user as string;
   const ip = req.ip;
   try {
@@ -116,11 +116,11 @@ router.post("/remove", requireAuth, async (req, res) => {
       },
       "Account deletion error",
     );
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });
 
-router.post("/change-password", requireAuth, async (req, res) => {
+router.post("/change-password", requireAuth, async (req, res, next) => {
   const email = req.session.user as string;
   const { currentPassword, newPassword } = req.body;
 
@@ -176,6 +176,6 @@ router.post("/change-password", requireAuth, async (req, res) => {
       },
       "Password change error",
     );
-    res.status(500).json({ error: error.message });
+    next(error);
   }
 });

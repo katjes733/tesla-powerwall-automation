@@ -14,7 +14,7 @@ import type { ISignupVerification } from "../database/models/signupVerification"
 
 export const router = express.Router();
 
-router.post("/send-code", sendCodeLimiter, async (req, res) => {
+router.post("/send-code", sendCodeLimiter, async (req, res, next) => {
   const { email } = req.body;
   if (!email) {
     res.status(400).json({ error: "Email required" });
@@ -44,12 +44,12 @@ router.post("/send-code", sendCodeLimiter, async (req, res) => {
         })
         .catch((error) => {
           logger.error(`❌ Sending verification code failed: ${error.message}`);
-          res.status(500).json({ error: error.message });
+          next(error);
         }),
     )
     .catch((error) => {
       logger.error(`❌ ${error.message}.`);
-      res.status(500).json({ error: error.message });
+      next(error);
     });
 });
 

@@ -9,7 +9,7 @@ export const router = express.Router();
 
 router.use(requireAuth);
 
-router.post("/initialize", function (_req, res) {
+router.post("/initialize", function (_req, res, next) {
   Scheduler.getInstance()
     .initialize()
     .then(() => {
@@ -18,16 +18,10 @@ router.post("/initialize", function (_req, res) {
         message: "Scheduler initialized successfully",
       });
     })
-    .catch((error) => {
-      res.status(500).json({
-        success: false,
-        message: "Error initializing scheduler",
-        error: error.message,
-      });
-    });
+    .catch(next);
 });
 
-router.post("/stop-all", function (_req, res) {
+router.post("/stop-all", function (_req, res, next) {
   Scheduler.getInstance()
     .stopAll()
     .then(() => {
@@ -36,16 +30,10 @@ router.post("/stop-all", function (_req, res) {
         message: "All scheduled tasks stopped successfully",
       });
     })
-    .catch((error) => {
-      res.status(500).json({
-        success: false,
-        message: "Error stopping all scheduled tasks",
-        error: error.message,
-      });
-    });
+    .catch(next);
 });
 
-router.post("/start-all", function (_req, res) {
+router.post("/start-all", function (_req, res, next) {
   Scheduler.getInstance()
     .startAll()
     .then(() => {
@@ -54,16 +42,10 @@ router.post("/start-all", function (_req, res) {
         message: "All scheduled tasks started successfully",
       });
     })
-    .catch((error) => {
-      res.status(500).json({
-        success: false,
-        message: "Error starting all scheduled tasks",
-        error: error.message,
-      });
-    });
+    .catch(next);
 });
 
-router.post("/upsert", function (req, res) {
+router.post("/upsert", function (req, res, next) {
   const { id, cron, timezone, site_ids, actions } = req.body;
 
   if (cron !== undefined && !validateCron(cron)) {
@@ -114,16 +96,10 @@ router.post("/upsert", function (req, res) {
         data: result?.data,
       });
     })
-    .catch((error) => {
-      res.status(500).json({
-        success: false,
-        message: "Error upserting schedule",
-        error: error.message,
-      });
-    });
+    .catch(next);
 });
 
-router.post("/delete", function (req, res) {
+router.post("/delete", function (req, res, next) {
   const { id } = req.body;
   Scheduler.getInstance()
     .delete(id)
@@ -133,16 +109,10 @@ router.post("/delete", function (req, res) {
         message: "Schedule deleted successfully",
       });
     })
-    .catch((error) => {
-      res.status(500).json({
-        success: false,
-        message: "Error deleting schedule",
-        error: error.message,
-      });
-    });
+    .catch(next);
 });
 
-router.get("/all", async function (req, res) {
+router.get("/all", async function (req, res, next) {
   const PAGE_SIZE_MAX = 100;
   const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
   const pageSize = Math.min(
@@ -167,11 +137,5 @@ router.get("/all", async function (req, res) {
         pageSize,
       });
     })
-    .catch((error) => {
-      res.status(500).json({
-        success: false,
-        message: "Error retrieving schedules",
-        error: error.message,
-      });
-    });
+    .catch(next);
 });

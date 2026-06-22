@@ -88,6 +88,21 @@ if (process.env.NODE_ENV !== "development") {
   logger.info("Not in production mode");
 }
 
+app.use(
+  (
+    err: Error,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    logger.error({ err }, "Unhandled request error");
+    const isDev = process.env.NODE_ENV === "development";
+    res
+      .status(500)
+      .json({ error: isDev ? err.message : "Something went wrong" });
+  },
+);
+
 const port = process.env.PORT || 3001;
 
 let server = null;
