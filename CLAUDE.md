@@ -11,6 +11,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - [Scheduler singleton](#scheduler-singleton)
     - [Schedule execution](#schedule-execution)
   - [Key conventions](#key-conventions)
+    - [Request validation](#request-validation)
+    - [Security conventions for new routes](#security-conventions-for-new-routes)
 
 ## Commands
 
@@ -44,7 +46,7 @@ bun run start
 Copy `env/sample.env` to `.env`. Required variables:
 
 | Variable | Purpose |
-|---|---|
+| --- | --- |
 | `TESLA_CLIENT_ID` / `TESLA_CLIENT_SECRET` | Tesla Fleet API app credentials |
 | `TESLA_REDIRECT_URI` | OAuth redirect (`http://localhost:3001/callback` for dev) |
 | `TESLA_AUTH_BASE_URL` / `TESLA_API_BASE_URL` | Tesla API endpoints (defaults to NA) |
@@ -93,6 +95,7 @@ A schedule is only registered if its email exists in the `refresh_token` table. 
 ### Schedule execution
 
 Each cron tick:
+
 1. Fetches energy products from Tesla API for the schedule's `device_id` (or all if `"ALL"`)
 2. Iterates `schedule.configuration` items, resolving each `action` string through `Fleet._actionMap`
 3. Writes `last_run_time`, `next_run_time`, and success/error fields back to the DB
@@ -112,3 +115,31 @@ Node.js / Bun validate TLS certificates by default (`rejectUnauthorized: true`).
 - **JSONB columns** — `conditions`, `actions`, and `configuration` on `Schedule` are JSONB; TypeORM maps them to typed arrays.
 - **Retry utility** — `src/server/util/retry.ts` wraps async calls with configurable attempts, delay, and backoff. All Tesla API calls use it with 3 attempts.
 - **Error email notifications** — `sendEmail` from `src/server/util/mailing.ts` is called on Fleet errors when `mailOnError` is set; the email goes to the schedule owner.
+
+### Request validation
+
+Every new route that accepts a request body **must** validate it with Zod before touching the data:
+
+1. Add or extend a schema in `src/shared/schemas/` — schemas live there (not under `server/` or `client/`) so they can be imported from both Express routes and React form validation.
+2. Import `validateBody` from `~/server/middleware/validateBody` and add it to the middleware chain before the route handler.
+3. Export a `z.infer<typeof Schema>` type alias alongside each schema for use in the frontend.
+
+```typescript
+// src/shared/schemas/example.ts
+import { z } from "zod";
+export const ExampleSchema = z.object({ name: z.string().min(1) });
+export type ExampleInput = z.infer<typeof ExampleSchema>;
+
+// src/server/routes/example.ts
+import { validateBody } from "~/server/middleware/validateBody";
+import { ExampleSchema } from "~/shared/schemas/example";
+router.post("/example", validateBody(ExampleSchema), async (req, res) => { … });
+```
+
+> **Zod v4 note:** `z.record()` requires explicit key and value types — use `z.record(z.string(), z.unknown())`, not `z.record(z.unknown())`.
+
+### Security conventions for new routes
+
+- **PII in logs** — never log a raw email address. Use `maskEmail(email)` from `~/server/util/maskEmail`. Log the user's UUID (`userId`) alongside the masked email wherever the DB record is in scope.
+- **Error propagation** — catch blocks must call `next(error)` rather than formatting a `res.status(500).json(...)` response directly. The centralized error handler in `main.ts` returns a generic message in production and the real message only in `NODE_ENV=development`.
+- **No `error.message` in responses** — do not put `error.message` (or any internal exception detail) into a JSON response body. Route-level `logger.error` calls with structured context are fine; the HTTP response must be generic.
