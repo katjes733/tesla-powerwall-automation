@@ -94,10 +94,6 @@ let server = null;
 if (sslEnabled) {
   const https = require("https");
   const fs = require("fs");
-  logger.info(`Current DIR: ${process.cwd()}`);
-  logger.info(
-    `Path to SSL key: ${path.join(process.cwd(), process.env.SSL_KEY_PATH || "/app/key.pem")}`,
-  );
   const sslOptions = {
     key: fs.readFileSync(
       path.join(process.cwd(), process.env.SSL_KEY_PATH || "/app/key.pem"),
