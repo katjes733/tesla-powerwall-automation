@@ -4,6 +4,7 @@ import AppDataSource from "~/server/database/datasource";
 import type { IUser } from "~/server/database/models/user";
 import { loginLimiter } from "~/server/middleware/rateLimiter";
 import { redis } from "~/server/util/redis";
+import { maskEmail } from "~/server/util/maskEmail";
 
 const LOCKOUT_MAX = 5;
 const LOCKOUT_TTL = 15 * 60; // seconds
@@ -63,11 +64,14 @@ router.post("/login", loginLimiter, async (req, res) => {
     res.status(401).json({ error: "Invalid credentials" });
     return;
   }
-  logger.info({ event: "auth.login.attempt", email, ip }, "Login attempt");
+  logger.info(
+    { event: "auth.login.attempt", email: maskEmail(email), ip },
+    "Login attempt",
+  );
 
   if (await isLockedOut(email)) {
     logger.warn(
-      { event: "auth.login.locked", email, ip },
+      { event: "auth.login.locked", email: maskEmail(email), ip },
       "Login blocked: account temporarily locked",
     );
     res
@@ -83,7 +87,12 @@ router.post("/login", loginLimiter, async (req, res) => {
     if (!user) {
       await recordFailure(email);
       logger.warn(
-        { event: "auth.login.failure", email, ip, reason: "user_not_found" },
+        {
+          event: "auth.login.failure",
+          email: maskEmail(email),
+          ip,
+          reason: "user_not_found",
+        },
         "Login failed: user not found",
       );
       res.status(401).json({ error: "Invalid credentials" });
@@ -94,7 +103,13 @@ router.post("/login", loginLimiter, async (req, res) => {
     if (!isValid) {
       await recordFailure(email);
       logger.warn(
-        { event: "auth.login.failure", email, ip, reason: "invalid_password" },
+        {
+          event: "auth.login.failure",
+          userId: user.id,
+          email: maskEmail(email),
+          ip,
+          reason: "invalid_password",
+        },
         "Login failed: invalid password",
       );
       res.status(401).json({ error: "Invalid credentials" });
@@ -108,7 +123,8 @@ router.post("/login", loginLimiter, async (req, res) => {
       logger.warn(
         {
           event: "auth.login.failure",
-          email,
+          userId: user.id,
+          email: maskEmail(email),
           ip,
           reason: "unknown_permission_type",
         },
@@ -123,7 +139,15 @@ router.post("/login", loginLimiter, async (req, res) => {
     if (!req.session.expiry) {
       req.session.expiry = Date.now() + (req.session.cookie.maxAge || 3600000);
     }
-    logger.info({ event: "auth.login.success", email, ip }, "Login successful");
+    logger.info(
+      {
+        event: "auth.login.success",
+        userId: user.id,
+        email: maskEmail(email),
+        ip,
+      },
+      "Login successful",
+    );
     res.json({
       message: "Logged in",
       user: req.session.user,
@@ -132,7 +156,7 @@ router.post("/login", loginLimiter, async (req, res) => {
     return;
   } catch (error: any) {
     logger.error(
-      { event: "auth.login.error", email, ip, err: error },
+      { event: "auth.login.error", email: maskEmail(email), ip, err: error },
       "Login error",
     );
     res.status(500).json({ error: "Server error" });
@@ -169,7 +193,10 @@ router.post("/logout", (req, res) => {
   const ip = req.ip;
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ message: "Failed to logout." });
-    logger.info({ event: "auth.logout", email, ip }, "User logged out");
+    logger.info(
+      { event: "auth.logout", email: maskEmail(email as string), ip },
+      "User logged out",
+    );
     res.clearCookie("connect.sid");
     return res.json({ message: "Logged out." });
   });

@@ -15,6 +15,7 @@ import {
 } from "~/server/util/routes/schedule";
 import { sendEmail } from "./mailing";
 import { Fleet } from "~/server/util/fleet";
+import { maskEmail } from "~/server/util/maskEmail";
 
 async function evaluateConditions(
   conditions: IScheduleCondition[],
@@ -92,7 +93,7 @@ export class Scheduler {
 
   private enabledScheduledTasks: Map<string, ScheduledTask> = new Map();
   private calibrationTask: ScheduledTask | null = null;
-  private validEmails: string[] = [];
+  private validEmails: { id: string; email: string }[] = [];
   private schedulingEnabled: boolean = true;
 
   private constructor() {}
@@ -105,9 +106,9 @@ export class Scheduler {
   }
 
   private isValidSchedule(schedule: ISchedule): boolean {
-    if (!this.validEmails.includes(schedule.email)) {
+    if (!this.validEmails.some(({ email }) => email === schedule.email)) {
       logger.warn(
-        `Schedule for email ${schedule.email} has no corresponding refresh token.`,
+        `Schedule for email ${maskEmail(schedule.email)} has no corresponding refresh token.`,
       );
       return false; // For now, just skip this schedule. Will re-think later.
     }
@@ -314,7 +315,15 @@ export class Scheduler {
     this.schedulingEnabled = schedulingEnabled;
     this.validEmails = await getAllEmailsFromDb();
     logger.info(
-      `Found ${this.validEmails.length} valid email(s) for scheduling${this.validEmails.length ? `: ${this.validEmails.join(", ")}` : ""}`,
+      {
+        event: "scheduler.emails.loaded",
+        count: this.validEmails.length,
+        users: this.validEmails.map(({ id, email }) => ({
+          userId: id,
+          email: maskEmail(email),
+        })),
+      },
+      `Found ${this.validEmails.length} valid email(s) for scheduling`,
     );
     if (!this.schedulingEnabled) {
       logger.info("Scheduling is disabled. No tasks will be initialized.");
@@ -330,7 +339,7 @@ export class Scheduler {
 
     this.calibrationTask?.stop();
     this.calibrationTask = scheduleTask("* * * * *", async () => {
-      for (const email of this.validEmails) {
+      for (const { email } of this.validEmails) {
         try {
           const fleet = Fleet.getInstance(email, {
             throwOnError: false,
@@ -341,7 +350,7 @@ export class Scheduler {
             await fleet.detectCalibration(product);
           }
         } catch (err: any) {
-          logger.error(err, `Calibration check failed for ${email}`);
+          logger.error(err, `Calibration check failed for ${maskEmail(email)}`);
         }
       }
     });
@@ -368,9 +377,9 @@ export class Scheduler {
   }
 
   async upsert(schedule: ISchedule) {
-    if (!this.validEmails.includes(schedule.email)) {
+    if (!this.validEmails.some(({ email }) => email === schedule.email)) {
       logger.warn(
-        `Schedule for email ${schedule.email} has no corresponding refresh token.`,
+        `Schedule for email ${maskEmail(schedule.email)} has no corresponding refresh token.`,
       );
       return;
     }

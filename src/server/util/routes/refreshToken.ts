@@ -76,15 +76,13 @@ export async function getByEmail(email: string) {
     });
 }
 
-export async function getAllEmails(): Promise<string[]> {
+export async function getAllEmails(): Promise<{ id: string; email: string }[]> {
   const tokenRepo = (await AppDataSource.getInstance()).getRepository(
     "RefreshToken",
   );
   return tokenRepo
     .find({
-      select: ["email"],
+      select: ["id", "email"],
     })
-    .then((records) => {
-      return records.map((record) => record.email);
-    });
+    .then((records) => records.map(({ id, email }) => ({ id, email })));
 }

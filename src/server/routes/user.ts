@@ -4,6 +4,7 @@ import { v4 } from "uuid";
 import AppDataSource from "~/server/database/datasource";
 import { requireAuth } from "~/server/middleware/auth";
 import { encrypt } from "~/server/util/tokenCrypto";
+import { maskEmail } from "~/server/util/maskEmail";
 
 export const router = express.Router();
 
@@ -48,7 +49,12 @@ router.post("/upsert", async (req, res) => {
       });
       status = 200;
       logger.info(
-        { event: "auth.account.created", email, ip: req.ip },
+        {
+          event: "auth.account.created",
+          userId: id,
+          email: maskEmail(email),
+          ip: req.ip,
+        },
         "User account created",
       );
     } else {
@@ -71,7 +77,12 @@ router.post("/upsert", async (req, res) => {
       .json({ email, action: status === 200 ? "create" : "update" });
   } catch (error: any) {
     logger.error(
-      { event: "auth.account.upsert.error", email, ip: req.ip, err: error },
+      {
+        event: "auth.account.upsert.error",
+        email: maskEmail(email),
+        ip: req.ip,
+        err: error,
+      },
       "Account upsert error",
     );
     res.status(500).json({ error: error.message });
@@ -83,15 +94,26 @@ router.post("/remove", requireAuth, async (req, res) => {
   const ip = req.ip;
   try {
     const userRepo = (await AppDataSource.getInstance()).getRepository("User");
+    const userToDelete = await userRepo.findOneBy({ email });
     await userRepo.delete({ email });
     logger.warn(
-      { event: "auth.account.deleted", email, ip },
+      {
+        event: "auth.account.deleted",
+        userId: userToDelete?.id,
+        email: maskEmail(email),
+        ip,
+      },
       "User account deleted",
     );
     res.status(200).json({ email, action: "delete" });
   } catch (error: any) {
     logger.error(
-      { event: "auth.account.delete.error", email, ip, err: error },
+      {
+        event: "auth.account.delete.error",
+        email: maskEmail(email),
+        ip,
+        err: error,
+      },
       "Account deletion error",
     );
     res.status(500).json({ error: error.message });
@@ -117,7 +139,8 @@ router.post("/change-password", requireAuth, async (req, res) => {
     logger.warn(
       {
         event: "auth.password.change.failure",
-        email,
+        userId: existingUser.id,
+        email: maskEmail(email),
         ip: req.ip,
         reason: "wrong_current_password",
       },
@@ -133,13 +156,24 @@ router.post("/change-password", requireAuth, async (req, res) => {
       password_hash: await argon2.hash(newPassword),
     });
     logger.info(
-      { event: "auth.password.changed", email, ip: req.ip },
+      {
+        event: "auth.password.changed",
+        userId: existingUser.id,
+        email: maskEmail(email),
+        ip: req.ip,
+      },
       "Password changed successfully",
     );
     res.status(200).json({ email, action: "update" });
   } catch (error: any) {
     logger.error(
-      { event: "auth.password.change.error", email, ip: req.ip, err: error },
+      {
+        event: "auth.password.change.error",
+        userId: existingUser.id,
+        email: maskEmail(email),
+        ip: req.ip,
+        err: error,
+      },
       "Password change error",
     );
     res.status(500).json({ error: error.message });
