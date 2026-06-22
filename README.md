@@ -198,6 +198,15 @@ The full list of variables is in `env/sample.env`. The essentials:
 | `SCHEDULED_JOBS_DISABLED` | — | Set to `true` to disable all cron jobs (default: `false`) |
 | `DRY_RUN` | — | Set to `true` to log intended API calls without executing them |
 | `SESSION_SECRET` | — | HTTP session secret (defaults to a built-in value if unset) |
+| `ALLOWED_ORIGINS` | — | Comma-separated browser origins the API will accept cross-origin requests from. Default: `http://localhost:5173,https://localhost:5173`. See note below. |
+
+> **`ALLOWED_ORIGINS` and Docker**
+>
+> In a production Docker build the frontend is compiled and served as static files by the same Express process. The browser loads the page and calls the API from the same host and port, so all requests are same-origin — CORS does not apply and `ALLOWED_ORIGINS` has no effect.
+>
+> `ALLOWED_ORIGINS` is only relevant when the Vite dev server is running separately from the API (the default local development setup: `bun run dev` starts Vite on port 5173 while the API runs on port 3001). The default value covers this case.
+>
+> If you run the backend in Docker locally while keeping Vite outside the container, set `ALLOWED_ORIGINS` to the Vite server's URL (e.g. `http://localhost:5173`).
 
 ## Tesla Fleet API onboarding
 

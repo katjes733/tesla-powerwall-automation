@@ -10,6 +10,7 @@ import { router as HealthRouter } from "~/server/routes/health";
 import { router as SessionRouter } from "~/server/routes/session";
 import { router as UserRouter } from "~/server/routes/user";
 import { router as SignupVerificationRouter } from "~/server/routes/signupVerification";
+import cors from "cors";
 import helmet from "helmet";
 import http from "http";
 import path from "path";
@@ -29,6 +30,27 @@ const httpLogger = pinoHttp({
 const app = express();
 
 app.use(httpLogger);
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+logger.info({ allowedOrigins }, "CORS: allowed origins");
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST"],
+  }),
+);
 
 app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
