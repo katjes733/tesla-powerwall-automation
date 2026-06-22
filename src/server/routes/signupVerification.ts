@@ -11,47 +11,52 @@ import AppDataSource from "~/server/database/datasource";
 import { sendEmail } from "~/server/util/mailing";
 import { hmac } from "~/server/util/totp";
 import type { ISignupVerification } from "../database/models/signupVerification";
+import { validateBody } from "~/server/middleware/validateBody";
+import { SendCodeSchema, VerifyCodeSchema } from "~/shared/schemas/auth";
 
 export const router = express.Router();
 
-router.post("/send-code", sendCodeLimiter, async (req, res, next) => {
-  const { email } = req.body;
-  if (!email) {
-    res.status(400).json({ error: "Email required" });
-    return;
-  }
+router.post(
+  "/send-code",
+  sendCodeLimiter,
+  validateBody(SendCodeSchema),
+  async (req, res, next) => {
+    const { email } = req.body;
 
-  const repo = (await AppDataSource.getInstance()).getRepository("User");
-  const existingUser = await repo.findOneBy({ email });
-  if (existingUser) {
-    res.json({ message: "Verification code sent" });
-    return;
-  }
+    const repo = (await AppDataSource.getInstance()).getRepository("User");
+    const existingUser = await repo.findOneBy({ email });
+    if (existingUser) {
+      res.json({ message: "Verification code sent" });
+      return;
+    }
 
-  const secret = generateKey(randomBytes, 20);
-  const code = await totp(hmac, { secret });
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes from now
+    const secret = generateKey(randomBytes, 20);
+    const code = await totp(hmac, { secret });
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes from now
 
-  upsert({ email, code, expires_at: expiresAt })
-    .then(() =>
-      sendEmail(
-        "Your Tesla Powerwall Automation verification code",
-        `Your verification code is: ${code}\n\nThis code is valid for 15 minutes.`,
-        email,
+    upsert({ email, code, expires_at: expiresAt })
+      .then(() =>
+        sendEmail(
+          "Your Tesla Powerwall Automation verification code",
+          `Your verification code is: ${code}\n\nThis code is valid for 15 minutes.`,
+          email,
+        )
+          .then(() => {
+            res.json({ message: "Verification code sent" });
+          })
+          .catch((error) => {
+            logger.error(
+              `❌ Sending verification code failed: ${error.message}`,
+            );
+            next(error);
+          }),
       )
-        .then(() => {
-          res.json({ message: "Verification code sent" });
-        })
-        .catch((error) => {
-          logger.error(`❌ Sending verification code failed: ${error.message}`);
-          next(error);
-        }),
-    )
-    .catch((error) => {
-      logger.error(`❌ ${error.message}.`);
-      next(error);
-    });
-});
+      .catch((error) => {
+        logger.error(`❌ ${error.message}.`);
+        next(error);
+      });
+  },
+);
 
 async function upsert(record: ISignupVerification) {
   const repo = (await AppDataSource.getInstance()).getRepository(
@@ -86,36 +91,37 @@ async function upsert(record: ISignupVerification) {
   };
 }
 
-router.post("/verify-code", verifyCodeLimiter, async (req, res) => {
-  const { email, code } = req.body;
-  if (!email || !code) {
-    res.status(400).json({ error: "Email and code are required" });
-    return;
-  }
+router.post(
+  "/verify-code",
+  verifyCodeLimiter,
+  validateBody(VerifyCodeSchema),
+  async (req, res) => {
+    const { email, code } = req.body;
 
-  const repo = (await AppDataSource.getInstance()).getRepository(
-    "SignupVerification",
-  );
-  const existingSignupVerification = await repo.findOneBy({ email });
+    const repo = (await AppDataSource.getInstance()).getRepository(
+      "SignupVerification",
+    );
+    const existingSignupVerification = await repo.findOneBy({ email });
 
-  if (!existingSignupVerification) {
-    res.status(404).json({ error: "Verification record not found" });
-    return;
-  }
+    if (!existingSignupVerification) {
+      res.status(404).json({ error: "Verification record not found" });
+      return;
+    }
 
-  const { code: storedCode, expires_at } = existingSignupVerification;
+    const { code: storedCode, expires_at } = existingSignupVerification;
 
-  if (!timingSafeEqual(Buffer.from(code), Buffer.from(storedCode))) {
-    res.status(400).json({ error: "Invalid verification code" });
-    return;
-  }
+    if (!timingSafeEqual(Buffer.from(code), Buffer.from(storedCode))) {
+      res.status(400).json({ error: "Invalid verification code" });
+      return;
+    }
 
-  if (expires_at < new Date()) {
-    res.status(410).json({ error: "Verification code expired" });
-    return;
-  }
+    if (expires_at < new Date()) {
+      res.status(410).json({ error: "Verification code expired" });
+      return;
+    }
 
-  res.json({ message: "Verification code is valid" });
-});
+    res.json({ message: "Verification code is valid" });
+  },
+);
 
 export default router;

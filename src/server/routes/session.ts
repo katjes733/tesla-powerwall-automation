@@ -5,6 +5,8 @@ import type { IUser } from "~/server/database/models/user";
 import { loginLimiter } from "~/server/middleware/rateLimiter";
 import { redis } from "~/server/util/redis";
 import { maskEmail } from "~/server/util/maskEmail";
+import { validateBody } from "~/server/middleware/validateBody";
+import { LoginSchema } from "~/shared/schemas/auth";
 
 const LOCKOUT_MAX = 5;
 const LOCKOUT_TTL = 15 * 60; // seconds
@@ -53,115 +55,113 @@ declare module "express-session" {
 
 export const router: Router = express.Router();
 
-router.post("/login", loginLimiter, async (req, res) => {
-  const { email, password } = req.body;
-  const ip = req.ip;
-  if (!email) {
-    logger.warn(
-      { event: "auth.login.failure", ip, reason: "missing_email" },
-      "Login attempt with no email",
-    );
-    res.status(401).json({ error: "Invalid credentials" });
-    return;
-  }
-  logger.info(
-    { event: "auth.login.attempt", email: maskEmail(email), ip },
-    "Login attempt",
-  );
-
-  if (await isLockedOut(email)) {
-    logger.warn(
-      { event: "auth.login.locked", email: maskEmail(email), ip },
-      "Login blocked: account temporarily locked",
-    );
-    res
-      .status(429)
-      .json({ error: "Account temporarily locked. Try again in 15 minutes." });
-    return;
-  }
-
-  try {
-    const dataSource = await AppDataSource.getInstance();
-    const userRepo = dataSource.getRepository<IUser>("User");
-    const user = await userRepo.findOneBy({ email });
-    if (!user) {
-      await recordFailure(email);
-      logger.warn(
-        {
-          event: "auth.login.failure",
-          email: maskEmail(email),
-          ip,
-          reason: "user_not_found",
-        },
-        "Login failed: user not found",
-      );
-      res.status(401).json({ error: "Invalid credentials" });
-      return;
-    }
-
-    const isValid = await argon2.verify(user.password_hash, password);
-    if (!isValid) {
-      await recordFailure(email);
-      logger.warn(
-        {
-          event: "auth.login.failure",
-          userId: user.id,
-          email: maskEmail(email),
-          ip,
-          reason: "invalid_password",
-        },
-        "Login failed: invalid password",
-      );
-      res.status(401).json({ error: "Invalid credentials" });
-      return;
-    }
-
-    if (
-      user.user_permissions?.type &&
-      !["user", "admin"].includes(user.user_permissions?.type)
-    ) {
-      logger.warn(
-        {
-          event: "auth.login.failure",
-          userId: user.id,
-          email: maskEmail(email),
-          ip,
-          reason: "unknown_permission_type",
-        },
-        "Login failed: unknown permission type",
-      );
-      res.status(403).json({ error: "Unknown permission type" });
-      return;
-    }
-
-    await clearLockout(email);
-    req.session.user = user.email;
-    if (!req.session.expiry) {
-      req.session.expiry = Date.now() + (req.session.cookie.maxAge || 3600000);
-    }
+router.post(
+  "/login",
+  loginLimiter,
+  validateBody(LoginSchema),
+  async (req, res) => {
+    const { email, password } = req.body;
+    const ip = req.ip;
     logger.info(
-      {
-        event: "auth.login.success",
-        userId: user.id,
-        email: maskEmail(email),
-        ip,
-      },
-      "Login successful",
+      { event: "auth.login.attempt", email: maskEmail(email), ip },
+      "Login attempt",
     );
-    res.json({
-      message: "Logged in",
-      user: req.session.user,
-      sessionExpiry: req.session.expiry,
-    });
-    return;
-  } catch (error: any) {
-    logger.error(
-      { event: "auth.login.error", email: maskEmail(email), ip, err: error },
-      "Login error",
-    );
-    res.status(500).json({ error: "Server error" });
-  }
-});
+
+    if (await isLockedOut(email)) {
+      logger.warn(
+        { event: "auth.login.locked", email: maskEmail(email), ip },
+        "Login blocked: account temporarily locked",
+      );
+      res.status(429).json({
+        error: "Account temporarily locked. Try again in 15 minutes.",
+      });
+      return;
+    }
+
+    try {
+      const dataSource = await AppDataSource.getInstance();
+      const userRepo = dataSource.getRepository<IUser>("User");
+      const user = await userRepo.findOneBy({ email });
+      if (!user) {
+        await recordFailure(email);
+        logger.warn(
+          {
+            event: "auth.login.failure",
+            email: maskEmail(email),
+            ip,
+            reason: "user_not_found",
+          },
+          "Login failed: user not found",
+        );
+        res.status(401).json({ error: "Invalid credentials" });
+        return;
+      }
+
+      const isValid = await argon2.verify(user.password_hash, password);
+      if (!isValid) {
+        await recordFailure(email);
+        logger.warn(
+          {
+            event: "auth.login.failure",
+            userId: user.id,
+            email: maskEmail(email),
+            ip,
+            reason: "invalid_password",
+          },
+          "Login failed: invalid password",
+        );
+        res.status(401).json({ error: "Invalid credentials" });
+        return;
+      }
+
+      if (
+        user.user_permissions?.type &&
+        !["user", "admin"].includes(user.user_permissions?.type)
+      ) {
+        logger.warn(
+          {
+            event: "auth.login.failure",
+            userId: user.id,
+            email: maskEmail(email),
+            ip,
+            reason: "unknown_permission_type",
+          },
+          "Login failed: unknown permission type",
+        );
+        res.status(403).json({ error: "Unknown permission type" });
+        return;
+      }
+
+      await clearLockout(email);
+      req.session.user = user.email;
+      if (!req.session.expiry) {
+        req.session.expiry =
+          Date.now() + (req.session.cookie.maxAge || 3600000);
+      }
+      logger.info(
+        {
+          event: "auth.login.success",
+          userId: user.id,
+          email: maskEmail(email),
+          ip,
+        },
+        "Login successful",
+      );
+      res.json({
+        message: "Logged in",
+        user: req.session.user,
+        sessionExpiry: req.session.expiry,
+      });
+      return;
+    } catch (error: any) {
+      logger.error(
+        { event: "auth.login.error", email: maskEmail(email), ip, err: error },
+        "Login error",
+      );
+      res.status(500).json({ error: "Server error" });
+    }
+  },
+);
 
 router.get("/me", (req, res) => {
   if (req.session?.user) {
