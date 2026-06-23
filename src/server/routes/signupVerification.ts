@@ -1,5 +1,5 @@
 import express from "express";
-import { timingSafeEqual } from "crypto";
+import argon2 from "argon2";
 import { totp, generateKey } from "otp-io";
 import {
   sendCodeLimiter,
@@ -34,7 +34,7 @@ router.post(
     const code = await totp(hmac, { secret });
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes from now
 
-    upsert({ email, code, expires_at: expiresAt })
+    upsert({ email, code: await argon2.hash(code), expires_at: expiresAt })
       .then(() =>
         sendEmail(
           "Your Tesla Powerwall Automation verification code",
@@ -110,7 +110,13 @@ router.post(
 
     const { code: storedCode, expires_at } = existingSignupVerification;
 
-    if (!timingSafeEqual(Buffer.from(code), Buffer.from(storedCode))) {
+    let isValid: boolean;
+    try {
+      isValid = await argon2.verify(storedCode, code);
+    } catch {
+      isValid = false;
+    }
+    if (!isValid) {
       res.status(400).json({ error: "Invalid verification code" });
       return;
     }
