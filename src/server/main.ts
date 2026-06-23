@@ -133,7 +133,7 @@ app.use(
 
 const port = process.env.PORT || 3001;
 
-let server = null;
+let server;
 if (sslEnabled) {
   const https = require("https");
   const fs = require("fs");

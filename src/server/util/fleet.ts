@@ -250,7 +250,7 @@ export class Fleet {
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
       return [];
     }
@@ -297,7 +297,7 @@ export class Fleet {
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
       return null;
     }
@@ -344,7 +344,7 @@ export class Fleet {
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
       return null;
     }
@@ -569,7 +569,7 @@ export class Fleet {
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
     }
   }
@@ -683,7 +683,7 @@ export class Fleet {
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
     }
   }
@@ -754,7 +754,7 @@ export class Fleet {
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
     }
   }
@@ -1307,7 +1307,7 @@ export class Fleet {
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
     }
   }
