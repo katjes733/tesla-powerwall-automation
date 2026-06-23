@@ -51,6 +51,20 @@ import {
   type SolarForecastResult,
 } from "~/server/util/solarForecast";
 
+export interface SmartChargingLogResult {
+  site: string;
+  energySiteId: number;
+  desired: "enabled" | "disabled";
+  current: "enabled" | "disabled";
+  action: "enabled" | "disabled" | "no_change";
+  soc: number;
+  targetSoc: number;
+  forecastMethod: "historical" | "linear-fallback";
+  estimatedSolarKwh: number | null;
+  weatherFactor: number | null;
+  reason: string;
+}
+
 const SITE_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
 const siteInfoCache = new Map<number, { info: SiteInfo; at: number }>();
 
@@ -435,12 +449,23 @@ export class Fleet {
         .subtract(i + 1, "days")
         .format("YYYY-MM-DD"),
     );
+    const todayDate = nowLocal.format("YYYY-MM-DD");
+
+    // Exclude today from the cached-set check — today's data is always re-fetched
+    // on each cache refresh so the weather scaling factor stays current.
     const cachedDateSet = new Set(
-      cachedPoints.map((p) =>
-        moment.tz(p.timestamp, timezone).format("YYYY-MM-DD"),
-      ),
+      cachedPoints
+        .filter(
+          (p) =>
+            moment.tz(p.timestamp, timezone).format("YYYY-MM-DD") !== todayDate,
+        )
+        .map((p) => moment.tz(p.timestamp, timezone).format("YYYY-MM-DD")),
     );
-    const missingDates = neededDates.filter((d) => !cachedDateSet.has(d));
+    // Historical days that are not yet cached, plus today (always refreshed).
+    const missingDates = [
+      ...neededDates.filter((d) => !cachedDateSet.has(d)),
+      todayDate,
+    ];
 
     const options = await this.getDefaultGetOptions();
     const newResults = await Promise.all(
@@ -451,13 +476,15 @@ export class Fleet {
     const newPoints = newResults.flat();
 
     // Merge: keep existing points still within the window, append new ones.
+    // Exclude today's stale cached points — they are replaced by the fresh fetch above.
     const cutoffDate = nowLocal
       .clone()
       .subtract(days, "days")
       .format("YYYY-MM-DD");
-    const keptPoints = cachedPoints.filter(
-      (p) => moment.tz(p.timestamp, timezone).format("YYYY-MM-DD") > cutoffDate,
-    );
+    const keptPoints = cachedPoints.filter((p) => {
+      const date = moment.tz(p.timestamp, timezone).format("YYYY-MM-DD");
+      return date > cutoffDate && date !== todayDate;
+    });
     const allPoints = [...keptPoints, ...newPoints].sort((a, b) =>
       a.timestamp.localeCompare(b.timestamp),
     );
@@ -482,9 +509,11 @@ export class Fleet {
       );
     }
 
-    // Persist with a long TTL; refreshAfter drives logical expiry at next midnight.
+    // Persist with a long TTL. refreshAfter is set to 10 minutes so today's partial
+    // data (used for weather scaling) stays reasonably fresh throughout the day.
+    // Past completed days are kept by the longer Redis TTL and skipped by cachedDateSet.
     const updatedCache = {
-      refreshAfter: nowLocal.clone().endOf("day").toISOString(),
+      refreshAfter: nowLocal.clone().add(10, "minutes").toISOString(),
       points: allPoints,
     };
     try {
@@ -763,7 +792,7 @@ export class Fleet {
     product: Product,
     value: string,
     conditions: IScheduleCondition[] = [],
-  ): Promise<void> {
+  ): Promise<SmartChargingLogResult | null> {
     let config: SmartChargingActionConfig;
     try {
       config = JSON.parse(value) as SmartChargingActionConfig;
@@ -771,7 +800,7 @@ export class Fleet {
       logger.error(
         `Smart charging: invalid config JSON for site "${product.site_name}": ${value}`,
       );
-      return;
+      return null;
     }
     const solarEfficiencyFactor = config.solarEfficiencyFactor ?? 0.5;
 
@@ -782,7 +811,7 @@ export class Fleet {
       logger.warn(
         `Smart charging: cannot run — site info unavailable for site "${product.site_name}"`,
       );
-      return;
+      return null;
     }
 
     const timezone = siteInfo.installation_time_zone;
@@ -795,7 +824,7 @@ export class Fleet {
       logger.warn(
         `Smart charging: cannot run — live status unavailable for site "${product.site_name}"`,
       );
-      return;
+      return null;
     }
     const now = moment().tz(timezone);
     const currentlyAllowed = !(
@@ -810,7 +839,7 @@ export class Fleet {
       logger.warn(
         `Smart charging: battery capacity not available for site "${product.site_name}" — skipping tick`,
       );
-      return;
+      return null;
     }
     const energyNeededKwh = Math.max(
       0,
@@ -836,7 +865,7 @@ export class Fleet {
         logger.warn(
           `Smart charging: no TOU data for site "${product.site_name}" — configure a TOU tariff in the Tesla app`,
         );
-        return;
+        return null;
       }
 
       if (isCurrentlyInPeak(tariff!, now)) {
@@ -863,7 +892,6 @@ export class Fleet {
             solarHistory,
             now,
             nextPeakStart,
-            availableSolarKw,
             timezone,
           );
           const estimatedSolarKwh =
@@ -951,7 +979,6 @@ export class Fleet {
           solarHistory,
           now,
           deadline,
-          availableSolarKw,
           timezone,
         );
         const estimatedSolarKwh =
@@ -989,46 +1016,47 @@ export class Fleet {
       logger.warn(
         `Smart charging: no recognised condition for site "${product.site_name}" — skipping`,
       );
-      return;
+      return null;
     }
 
-    if (process.env.DRY_RUN === "true") {
-      logger.info(
-        {
-          dryRun: true,
-          site: product.site_name,
-          energySiteId: product.energy_site_id,
-          currentlyAllowed,
-          desired,
-          soc: liveStatus.percentage_charged,
-          targetSoc: config.targetSoc,
-          forecastMethod:
-            solarForecast !== null ? "historical" : "linear-fallback",
-          estimatedSolarKwh: solarForecast
-            ? Math.round(solarForecast.estimatedKwh * 100) / 100
-            : null,
-          reason,
-        },
-        `[DRY RUN] Smart charging "${product.site_name}": desired=${desired}, current=${currentlyAllowed ? "enabled" : "disabled"} — ${reason}`,
-      );
-      return;
-    }
+    const forecastMethod =
+      solarForecast !== null ? "historical" : "linear-fallback";
+    const estimatedSolarKwh = solarForecast
+      ? Math.round(solarForecast.estimatedKwh * 100) / 100
+      : null;
+    const weatherFactor = solarForecast
+      ? Math.round(solarForecast.scalingFactor * 100) / 100
+      : null;
+    const current: "enabled" | "disabled" = currentlyAllowed
+      ? "enabled"
+      : "disabled";
 
+    let action: "enabled" | "disabled" | "no_change";
     if (desired === "enabled" && !currentlyAllowed) {
-      logger.info(
-        `Smart charging [${product.site_name}]: enabling grid charging — ${reason}`,
-      );
-      await this.setGridCharging(product, "enabled");
+      if (process.env.DRY_RUN !== "true")
+        await this.setGridCharging(product, "enabled");
+      action = "enabled";
     } else if (desired === "disabled" && currentlyAllowed) {
-      logger.info(
-        `Smart charging [${product.site_name}]: disabling grid charging — ${reason}`,
-      );
-      await this.setGridCharging(product, "disabled");
+      if (process.env.DRY_RUN !== "true")
+        await this.setGridCharging(product, "disabled");
+      action = "disabled";
     } else {
-      logger.info(
-        `Smart charging [${product.site_name}]: no change (desired=${desired}, current=${currentlyAllowed ? "enabled" : "disabled"}) — ${reason}`,
-      );
+      action = "no_change";
     }
+
+    return {
+      site: product.site_name,
+      energySiteId: product.energy_site_id,
+      desired,
+      current,
+      action,
+      soc: liveStatus.percentage_charged,
+      targetSoc: config.targetSoc,
+      forecastMethod,
+      estimatedSolarKwh,
+      weatherFactor,
+      reason,
+    };
   }
 
   private buildWeekendTariff(tariff: Record<string, any>): Record<string, any> {

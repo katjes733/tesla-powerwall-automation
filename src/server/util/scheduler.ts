@@ -14,7 +14,7 @@ import {
   deleteById as deleteScheduleFromDb,
 } from "~/server/util/routes/schedule";
 import { sendEmail } from "./mailing";
-import { Fleet } from "~/server/util/fleet";
+import { Fleet, type SmartChargingLogResult } from "~/server/util/fleet";
 import { maskEmail } from "~/server/util/maskEmail";
 
 async function evaluateConditions(
@@ -162,11 +162,11 @@ export class Scheduler {
 
     if (process.env.DRY_RUN === "true") {
       logger.info(
-        `[DRY RUN] Evaluating scheduled task for email ${schedule.email} with ID ${schedule.id} — no writes will be made`,
+        `[DRY RUN] Evaluating scheduled task ${schedule.id} for ${maskEmail(schedule.email)} — no writes will be made`,
       );
     } else {
       logger.info(
-        `Executing scheduled task for email ${schedule.email} with ID ${schedule.id}`,
+        `Executing scheduled task ${schedule.id} for ${maskEmail(schedule.email)}`,
       );
     }
 
@@ -189,6 +189,7 @@ export class Scheduler {
         (a) => a.action === "setTouHolidayOverride",
       );
       let actionsExecuted = 0;
+      const smartChargingResults: SmartChargingLogResult[] = [];
 
       for (const product of products) {
         if (hasConditions && !isSmartSchedule && !isHolidaySchedule) {
@@ -241,25 +242,46 @@ export class Scheduler {
             continue;
           }
           /* eslint-disable no-unexpected-multiline */
-          await Fleet.getInstance(schedule.email)
+          const result = await Fleet.getInstance(schedule.email)
             .getActionMap()
             [config.action](product, config.value, schedule.conditions ?? []);
           /* eslint-enable no-unexpected-multiline */
+          if (config.action === "setSmartGridCharging" && result != null) {
+            smartChargingResults.push(result as SmartChargingLogResult);
+          }
           actionsExecuted++;
         }
       }
 
+      const smartCharging =
+        smartChargingResults.length === 1
+          ? smartChargingResults[0]
+          : smartChargingResults.length > 1
+            ? smartChargingResults
+            : undefined;
+
       if (process.env.DRY_RUN === "true") {
         logger.info(
-          `[DRY RUN] Evaluation complete for schedule ID ${schedule.id} — no changes sent to Tesla API`,
+          {
+            scheduleId: schedule.id,
+            dryRun: true,
+            ...(smartCharging && { smartCharging }),
+          },
+          `[DRY RUN] Evaluation complete for schedule ${schedule.id}`,
         );
       } else if (actionsExecuted > 0) {
         logger.info(
-          `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully (${actionsExecuted} action(s) applied)`,
+          {
+            scheduleId: schedule.id,
+            email: maskEmail(schedule.email),
+            actionsExecuted,
+            ...(smartCharging && { smartCharging }),
+          },
+          `Executed scheduled task ${schedule.id} for ${maskEmail(schedule.email)} (${actionsExecuted} action(s) applied)`,
         );
       } else {
         logger.warn(
-          `Scheduled task for email ${schedule.email} with ID ${schedule.id} completed but no actions were executed — check action key names`,
+          `Scheduled task ${schedule.id} for ${maskEmail(schedule.email)} completed but no actions were executed — check action key names`,
         );
       }
 
@@ -276,7 +298,7 @@ export class Scheduler {
     } catch (error: any) {
       const lastError = error.message || "Unknown error";
       logger.error(
-        `Error executing scheduled task for email ${schedule.email} with ID ${schedule.id}: ${lastError}`,
+        `Error executing scheduled task ${schedule.id} for ${maskEmail(schedule.email)}: ${lastError}`,
       );
       sendEmail(
         "Powerwall Notification",

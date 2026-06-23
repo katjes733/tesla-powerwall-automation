@@ -31,7 +31,8 @@
     "verify": "bun prettier && bun eslint && bun stylelint && bun tsc && bun test:coverage && bun audit",
     "dev:client": "vite",
     "build-client": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "redis-commander": "bun run scripts/redis-commander.ts"
   },
   "files": [
     "build"

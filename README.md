@@ -29,6 +29,8 @@ Alongside scheduling, the application provides a real-time dashboard showing bat
 
 Built with Bun, Express, TypeORM + PostgreSQL on the backend; React 19, Vite, and Material-UI on the frontend. Docker Compose provides the database. Schedules run via `node-cron`; Pino handles structured logging throughout.
 
+> **Tesla API cadence note:** The `live_status` endpoint (battery SOC, real-time power flows) appears to refresh approximately every 5 minutes on Tesla's side, regardless of how often the application polls it. Consecutive schedule evaluations within that window will therefore see the same SOC reading — this is expected and does not indicate a bug. The solar history endpoint (`calendar_history`) is cached locally for 10 minutes and refreshed in full on each cache miss, including a fresh fetch of today's partial data to keep the weather scaling factor current.
+
 ## Quick Setup
 
 ### Prerequisites
