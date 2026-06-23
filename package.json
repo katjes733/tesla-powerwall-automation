@@ -28,7 +28,7 @@
     "test:coverage:lcov": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov",
     "lint": "bun run prettier && bun run eslint && bun run stylelint && bun run tsc",
     "tsc": "tsc --noEmit",
-    "verify": "bun prettier && bun eslint && bun stylelint && bun tsc && bun test:coverage",
+    "verify": "bun prettier && bun eslint && bun stylelint && bun tsc && bun test:coverage && bun audit",
     "dev:client": "vite",
     "build-client": "tsc -b && vite build",
     "preview": "vite preview"
