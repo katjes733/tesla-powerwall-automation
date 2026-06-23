@@ -178,6 +178,10 @@ export class Fleet {
     this.token = "";
     this.refreshToken = "";
     this.token = tokenData.access_token;
+    // jwt-decode only base64-decodes the payload; it does not verify the signature.
+    // The token arrives over TLS from Tesla's token endpoint, so tampering is unlikely.
+    // If Tesla publishes a JWKS endpoint, replace jwt-decode with jose's jwtVerify() to
+    // cryptographically verify the signature before trusting any claim.
     this.tokenExpiresAt = jwtDecode<JWT>(this.token).exp * 1000;
     this.refreshToken = tokenData.refresh_token;
     await upsertToken({
