@@ -27,6 +27,9 @@ bun run dev:client   # Vite frontend on :5173, proxies /api → :3001
 # Lint (prettier + eslint + stylelint + tsc)
 bun run lint
 
+# Full verification (lint + type-check + tests + dependency audit) — run before committing
+bun run verify
+
 # Tests
 bun test
 bun test --watch
@@ -110,6 +113,7 @@ Node.js / Bun validate TLS certificates by default (`rejectUnauthorized: true`).
 
 ## Key conventions
 
+- **Dependency audit** — `bun run verify` ends with `bun audit` and fails if vulnerabilities are found. When it fails, surface the findings to the user and discuss the appropriate fix together — the options include `bun update` (latest compatible versions), `bun update --latest` (allows major version bumps, may introduce breaking changes), or an `overrides` entry in `package.json` to pin a specific transitive dependency. Do not silently apply overrides or auto-update without the user's input.
 - **Path alias** — `~/` maps to `src/` (configured in `tsconfig.json` and Vite). Use it for all cross-module imports within `src/`.
 - **TypeORM Entity Schema** — models use `EntitySchema` (not decorators). See `src/server/database/models/` for the pattern.
 - **JSONB columns** — `conditions`, `actions`, and `configuration` on `Schedule` are JSONB; TypeORM maps them to typed arrays.
