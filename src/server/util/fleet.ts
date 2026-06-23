@@ -62,6 +62,7 @@ export interface SmartChargingLogResult {
   forecastMethod: "historical" | "linear-fallback";
   estimatedSolarKwh: number | null;
   weatherFactor: number | null;
+  batteryChargeRateFromGridKw: number | null;
   reason: string;
 }
 
@@ -1055,6 +1056,18 @@ export class Fleet {
       forecastMethod,
       estimatedSolarKwh,
       weatherFactor,
+      batteryChargeRateFromGridKw: (() => {
+        const batteryChargingW =
+          liveStatus.battery_power < 0 ? -liveStatus.battery_power : 0;
+        if (batteryChargingW === 0) return null;
+        const solarSurplusW = Math.max(
+          0,
+          liveStatus.solar_power - liveStatus.load_power,
+        );
+        return (
+          Math.round(Math.max(0, batteryChargingW - solarSurplusW) / 10) / 100
+        );
+      })(),
       reason,
     };
   }
