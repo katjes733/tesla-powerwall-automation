@@ -69,6 +69,12 @@ if (
   );
 }
 
+if (!process.env.TESLA_CLIENT_ID || !process.env.TESLA_CLIENT_SECRET) {
+  throw new Error(
+    "TESLA_CLIENT_ID and TESLA_CLIENT_SECRET environment variables are required",
+  );
+}
+
 const sslEnabled = process.env.SSL_ENABLED === "true";
 if (!sslEnabled && process.env.NODE_ENV !== "development") {
   logger.warn(
