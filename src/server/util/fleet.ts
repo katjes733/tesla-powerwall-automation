@@ -883,7 +883,13 @@ export class Fleet {
           desired = "disabled";
           reason = "no upcoming peak found in tariff";
         } else {
-          const minutesToPeak = nextPeakStart.diff(now, "minutes");
+          const effectivePeakStart = nextPeakStart
+            .clone()
+            .subtract(PEAK_BUFFER_MINUTES, "minutes");
+          const minutesToPeak = Math.max(
+            0,
+            effectivePeakStart.diff(now, "minutes"),
+          );
           const chargeRateKw = calculateChargeRateKw(siteInfo.components);
           const availableSolarKw = Math.max(
             0,
@@ -894,7 +900,7 @@ export class Fleet {
           solarForecast = estimateSolarKwhFromHistory(
             solarHistory,
             now,
-            nextPeakStart,
+            effectivePeakStart,
             timezone,
           );
           const estimatedSolarKwh =
@@ -922,7 +928,7 @@ export class Fleet {
                 config.targetSoc,
                 chargeRateKw,
               );
-            const latestGridStart = nextPeakStart
+            const latestGridStart = effectivePeakStart
               .clone()
               .subtract(gridChargeHours, "hours");
             const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
@@ -980,7 +986,13 @@ export class Fleet {
         desired = "disabled";
         reason = `target SOC already reached (${liveStatus.percentage_charged.toFixed(1)}%)`;
       } else {
-        const minutesToDeadline = deadline.diff(now, "minutes");
+        const effectiveDeadline = deadline
+          .clone()
+          .subtract(PEAK_BUFFER_MINUTES, "minutes");
+        const minutesToDeadline = Math.max(
+          0,
+          effectiveDeadline.diff(now, "minutes"),
+        );
         const chargeRateKw = calculateChargeRateKw(siteInfo.components);
         const availableSolarKw = Math.max(
           0,
@@ -991,7 +1003,7 @@ export class Fleet {
         solarForecast = estimateSolarKwhFromHistory(
           solarHistory,
           now,
-          deadline,
+          effectiveDeadline,
           timezone,
         );
         const estimatedSolarKwh =
@@ -1017,7 +1029,7 @@ export class Fleet {
               config.targetSoc,
               chargeRateKw,
             );
-          const latestGridStart = deadline
+          const latestGridStart = effectiveDeadline
             .clone()
             .subtract(gridChargeHours, "hours");
           const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
