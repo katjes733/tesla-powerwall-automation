@@ -50,3 +50,90 @@ export function calculateChargeRateKw(components: SiteComponents): number {
   ).length;
   return pw2Count * PW2_BATTERY_KW * SAFETY_FACTOR;
 }
+
+// SOC at which the Powerwall CV taper begins (rate still ~full at 95% in observed data).
+export const HIGH_SOC_TAPER_SOC_PERCENT = 95;
+// Exponential decay constant per %SOC — fitted from observed data:
+// rate ≈ 16kW at 95% SOC, ≈ 10.3kW at 97% SOC → k = ln(16/10.3) / 2 ≈ 0.222
+export const HIGH_SOC_TAPER_K = 0.222;
+// Grid charging takes 1–2 min to ramp up after being enabled.
+export const GRID_CHARGE_STARTUP_BUFFER_MINUTES = 2;
+// Stop targeting 100% SOC this many minutes before the on-peak start / charge deadline.
+// Ensures the battery is full before grid charging is cut off, avoiding a race with
+// demand managers that may not be perfectly synchronised with the Powerwall.
+export const PEAK_BUFFER_MINUTES = 5;
+
+/**
+ * Effective charge rate (kW) for the CV taper zone [soc1, soc2].
+ * The actual rate decays exponentially: rate(SOC) = chargeRateKw × exp(−k × (SOC − taperSOC)).
+ * This returns the harmonic-weighted average over the range (= total energy ÷ total time),
+ * which is what we need for calculating how long the grid must run.
+ * Battery capacity cancels out — result depends only on the SOC bounds and chargeRateKw.
+ */
+function cvEffectiveRateKw(
+  chargeRateKw: number,
+  soc1: number,
+  soc2: number,
+): number {
+  if (soc1 >= soc2) return chargeRateKw;
+  const u1 = soc1 - HIGH_SOC_TAPER_SOC_PERCENT;
+  const u2 = soc2 - HIGH_SOC_TAPER_SOC_PERCENT;
+  return (
+    (chargeRateKw * HIGH_SOC_TAPER_K * (u2 - u1)) /
+    (Math.exp(HIGH_SOC_TAPER_K * u2) - Math.exp(HIGH_SOC_TAPER_K * u1))
+  );
+}
+
+/**
+ * Calculates the total hours the grid must charge to deliver the required energy,
+ * accounting for the CC/CV taper above HIGH_SOC_TAPER_SOC_PERCENT and a fixed startup buffer.
+ * Solar is allocated to the CC phase first (solar accumulates throughout the day, well
+ * before the grid-charging window at the end of off-peak).
+ * Returns the effective rate (kW) for use in log/reason strings.
+ */
+export function calculateGridChargeHours(
+  energyNeededKwh: number,
+  estimatedSolarKwh: number,
+  currentSocPercent: number,
+  targetSocPercent: number,
+  chargeRateKw: number,
+): { hours: number; effectiveRateKw: number } {
+  const gridEnergyKwh = Math.max(0, energyNeededKwh - estimatedSolarKwh);
+  const startupBufferHours = GRID_CHARGE_STARTUP_BUFFER_MINUTES / 60;
+
+  const taperStartSoc = Math.max(currentSocPercent, HIGH_SOC_TAPER_SOC_PERCENT);
+  const cvSocDelta = Math.max(0, targetSocPercent - taperStartSoc);
+  const totalSocDelta = Math.max(0, targetSocPercent - currentSocPercent);
+
+  if (totalSocDelta <= 0 || cvSocDelta <= 0) {
+    return {
+      hours: gridEnergyKwh / chargeRateKw + startupBufferHours,
+      effectiveRateKw: chargeRateKw,
+    };
+  }
+
+  const cvFraction = cvSocDelta / totalSocDelta;
+  const cvEnergyKwh = energyNeededKwh * cvFraction;
+  const ccEnergyKwh = energyNeededKwh - cvEnergyKwh;
+
+  const ccGridEnergy = Math.max(0, ccEnergyKwh - estimatedSolarKwh);
+  const cvGridEnergy = Math.max(
+    0,
+    cvEnergyKwh - Math.max(0, estimatedSolarKwh - ccEnergyKwh),
+  );
+
+  const cvRate = cvEffectiveRateKw(
+    chargeRateKw,
+    taperStartSoc,
+    targetSocPercent,
+  );
+  const chargeHours = ccGridEnergy / chargeRateKw + cvGridEnergy / cvRate;
+  const totalHours = chargeHours + startupBufferHours;
+
+  const effectiveRateKw =
+    gridEnergyKwh > 0
+      ? Math.round((gridEnergyKwh / chargeHours) * 100) / 100
+      : chargeRateKw;
+
+  return { hours: totalHours, effectiveRateKw };
+}
