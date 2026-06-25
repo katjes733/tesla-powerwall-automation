@@ -10,19 +10,23 @@ import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
+import Tooltip from "@mui/material/Tooltip";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
+import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import {
   ALL_PERIOD_TYPES,
   PERIOD_LABELS,
   type PeriodType,
   type TouTimeBlock,
 } from "~/shared/types/tou";
+import type { PeriodIssue } from "~/shared/types/touValidation";
 
 interface Props {
   periods: TouTimeBlock[];
   onChange: (periods: TouTimeBlock[]) => void;
   minutePrecision: boolean;
+  periodIssues?: PeriodIssue[];
 }
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -62,6 +66,7 @@ interface TimeInputProps {
   minute: number;
   minutePrecision: boolean;
   onChange: (hour: number, minute: number) => void;
+  error?: boolean;
 }
 
 function TimeInput({
@@ -69,6 +74,7 @@ function TimeInput({
   minute,
   minutePrecision,
   onChange,
+  error,
 }: TimeInputProps) {
   if (minutePrecision) {
     return (
@@ -82,6 +88,7 @@ function TimeInput({
           onChange(parsed.hour, parsed.minute);
         }}
         sx={{ width: 150 }}
+        error={error}
       />
     );
   }
@@ -95,6 +102,7 @@ function TimeInput({
         onChange(Math.floor(total / 60), total % 60);
       }}
       sx={{ width: 150 }}
+      error={error}
     >
       {THIRTY_MIN_SLOTS.map(({ totalMinutes, label }) => (
         <MenuItem key={totalMinutes} value={totalMinutes}>
@@ -109,6 +117,7 @@ export default function TouPeriodList({
   periods,
   onChange,
   minutePrecision,
+  periodIssues,
 }: Props) {
   function update(id: string, patch: Partial<TouTimeBlock>) {
     onChange(periods.map((p) => (p.id === id ? { ...p, ...patch } : p)));
@@ -161,6 +170,10 @@ export default function TouPeriodList({
         <TableBody>
           {periods.map((block) => {
             const preset = getDayPreset(block);
+            const issue = periodIssues?.find((i) => i.periodId === block.id);
+            const fromError = issue?.fields.includes("from") ?? false;
+            const toError = issue?.fields.includes("to") ?? false;
+            const daysError = issue?.fields.includes("days") ?? false;
             return (
               <TableRow key={block.id}>
                 <TableCell sx={{ py: 0.5, minWidth: 130 }}>
@@ -187,6 +200,7 @@ export default function TouPeriodList({
                     onChange={(h, m) =>
                       update(block.id, { fromHour: h, fromMinute: m })
                     }
+                    error={fromError}
                   />
                 </TableCell>
                 <TableCell sx={{ py: 0.5 }}>
@@ -197,6 +211,7 @@ export default function TouPeriodList({
                     onChange={(h, m) =>
                       update(block.id, { toHour: h, toMinute: m })
                     }
+                    error={toError}
                   />
                 </TableCell>
                 <TableCell sx={{ py: 0.5 }}>
@@ -208,6 +223,7 @@ export default function TouPeriodList({
                         applyPreset(block.id, e.target.value as DayPreset)
                       }
                       sx={{ fontSize: 13, minWidth: 120 }}
+                      error={daysError}
                     >
                       <MenuItem value="weekdays" sx={{ fontSize: 13 }}>
                         Weekdays (M–F)
@@ -233,6 +249,7 @@ export default function TouPeriodList({
                             })
                           }
                           sx={{ fontSize: 13, minWidth: 70 }}
+                          error={daysError}
                         >
                           {DAY_LABELS.map((d, i) => (
                             <MenuItem key={i} value={i} sx={{ fontSize: 13 }}>
@@ -250,6 +267,7 @@ export default function TouPeriodList({
                             })
                           }
                           sx={{ fontSize: 13, minWidth: 70 }}
+                          error={daysError}
                         >
                           {DAY_LABELS.map((d, i) => (
                             <MenuItem key={i} value={i} sx={{ fontSize: 13 }}>
@@ -262,13 +280,20 @@ export default function TouPeriodList({
                   </Box>
                 </TableCell>
                 <TableCell sx={{ py: 0.5 }}>
-                  <IconButton
-                    size="small"
-                    onClick={() => remove(block.id)}
-                    color="error"
-                  >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
+                  <Box display="flex" alignItems="center" gap={0.5}>
+                    {issue && (
+                      <Tooltip title={issue.message}>
+                        <ErrorOutlineIcon fontSize="small" color="error" />
+                      </Tooltip>
+                    )}
+                    <IconButton
+                      size="small"
+                      onClick={() => remove(block.id)}
+                      color="error"
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
                 </TableCell>
               </TableRow>
             );

@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import Alert from "@mui/material/Alert";
+import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -17,6 +19,10 @@ import TouTimeline from "./TouTimeline";
 import TouPeriodList from "./TouPeriodList";
 import TouRateTable from "./TouRateTable";
 import type { TouSeason, TouTimeBlock } from "~/shared/types/tou";
+import {
+  validateSeason,
+  formatCoverageIssue,
+} from "~/shared/types/touValidation";
 
 const MONTHS = [
   "January",
@@ -68,6 +74,8 @@ export default function SeasonEditor({ season, onChange }: Props) {
   const [minutePrecision, setMinutePrecision] = useState(() =>
     hasSubThirtyMinutes(season.periods),
   );
+
+  const validation = useMemo(() => validateSeason(season), [season]);
   const [showPrecisionWarning, setShowPrecisionWarning] = useState(false);
 
   function patch(partial: Partial<TouSeason>) {
@@ -257,7 +265,18 @@ export default function SeasonEditor({ season, onChange }: Props) {
           periods={season.periods}
           onChange={(periods) => patch({ periods })}
           minutePrecision={minutePrecision}
+          periodIssues={validation.periodIssues}
         />
+        {validation.coverageIssues.length > 0 && (
+          <Alert severity="error" sx={{ mt: 1.5 }}>
+            <AlertTitle>Schedule Coverage Issues</AlertTitle>
+            <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+              {validation.coverageIssues.map((issue, i) => (
+                <li key={i}>{formatCoverageIssue(issue)}</li>
+              ))}
+            </Box>
+          </Alert>
+        )}
       </Box>
 
       <Divider />

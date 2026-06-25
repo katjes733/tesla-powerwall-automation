@@ -1,3 +1,6 @@
+import { useState, useMemo } from "react";
+import Alert from "@mui/material/Alert";
+import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import Dialog from "@mui/material/Dialog";
@@ -8,6 +11,11 @@ import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
 import SeasonTabs from "./SeasonTabs";
 import type { TouEditorState } from "~/shared/types/tou";
+import {
+  validateEditorState,
+  formatValidationErrors,
+  formatMonthIssues,
+} from "~/shared/types/touValidation";
 
 interface Props {
   open: boolean;
@@ -30,12 +38,37 @@ export default function TouEditorDialog({
   onClose,
   saving,
 }: Props) {
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
+
+  const validation = useMemo(() => validateEditorState(state), [state]);
+  const validationErrors = useMemo(
+    () => formatValidationErrors(validation, state),
+    [validation, state],
+  );
+  const monthIssues = useMemo(
+    () => formatMonthIssues(validation, state),
+    [validation, state],
+  );
+
   function patch(partial: Partial<TouEditorState>) {
     onChange({ ...state, ...partial });
   }
 
+  function handleSaveClick() {
+    if (validation.hasErrors) {
+      setShowValidationErrors(true);
+    } else {
+      onSave();
+    }
+  }
+
+  function handleClose() {
+    setShowValidationErrors(false);
+    onClose();
+  }
+
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="lg" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
       <DialogTitle>TOU Schedule Editor</DialogTitle>
       <DialogContent dividers>
         <Box display="flex" flexDirection="column" gap={3}>
@@ -72,20 +105,55 @@ export default function TouEditorDialog({
             <Typography variant="subtitle1" fontWeight={600} gutterBottom>
               Seasons
             </Typography>
+            {monthIssues.length > 0 && (
+              <Alert severity="warning" sx={{ mb: 1.5 }}>
+                <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+                  {monthIssues.map((msg, i) => (
+                    <li key={i}>{msg}</li>
+                  ))}
+                </Box>
+              </Alert>
+            )}
             <SeasonTabs
               seasons={state.seasons}
               onSeasonsChange={(seasons) => patch({ seasons })}
             />
           </Box>
+
+          {showValidationErrors && validation.hasErrors && (
+            <Alert
+              severity="error"
+              onClose={() => setShowValidationErrors(false)}
+            >
+              <AlertTitle>
+                Cannot save — fix the following issues first
+              </AlertTitle>
+              <Box component="ul" sx={{ m: 0, pl: 2.5 }}>
+                {validationErrors.map((err, i) => (
+                  <li key={i}>{err}</li>
+                ))}
+              </Box>
+            </Alert>
+          )}
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={onClose} disabled={saving}>
+        <Button onClick={handleClose} disabled={saving}>
           Cancel
         </Button>
+        {showValidationErrors && validation.hasErrors && (
+          <Button
+            variant="outlined"
+            color="warning"
+            onClick={onSave}
+            disabled={saving}
+          >
+            Save Anyway
+          </Button>
+        )}
         <Button
           variant="contained"
-          onClick={onSave}
+          onClick={handleSaveClick}
           disabled={saving || !scheduleName.trim()}
         >
           {saving ? "Saving…" : "Save"}
