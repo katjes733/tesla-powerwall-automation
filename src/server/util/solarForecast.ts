@@ -12,6 +12,17 @@ export interface SolarForecastResult {
 // before applying weather scaling. Avoids noise early in the morning when
 // only a handful of 5-minute slots have been recorded.
 const MIN_CUMULATIVE_FOR_SCALING_KWH = 0.5;
+// Recent-window scaling: compares the last N minutes of actual production to
+// historical for the same time-of-day window. Catches cloud cover that develops
+// after sunrise, when the cumulative signal (which averages all prior hours) is
+// still high. Applied as a lower bound on the final scaling factor so any
+// sustained underperformance drives the forecast conservatively downward.
+const SOLAR_RECENT_WINDOW_MINUTES = 30;
+// Minimum historical average energy in the recent window for the signal to be
+// valid. Guards against pre-sunrise windows where tiny absolute values make
+// the ratio noisy. Today's value is intentionally not thresholded — near-zero
+// today production against a non-trivial historical baseline IS the cloud signal.
+const SOLAR_RECENT_WINDOW_MIN_KWH = 0.5;
 const SCALING_MIN = 0.1;
 const SCALING_MAX = 2.0;
 const MIN_VALID_DAYS = 3;
@@ -19,10 +30,14 @@ const INTERVAL_HOURS = 5 / 60; // Tesla history is 5-minute intervals
 
 /**
  * Estimates solar energy (kWh) between now and peakStart using historical
- * 5-minute power data. Scales the historical average by comparing today's
- * cumulative solar production (day-start → now) against the historical average
- * for the same window, producing a stable day-level weather signal rather than
- * reacting to instantaneous fluctuations.
+ * 5-minute power data. Two scaling signals are combined conservatively:
+ *   1. Cumulative factor: today's production since midnight vs historical average
+ *      for the same window — a stable, low-noise day-level weather signal.
+ *   2. Recent-window factor: today's production in the last SOLAR_RECENT_WINDOW_MINUTES
+ *      vs the historical average for the same time-of-day window — a more responsive
+ *      signal that catches cloud cover that developed after sunrise.
+ * The lower of the two factors is applied, so any sustained underperformance in
+ * either signal drives the forecast conservatively downward.
  * Returns null when there is insufficient history to produce a reliable estimate.
  */
 export function estimateSolarKwhFromHistory(
@@ -36,6 +51,7 @@ export function estimateSolarKwhFromHistory(
   const nowMins = now.hours() * 60 + now.minutes();
   const peakMins = peakStart.hours() * 60 + peakStart.minutes();
   const todayKey = now.format("YYYY-MM-DD");
+  const recentWindowStartMins = nowMins - SOLAR_RECENT_WINDOW_MINUTES;
 
   // Group data points by site-local calendar date.
   type Reading = { todMins: number; solarKw: number };
@@ -57,6 +73,7 @@ export function estimateSolarKwhFromHistory(
 
   const dailyEnergies: number[] = [];
   const historicalEnergyToNow: number[] = [];
+  const historicalRecentEnergies: number[] = [];
 
   for (const [date, readings] of byDate.entries()) {
     if (date === todayKey) continue; // today handled separately below
@@ -86,6 +103,13 @@ export function estimateSolarKwhFromHistory(
       .filter((r) => r.todMins <= nowMins)
       .reduce((sum, r) => sum + r.solarKw * INTERVAL_HOURS, 0);
     historicalEnergyToNow.push(energyToNow);
+
+    // Recent-window energy for the same historical day — used as the reference
+    // for the responsive cloud signal.
+    const recentEnergy = readings
+      .filter((r) => r.todMins >= recentWindowStartMins && r.todMins <= nowMins)
+      .reduce((sum, r) => sum + r.solarKw * INTERVAL_HOURS, 0);
+    historicalRecentEnergies.push(recentEnergy);
   }
 
   if (dailyEnergies.length < MIN_VALID_DAYS) return null;
@@ -95,11 +119,18 @@ export function estimateSolarKwhFromHistory(
   const avgHistoricalEnergyToNow =
     historicalEnergyToNow.reduce((a, b) => a + b, 0) /
     historicalEnergyToNow.length;
+  const avgHistoricalRecentEnergy =
+    historicalRecentEnergies.reduce((a, b) => a + b, 0) /
+    historicalRecentEnergies.length;
 
   // Today's cumulative energy from start of day up to now.
   const todayReadings = byDate.get(todayKey) ?? [];
   const todayEnergyToNow = todayReadings
     .filter((r) => r.todMins <= nowMins)
+    .reduce((sum, r) => sum + r.solarKw * INTERVAL_HOURS, 0);
+  // Today's energy in the recent window.
+  const todayRecentEnergy = todayReadings
+    .filter((r) => r.todMins >= recentWindowStartMins && r.todMins <= nowMins)
     .reduce((sum, r) => sum + r.solarKw * INTERVAL_HOURS, 0);
 
   // Scale only when both today and history have sufficient cumulative solar signal.
@@ -113,6 +144,22 @@ export function estimateSolarKwhFromHistory(
       Math.max(todayEnergyToNow / avgHistoricalEnergyToNow, SCALING_MIN),
       SCALING_MAX,
     );
+  }
+
+  // Apply the recent-window factor only when:
+  //  - today already has sufficient cumulative production (same guard as above,
+  //    so we know what kind of day it is before comparing the recent window), AND
+  //  - the historical signal in this window is meaningful (guards pre-sunrise noise).
+  // Take the minimum: if either signal detects underperformance, the forecast goes down.
+  if (
+    todayEnergyToNow >= MIN_CUMULATIVE_FOR_SCALING_KWH &&
+    avgHistoricalRecentEnergy >= SOLAR_RECENT_WINDOW_MIN_KWH
+  ) {
+    const recentFactor = Math.min(
+      Math.max(todayRecentEnergy / avgHistoricalRecentEnergy, SCALING_MIN),
+      SCALING_MAX,
+    );
+    scalingFactor = Math.min(scalingFactor, recentFactor);
   }
 
   return {
