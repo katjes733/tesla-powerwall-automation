@@ -12,7 +12,9 @@ import Switch from "@mui/material/Switch";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
+import Divider from "@mui/material/Divider";
 import CheckCircleIcon from "@mui/icons-material/CheckCircle";
+import ContentCopyIcon from "@mui/icons-material/ContentCopy";
 import DeleteIcon from "@mui/icons-material/Delete";
 import EditIcon from "@mui/icons-material/Edit";
 import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
@@ -174,6 +176,28 @@ export default function TouConfigs() {
     }
   }
 
+  async function handleCopy(row: ITouScheduleConfig) {
+    const existingNames = new Set(configs.map((c) => c.schedule_name));
+    const base = `${row.schedule_name} - copy`;
+    let newName = base;
+    if (existingNames.has(newName)) {
+      let i = 2;
+      while (existingNames.has(`${base} (${i})`)) i++;
+      newName = `${base} (${i})`;
+    }
+    try {
+      await axiosInstance.post("/api/tou-config/save", {
+        schedule_name: newName,
+        site_id: selectedSiteId,
+        schedule_config: row.schedule_config,
+      });
+      showNotification(`Copied as "${newName}"`, "success");
+      loadConfigs();
+    } catch {
+      showNotification("Failed to copy config", "error");
+    }
+  }
+
   async function confirmApply(withBackup: boolean) {
     if (!pendingApply || !selectedSiteId) return;
     setApplying(true);
@@ -229,7 +253,7 @@ export default function TouConfigs() {
     {
       field: "actions",
       headerName: "",
-      width: 116,
+      width: 160,
       sortable: false,
       align: "right",
       renderCell: (params) => (
@@ -240,16 +264,6 @@ export default function TouConfigs() {
           height="100%"
           gap={0.5}
         >
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditEditor(params.row as ITouScheduleConfig);
-            }}
-            title="Edit"
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
           <Tooltip title="Apply to Tesla">
             <IconButton
               size="small"
@@ -264,6 +278,31 @@ export default function TouConfigs() {
               }}
             >
               <PublishIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Divider
+            orientation="vertical"
+            sx={{ height: 18, mx: 0.5, borderRightWidth: 2 }}
+          />
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              openEditEditor(params.row as ITouScheduleConfig);
+            }}
+            title="Edit"
+          >
+            <EditIcon fontSize="small" />
+          </IconButton>
+          <Tooltip title="Copy config">
+            <IconButton
+              size="small"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCopy(params.row as ITouScheduleConfig);
+              }}
+            >
+              <ContentCopyIcon fontSize="small" />
             </IconButton>
           </Tooltip>
           <IconButton
@@ -342,6 +381,13 @@ export default function TouConfigs() {
           pageSizeOptions={[25, 50, 100]}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
           disableRowSelectionOnClick
+          sx={{
+            "& .MuiDataGrid-cell[data-field='actions']": {
+              overflow: "visible",
+              paddingLeft: "6px",
+              paddingRight: "6px",
+            },
+          }}
         />
       </Box>
 
@@ -355,6 +401,9 @@ export default function TouConfigs() {
         onSave={handleSave}
         onClose={() => setEditorOpen(false)}
         saving={saving}
+        nameExists={configs.some(
+          (c) => c.schedule_name === scheduleName.trim() && c.id !== editingId,
+        )}
       />
 
       {/* Apply confirmation dialog */}

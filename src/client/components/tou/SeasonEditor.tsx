@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
@@ -74,6 +74,12 @@ export default function SeasonEditor({ season, onChange }: Props) {
   const [minutePrecision, setMinutePrecision] = useState(() =>
     hasSubThirtyMinutes(season.periods),
   );
+
+  useEffect(() => {
+    if (hasSubThirtyMinutes(season.periods)) {
+      setMinutePrecision(true);
+    }
+  }, [season.periods]);
 
   const validation = useMemo(() => validateSeason(season), [season]);
   const [showPrecisionWarning, setShowPrecisionWarning] = useState(false);
