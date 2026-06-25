@@ -137,6 +137,7 @@ export class Fleet {
   private tokenExpiresAt: number = 0;
   private refreshToken: string = "";
   private options: FleetOptions;
+  private tokenRefreshPromise: Promise<string> | null = null;
 
   private energyProducts: Product[] = [];
   private _actionMap: Record<string, Function>;
@@ -164,7 +165,7 @@ export class Fleet {
     return this._actionMap;
   }
 
-  async getToken() {
+  async getToken(): Promise<string> {
     if (!this.refreshToken) {
       const result = await getRefreshTokenByEmail(this.email);
       if (result) {
@@ -179,6 +180,19 @@ export class Fleet {
       return this.token;
     }
 
+    // Deduplicate concurrent refresh calls — rotating tokens mean a second
+    // in-flight request would use an already-invalidated refresh token → 401.
+    if (this.tokenRefreshPromise) {
+      return this.tokenRefreshPromise;
+    }
+
+    this.tokenRefreshPromise = this.doTokenRefresh().finally(() => {
+      this.tokenRefreshPromise = null;
+    });
+    return this.tokenRefreshPromise;
+  }
+
+  private async doTokenRefresh(): Promise<string> {
     const tokenResponse = await getNewTokenWithRefreshToken(this.refreshToken);
     if (!tokenResponse.ok) {
       const errorMsg = `Failed to obtain new token with refresh token: ${tokenResponse.status} ${tokenResponse.statusText}`;
@@ -1385,6 +1399,17 @@ export class Fleet {
         throw new Error(errorMsg, { cause: error });
       }
     }
+  }
+
+  async setTouSchedule(
+    product: Product,
+    tariffV2: Record<string, any>,
+  ): Promise<void> {
+    await this.postTouSettings(product, tariffV2);
+    siteInfoCache.delete(product.energy_site_id);
+    logger.info(
+      `TOU schedule applied for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+    );
   }
 
   async detectCalibration(product: Product): Promise<void> {

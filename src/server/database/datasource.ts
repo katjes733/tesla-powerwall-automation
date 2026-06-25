@@ -6,6 +6,7 @@ import { TouBackup } from "~/server/database/models/touBackup";
 import { SiteEvent } from "~/server/database/models/siteEvent";
 import { User } from "~/server/database/models/user";
 import { SignupVerification } from "~/server/database/models/signupVerification";
+import { TouScheduleConfig } from "~/server/database/models/touScheduleConfig";
 import { migrateTokenEncryption } from "~/server/database/migrateTokenEncryption";
 
 class AppDataSource {
@@ -50,6 +51,7 @@ class AppDataSource {
               RefreshToken,
               Schedule,
               TouBackup,
+              TouScheduleConfig,
               SiteEvent,
               User,
               SignupVerification,

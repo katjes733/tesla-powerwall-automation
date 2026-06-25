@@ -12,6 +12,7 @@ import Login from "./components/auth/Login";
 import { NotificationProvider } from "./components/notification/NotificationContext";
 import Schedules from "./components/schedules/Schedules";
 import PowerwallStatus from "./components/powerwall/PowerwallStatus";
+import TouConfigs from "./components/tou/TouConfigs";
 
 type ProtectedRouteProps = {
   children: React.ReactNode;
@@ -67,6 +68,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <Schedules />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/tou-configs"
+                element={
+                  <ProtectedRoute>
+                    <TouConfigs />
                   </ProtectedRoute>
                 }
               />

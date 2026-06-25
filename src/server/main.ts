@@ -10,6 +10,7 @@ import { router as HealthRouter } from "~/server/routes/health";
 import { router as SessionRouter } from "~/server/routes/session";
 import { router as UserRouter } from "~/server/routes/user";
 import { router as SignupVerificationRouter } from "~/server/routes/signupVerification";
+import { router as TouConfigRouter } from "~/server/routes/touConfig";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -105,6 +106,7 @@ app.use("/api/schedule", SchedulingRouter);
 app.use("/api/session", SessionRouter);
 app.use("/api/user", UserRouter);
 app.use("/api/auth", SignupVerificationRouter);
+app.use("/api/tou-config", TouConfigRouter);
 
 if (process.env.NODE_ENV !== "development") {
   logger.info("Serving static files from 'public' directory");

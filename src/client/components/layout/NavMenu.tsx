@@ -61,6 +61,11 @@ export default function NavMenu() {
     navigate("/schedules");
   }, [navigate]);
 
+  const handleNavigateToTouConfigs = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/tou-configs");
+  }, [navigate]);
+
   return (
     <AppBar
       position="fixed"
@@ -104,6 +109,9 @@ export default function NavMenu() {
                 <MenuItem onClick={handleNavigateToHealth}>App Health</MenuItem>
                 <MenuItem onClick={handleNavigateToSchedules}>
                   Schedules
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToTouConfigs}>
+                  TOU Configs
                 </MenuItem>
               </Menu>
             </>
