@@ -84,7 +84,7 @@ router.post(
   validateBody(TouConfigApplySchema),
   async (req, res, next) => {
     const email = req.session.user as string;
-    const { id, site_id } = req.body;
+    const { id, site_id, backup = true } = req.body;
     try {
       const db = await (
         await import("~/server/database/datasource")
@@ -110,7 +110,7 @@ router.post(
       }
 
       const siteInfo = await fleet.getSiteInfo(product);
-      if (siteInfo?.tariff_content_v2) {
+      if (backup && siteInfo?.tariff_content_v2) {
         const now = new Date();
         const backupName = `Auto-backup ${now.toISOString().slice(0, 16).replace("T", " ")}`;
         await save({

@@ -6,7 +6,9 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
+import Switch from "@mui/material/Switch";
 import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
@@ -53,6 +55,14 @@ export default function TouConfigs() {
 
   const [pendingApply, setPendingApply] = useState<PendingApply | null>(null);
   const [applying, setApplying] = useState(false);
+  const [autoBackup, setAutoBackup] = useState(
+    () => localStorage.getItem("tou-auto-backup") === "true",
+  );
+
+  function toggleAutoBackup(enabled: boolean) {
+    setAutoBackup(enabled);
+    localStorage.setItem("tou-auto-backup", String(enabled));
+  }
 
   useEffect(() => {
     axiosInstance
@@ -164,13 +174,14 @@ export default function TouConfigs() {
     }
   }
 
-  async function confirmApply() {
+  async function confirmApply(withBackup: boolean) {
     if (!pendingApply || !selectedSiteId) return;
     setApplying(true);
     try {
       await axiosInstance.post("/api/tou-config/apply", {
         id: pendingApply.config.id,
         site_id: selectedSiteId,
+        backup: withBackup,
       });
       showNotification("Schedule applied to Tesla successfully", "success");
       setPendingApply(null);
@@ -186,22 +197,13 @@ export default function TouConfigs() {
     {
       field: "schedule_name",
       headerName: "Name",
-      flex: 2,
-      minWidth: 160,
-    },
-    {
-      field: "creation_time",
-      headerName: "Created",
       flex: 1,
-      minWidth: 130,
-      valueGetter: (value: string) =>
-        value ? new Date(value).toLocaleString() : "",
+      minWidth: 160,
     },
     {
       field: "modified_time",
       headerName: "Modified",
-      flex: 1,
-      minWidth: 130,
+      width: 180,
       valueGetter: (value: string) =>
         value ? new Date(value).toLocaleString() : "",
     },
@@ -227,10 +229,17 @@ export default function TouConfigs() {
     {
       field: "actions",
       headerName: "",
-      width: 200,
+      width: 116,
       sortable: false,
+      align: "right",
       renderCell: (params) => (
-        <Box display="flex" alignItems="center" height="100%" gap={0.5}>
+        <Box
+          display="flex"
+          alignItems="center"
+          justifyContent="flex-end"
+          height="100%"
+          gap={0.5}
+        >
           <IconButton
             size="small"
             onClick={(e) => {
@@ -307,6 +316,21 @@ export default function TouConfigs() {
         >
           Load from Tesla
         </Button>
+        <FormControlLabel
+          control={
+            <Switch
+              size="small"
+              checked={autoBackup}
+              onChange={(e) => toggleAutoBackup(e.target.checked)}
+            />
+          }
+          label={
+            <Typography variant="body2" color="text.secondary">
+              Auto-backup on apply
+            </Typography>
+          }
+          sx={{ ml: "auto", mr: 0 }}
+        />
       </Box>
 
       {/* Config list */}
@@ -346,19 +370,35 @@ export default function TouConfigs() {
             Apply <strong>{pendingApply?.config.schedule_name}</strong> to{" "}
             <strong>{pendingApply?.siteName}</strong>?
           </Typography>
-          <Typography variant="body2" color="text.secondary" mt={1}>
-            The current Tesla schedule will be automatically backed up before
-            applying.
-          </Typography>
+          {autoBackup ? (
+            <Typography variant="body2" color="text.secondary" mt={1}>
+              The current Tesla schedule will be automatically backed up before
+              applying.
+            </Typography>
+          ) : (
+            <Typography variant="body2" color="text.secondary" mt={1}>
+              No backup will be created. Use &ldquo;Backup &amp; Confirm&rdquo;
+              to save a backup of the current schedule before applying.
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPendingApply(null)} disabled={applying}>
             Cancel
           </Button>
+          {!autoBackup && (
+            <Button
+              variant="outlined"
+              onClick={() => confirmApply(true)}
+              disabled={applying}
+            >
+              {applying ? "Applying…" : "Backup & Confirm"}
+            </Button>
+          )}
           <Button
             variant="contained"
             color="primary"
-            onClick={confirmApply}
+            onClick={() => confirmApply(autoBackup)}
             disabled={applying}
           >
             {applying ? "Applying…" : "Confirm"}

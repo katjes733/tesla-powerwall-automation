@@ -15,6 +15,7 @@ export const TouConfigDeleteSchema = z.object({
 export const TouConfigApplySchema = z.object({
   id: z.string().uuid(),
   site_id: z.string().min(1),
+  backup: z.boolean().optional(),
 });
 
 export type TouConfigSaveInput = z.infer<typeof TouConfigSaveSchema>;
