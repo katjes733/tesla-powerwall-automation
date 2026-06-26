@@ -13,6 +13,7 @@ import { NotificationProvider } from "./components/notification/NotificationCont
 import Schedules from "./components/schedules/Schedules";
 import PowerwallStatus from "./components/powerwall/PowerwallStatus";
 import TouConfigs from "./components/tou/TouConfigs";
+import ManualSettings from "./components/manualSettings/ManualSettings";
 
 type ProtectedRouteProps = {
   children: React.ReactNode;
@@ -76,6 +77,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <TouConfigs />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings"
+                element={
+                  <ProtectedRoute>
+                    <ManualSettings />
                   </ProtectedRoute>
                 }
               />

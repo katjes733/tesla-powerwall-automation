@@ -66,6 +66,11 @@ export default function NavMenu() {
     navigate("/tou-configs");
   }, [navigate]);
 
+  const handleNavigateToSettings = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/settings");
+  }, [navigate]);
+
   return (
     <AppBar
       position="fixed"
@@ -112,6 +117,9 @@ export default function NavMenu() {
                 </MenuItem>
                 <MenuItem onClick={handleNavigateToTouConfigs}>
                   TOU Configs
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToSettings}>
+                  Manual Settings
                 </MenuItem>
               </Menu>
             </>

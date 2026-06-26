@@ -4,6 +4,13 @@ import {
   isCalibrating,
   isDischargeCalibrating,
 } from "~/server/util/fleet";
+
+const MANUAL_ACTIONS = new Set([
+  "setBackupReserve",
+  "setOperationalMode",
+  "setEnergyExports",
+  "setGridCharging",
+]);
 import {
   parseTariffContent,
   hasTouData,
@@ -111,6 +118,51 @@ router.get("/status", async (req, res, next) => {
     res.json({ success: true, data });
   } catch (error: any) {
     logger.error(error, "Error fetching powerwall status");
+    next(error);
+  }
+});
+
+router.post("/apply-settings", async (req, res, next) => {
+  const email = req.session.user;
+  if (!email) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+  const { siteId, action, value } = req.body as {
+    siteId?: string;
+    action?: string;
+    value?: string;
+  };
+  if (!siteId || typeof siteId !== "string") {
+    res.status(400).json({ success: false, message: "siteId is required" });
+    return;
+  }
+  if (!action || !MANUAL_ACTIONS.has(action)) {
+    res.status(400).json({
+      success: false,
+      message: `action must be one of: ${[...MANUAL_ACTIONS].join(", ")}`,
+    });
+    return;
+  }
+  if (value === undefined || value === null) {
+    res.status(400).json({ success: false, message: "value is required" });
+    return;
+  }
+  try {
+    const fleet = Fleet.getInstance(email, {
+      throwOnError: true,
+      mailOnError: false,
+    });
+    const products = await fleet.getEnergyProducts();
+    const product = products.find((p) => p.id === siteId);
+    if (!product) {
+      res.status(404).json({ success: false, message: "Site not found" });
+      return;
+    }
+    await fleet.getActionMap()[action](product, String(value));
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error(error, "Error applying manual settings");
     next(error);
   }
 });

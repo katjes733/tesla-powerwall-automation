@@ -873,6 +873,7 @@ export class Fleet {
     );
 
     let desired: "enabled" | "disabled";
+    let disableRequired = false;
     let reason: string;
     let solarForecast: SolarForecastResult | null = null;
 
@@ -887,6 +888,7 @@ export class Fleet {
 
       if (isCurrentlyInPeak(tariff!, now)) {
         desired = "disabled";
+        disableRequired = true;
         reason = "currently in on-peak period";
       } else if (energyNeededKwh <= 0) {
         desired = "disabled";
@@ -995,6 +997,7 @@ export class Fleet {
 
       if (!now.isBefore(deadline)) {
         desired = "disabled";
+        disableRequired = true;
         reason = `past charge-by deadline ${window.to}`;
       } else if (energyNeededKwh <= 0) {
         desired = "disabled";
@@ -1085,7 +1088,7 @@ export class Fleet {
       if (process.env.DRY_RUN !== "true")
         await this.setGridCharging(product, "enabled");
       action = "enabled";
-    } else if (desired === "disabled" && currentlyAllowed) {
+    } else if (desired === "disabled" && disableRequired && currentlyAllowed) {
       if (process.env.DRY_RUN !== "true")
         await this.setGridCharging(product, "disabled");
       action = "disabled";
