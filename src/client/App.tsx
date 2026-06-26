@@ -1,6 +1,8 @@
 import CssBaseline from "@mui/material/CssBaseline";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
+import { LocalizationProvider } from "@mui/x-date-pickers/LocalizationProvider";
+import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import NavMenu from "./components/layout/NavMenu";
 import MainContainer from "./components/layout/MainContainer";
 import Footer from "./components/layout/Footer";
@@ -40,61 +42,63 @@ function App() {
   });
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
-      <AuthProvider>
-        <NotificationProvider>
-          <NavMenu />
-          <MainContainer>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route
-                path="/"
-                element={
-                  <ProtectedRoute>
-                    <PowerwallStatus />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/health"
-                element={
-                  <ProtectedRoute>
-                    <HealthCards />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/schedules"
-                element={
-                  <ProtectedRoute>
-                    <Schedules />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/tou-configs"
-                element={
-                  <ProtectedRoute>
-                    <TouConfigs />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/settings"
-                element={
-                  <ProtectedRoute>
-                    <ManualSettings />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="*" element={<AuthRedirect />} />
-            </Routes>
-          </MainContainer>
-          <Footer />
-        </NotificationProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <LocalizationProvider dateAdapter={AdapterDayjs}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
+        <AuthProvider>
+          <NotificationProvider>
+            <NavMenu />
+            <MainContainer>
+              <Routes>
+                <Route path="/login" element={<Login />} />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <PowerwallStatus />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/health"
+                  element={
+                    <ProtectedRoute>
+                      <HealthCards />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/schedules"
+                  element={
+                    <ProtectedRoute>
+                      <Schedules />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/tou-configs"
+                  element={
+                    <ProtectedRoute>
+                      <TouConfigs />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/settings"
+                  element={
+                    <ProtectedRoute>
+                      <ManualSettings />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="*" element={<AuthRedirect />} />
+              </Routes>
+            </MainContainer>
+            <Footer />
+          </NotificationProvider>
+        </AuthProvider>
+      </ThemeProvider>
+    </LocalizationProvider>
   );
 }
 

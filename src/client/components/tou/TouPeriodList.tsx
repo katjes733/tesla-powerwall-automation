@@ -5,11 +5,12 @@ import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Table from "@mui/material/Table";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import dayjs, { type Dayjs } from "dayjs";
 import TableBody from "@mui/material/TableBody";
 import TableCell from "@mui/material/TableCell";
 import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
-import TextField from "@mui/material/TextField";
 import Tooltip from "@mui/material/Tooltip";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
@@ -31,18 +32,6 @@ interface Props {
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-// 48 half-hour slots: 12:00 AM … 11:30 PM
-const THIRTY_MIN_SLOTS = Array.from({ length: 48 }, (_, i) => {
-  const hour = Math.floor(i / 2);
-  const minute = (i % 2) * 30;
-  const period = hour < 12 ? "AM" : "PM";
-  const hour12 = hour === 0 ? 12 : hour > 12 ? hour - 12 : hour;
-  return {
-    totalMinutes: hour * 60 + minute,
-    label: `${String(hour12).padStart(2, "0")}:${String(minute).padStart(2, "0")} ${period}`,
-  };
-});
-
 type DayPreset = "weekdays" | "weekends" | "all" | "custom";
 
 function getDayPreset(block: TouTimeBlock): DayPreset {
@@ -50,15 +39,6 @@ function getDayPreset(block: TouTimeBlock): DayPreset {
   if (block.fromDayOfWeek === 5 && block.toDayOfWeek === 6) return "weekends";
   if (block.fromDayOfWeek === 0 && block.toDayOfWeek === 6) return "all";
   return "custom";
-}
-
-function timeToHM(h: number, m: number): string {
-  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-function parseTime(val: string): { hour: number; minute: number } {
-  const [h, m] = val.split(":").map(Number);
-  return { hour: isNaN(h) ? 0 : h, minute: isNaN(m) ? 0 : m };
 }
 
 interface TimeInputProps {
@@ -76,40 +56,22 @@ function TimeInput({
   onChange,
   error,
 }: TimeInputProps) {
-  if (minutePrecision) {
-    return (
-      <TextField
-        type="time"
-        size="small"
-        value={timeToHM(hour, minute)}
-        slotProps={{ htmlInput: { step: 60 } }}
-        onChange={(e) => {
-          const parsed = parseTime(e.target.value);
-          onChange(parsed.hour, parsed.minute);
-        }}
-        sx={{ width: 150 }}
-        error={error}
-      />
-    );
-  }
-
+  const value: Dayjs = dayjs().hour(hour).minute(minute).second(0);
   return (
-    <Select
-      size="small"
-      value={hour * 60 + minute}
-      onChange={(e) => {
-        const total = Number(e.target.value);
-        onChange(Math.floor(total / 60), total % 60);
+    <TimePicker
+      value={value}
+      onChange={(v: Dayjs | null) => {
+        if (v) onChange(v.hour(), v.minute());
       }}
-      sx={{ width: 150 }}
-      error={error}
-    >
-      {THIRTY_MIN_SLOTS.map(({ totalMinutes, label }) => (
-        <MenuItem key={totalMinutes} value={totalMinutes}>
-          {label}
-        </MenuItem>
-      ))}
-    </Select>
+      minutesStep={minutePrecision ? 15 : 30}
+      slotProps={{
+        textField: {
+          size: "small",
+          error,
+          sx: { width: 140 },
+        },
+      }}
+    />
   );
 }
 

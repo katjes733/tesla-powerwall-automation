@@ -7,8 +7,9 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
-import Slider from "@mui/material/Slider";
 import TextField from "@mui/material/TextField";
+import ToggleButton from "@mui/material/ToggleButton";
+import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import Typography from "@mui/material/Typography";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
 import SeasonTabs from "./SeasonTabs";
@@ -86,12 +87,6 @@ function applyOnPeakShift(
   };
 }
 
-const SHIFT_MARKS = [
-  { value: -30, label: "30 min later" },
-  { value: 0, label: "No shift" },
-  { value: 30, label: "30 min earlier" },
-];
-
 export default function TouEditorDialog({
   open,
   state,
@@ -105,7 +100,7 @@ export default function TouEditorDialog({
 }: Props) {
   const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [shiftOpen, setShiftOpen] = useState(false);
-  const [shiftMinutes, setShiftMinutes] = useState(5);
+  const [shiftMinutes, setShiftMinutes] = useState<15 | -15>(15);
 
   const validation = useMemo(() => validateEditorState(state), [state]);
   const validationErrors = useMemo(
@@ -149,14 +144,12 @@ export default function TouEditorDialog({
   }
 
   const shiftEffectLabel =
-    shiftMinutes === 0
-      ? "No change will be applied"
-      : shiftMinutes > 0
-        ? `On-Peak periods will start ${shiftMinutes} minute${shiftMinutes !== 1 ? "s" : ""} earlier`
-        : `On-Peak periods will start ${Math.abs(shiftMinutes)} minute${Math.abs(shiftMinutes) !== 1 ? "s" : ""} later`;
+    shiftMinutes === 15
+      ? "On-Peak periods will start 15 minutes earlier"
+      : "On-Peak periods will start 15 minutes later";
 
   const shiftPreview = (() => {
-    if (!firstOnPeak || shiftMinutes === 0) return null;
+    if (!firstOnPeak) return null;
     const oldMin = firstOnPeak.fromHour * 60 + firstOnPeak.fromMinute;
     const newMin = (oldMin - shiftMinutes + 1440) % 1440;
     return `e.g. ${fmt12h(oldMin)} → ${fmt12h(newMin)}`;
@@ -295,20 +288,18 @@ export default function TouEditorDialog({
               coverage.
             </Typography>
 
-            <Box px={4} mb={1}>
-              <Slider
-                value={shiftMinutes}
-                onChange={(_, v) => setShiftMinutes(v as number)}
-                min={-30}
-                max={30}
-                step={1}
-                marks={SHIFT_MARKS}
-                valueLabelDisplay="auto"
-                valueLabelFormat={(v) =>
-                  v === 0 ? "0" : v > 0 ? `−${v} min` : `+${Math.abs(v)} min`
-                }
-              />
-            </Box>
+            <ToggleButtonGroup
+              value={shiftMinutes}
+              exclusive
+              onChange={(_, v: 15 | -15 | null) => {
+                if (v !== null) setShiftMinutes(v);
+              }}
+              size="small"
+              fullWidth
+            >
+              <ToggleButton value={15}>15 min earlier</ToggleButton>
+              <ToggleButton value={-15}>15 min later</ToggleButton>
+            </ToggleButtonGroup>
 
             <Box
               sx={{
@@ -337,11 +328,7 @@ export default function TouEditorDialog({
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setShiftOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleApplyShift}
-            disabled={shiftMinutes === 0}
-          >
+          <Button variant="contained" onClick={handleApplyShift}>
             Apply
           </Button>
         </DialogActions>

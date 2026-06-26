@@ -260,7 +260,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
             }
             label={
               <Typography variant="caption" color="text.secondary">
-                Minute precision
+                15-min precision
               </Typography>
             }
             labelPlacement="start"
