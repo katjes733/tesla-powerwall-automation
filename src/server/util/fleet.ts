@@ -65,6 +65,7 @@ export interface SmartChargingLogResult {
   estimatedSolarKwh: number | null;
   weatherFactor: number | null;
   batteryChargeRateFromGridKw: number | null;
+  liveKw: { solar: number; load: number; grid: number; battery: number };
   reason: string;
 }
 
@@ -1111,14 +1112,24 @@ export class Fleet {
         const batteryChargingW =
           liveStatus.battery_power < 0 ? -liveStatus.battery_power : 0;
         if (batteryChargingW === 0) return null;
+        // Grid covers home load first; solar covers whatever remains.
+        // Only battery charging beyond that solar surplus came from grid.
+        const gridImportW = Math.max(0, liveStatus.grid_power);
+        const homeAfterGridW = Math.max(0, liveStatus.load_power - gridImportW);
         const solarSurplusW = Math.max(
           0,
-          liveStatus.solar_power - liveStatus.load_power,
+          liveStatus.solar_power - homeAfterGridW,
         );
         return (
           Math.round(Math.max(0, batteryChargingW - solarSurplusW) / 10) / 100
         );
       })(),
+      liveKw: {
+        solar: Math.round(liveStatus.solar_power / 10) / 100,
+        load: Math.round(liveStatus.load_power / 10) / 100,
+        grid: Math.round(liveStatus.grid_power / 10) / 100,
+        battery: Math.round(liveStatus.battery_power / 10) / 100,
+      },
       reason,
     };
   }
