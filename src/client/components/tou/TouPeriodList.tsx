@@ -113,12 +113,23 @@ function TimeInput({
   );
 }
 
+function sortedForDisplay(periods: TouTimeBlock[]): TouTimeBlock[] {
+  return [...periods].sort((a, b) => {
+    const groupA = a.toDayOfWeek <= 4 ? 0 : 1;
+    const groupB = b.toDayOfWeek <= 4 ? 0 : 1;
+    if (groupA !== groupB) return groupA - groupB;
+    return a.fromHour * 60 + a.fromMinute - (b.fromHour * 60 + b.fromMinute);
+  });
+}
+
 export default function TouPeriodList({
   periods,
   onChange,
   minutePrecision,
   periodIssues,
 }: Props) {
+  const displayPeriods = sortedForDisplay(periods);
+
   function update(id: string, patch: Partial<TouTimeBlock>) {
     onChange(periods.map((p) => (p.id === id ? { ...p, ...patch } : p)));
   }
@@ -168,7 +179,7 @@ export default function TouPeriodList({
           </TableRow>
         </TableHead>
         <TableBody>
-          {periods.map((block) => {
+          {displayPeriods.map((block) => {
             const preset = getDayPreset(block);
             const issue = periodIssues?.find((i) => i.periodId === block.id);
             const fromError = issue?.fields.includes("from") ?? false;
