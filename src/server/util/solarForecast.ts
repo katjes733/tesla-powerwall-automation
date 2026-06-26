@@ -27,6 +27,11 @@ const SCALING_MIN = 0.1;
 const SCALING_MAX = 2.0;
 const MIN_VALID_DAYS = 3;
 const INTERVAL_HOURS = 5 / 60; // Tesla history is 5-minute intervals
+// Conservative discount applied to the historical forecast before comparing
+// it against energy needed. Accounts for forecast error and day-to-day
+// variability; ensures grid charging isn't skipped on a slightly optimistic
+// forecast. Adjust here to tune how aggressively the algorithm relies on solar.
+export const SOLAR_FORECAST_DISCOUNT = 0.9;
 
 /**
  * Estimates solar energy (kWh) between now and peakStart using historical

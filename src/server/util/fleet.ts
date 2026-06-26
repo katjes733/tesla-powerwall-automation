@@ -50,6 +50,7 @@ import {
 import { redis } from "~/server/util/redis";
 import {
   estimateSolarKwhFromHistory,
+  SOLAR_FORECAST_DISCOUNT,
   type SolarForecastResult,
 } from "~/server/util/solarForecast";
 
@@ -922,7 +923,7 @@ export class Fleet {
           );
           const estimatedSolarKwh =
             solarForecast !== null
-              ? solarForecast.estimatedKwh
+              ? solarForecast.estimatedKwh * SOLAR_FORECAST_DISCOUNT
               : linearSolarKwh;
           const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
 
@@ -1025,7 +1026,9 @@ export class Fleet {
           timezone,
         );
         const estimatedSolarKwh =
-          solarForecast !== null ? solarForecast.estimatedKwh : linearSolarKwh;
+          solarForecast !== null
+            ? solarForecast.estimatedKwh * SOLAR_FORECAST_DISCOUNT
+            : linearSolarKwh;
         const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
 
         // Only early-disable based on solar when the historical forecast is
