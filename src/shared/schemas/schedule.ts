@@ -16,9 +16,9 @@ export const ScheduleUpsertSchema = z.object({
   timezone: z.string().optional(),
   site_ids: z.array(z.string()).optional(),
   enabled: z.boolean().optional(),
-  expires_at: z.string().optional(),
-  actions: z.array(ScheduleActionSchema).optional(),
-  conditions: z.array(ScheduleConditionSchema).optional(),
+  expires_at: z.string().nullable().optional(),
+  actions: z.array(ScheduleActionSchema).nullable().optional(),
+  conditions: z.array(ScheduleConditionSchema).nullable().optional(),
 });
 
 export const ScheduleDeleteSchema = z.object({
