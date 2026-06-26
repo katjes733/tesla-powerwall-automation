@@ -20,7 +20,7 @@
     "prettier": "bun x prettier --check src/* tests/*",
     "prettier:fix": "bun x prettier --write src/* tests/*",
     "start": "bun run src/server/main.ts",
-    "dev:server": "cross-env NODE_ENV=development nodemon --watch src/server --watch src/shared --watch .env --ext ts,env --exec 'bun run src/server/main.ts'",
+    "dev:server": "cross-env NODE_ENV=development nodemon --watch src/server --watch src/shared --watch .env --ext ts,env --exec 'bun src/server/main.ts'",
     "stylelint": "stylelint 'src/**/*.{css,scss}' --allow-empty-input",
     "stylelint:fix": "bun run stylelint -- --fix",
     "test": "bun test",
