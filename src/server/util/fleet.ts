@@ -23,6 +23,8 @@ import type {
   ISiteCalibration,
   IGridChargeRateCalibrationData,
 } from "~/server/database/models/siteCalibration";
+import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
+import { type ChargeCurveCalibrationData } from "~/server/util/curveFit";
 import type {
   SiteEventType,
   ISiteEvent,
@@ -74,6 +76,7 @@ export interface SmartChargingLogResult {
   liveKw: { solar: number; load: number; grid: number; battery: number };
   chargeRateKw: number;
   chargeRateSource: "calibrated" | "formula";
+  chargeRateCurveSource: "lookup" | "defaults";
   reason: string;
 }
 
@@ -87,6 +90,12 @@ const CALIBRATION_CACHE_TTL_MS = 5 * 60 * 1000;
 const calibrationCache = new Map<
   string,
   { data: (ISiteCalibration & IBasicEntity) | null; at: number }
+>();
+
+const CURVE_CACHE_TTL_MS = 30 * 60 * 1000;
+const curveCache = new Map<
+  string,
+  { data: ChargeCurveCalibrationData | null; at: number }
 >();
 
 // Ring buffer: last N battery_power readings per site (one per minute from cron).
@@ -776,6 +785,54 @@ export class Fleet {
     return record ?? null;
   }
 
+  private async getChargeCurve(
+    siteId: string,
+  ): Promise<ChargeCurveCalibrationData | null> {
+    const cacheKey = `curve:${siteId}`;
+    const cached = curveCache.get(cacheKey);
+    if (cached && performance.now() - cached.at < CURVE_CACHE_TTL_MS) {
+      return cached.data;
+    }
+    const db = await AppDataSource.getInstance(true);
+    const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
+      "SiteCalibration",
+    );
+    const record = await repo.findOne({
+      where: { site_id: siteId, calibration_type: "charge_curve" },
+      order: { creation_time: "DESC" },
+    });
+    const data = record
+      ? (record.calibration_data as unknown as ChargeCurveCalibrationData)
+      : null;
+    curveCache.set(cacheKey, { data, at: performance.now() });
+    return data;
+  }
+
+  private async recordChargeCurveSample(
+    product: Product,
+    liveStatus: LiveStatus,
+  ): Promise<void> {
+    const siteId = String(product.energy_site_id);
+    const db = await AppDataSource.getInstance(true);
+    const repo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
+      "SiteCalibrationSample",
+    );
+    const now = new Date();
+    await repo.save({
+      email: this.email,
+      site_id: siteId,
+      calibration_type: "passive",
+      creation_time: now,
+      modified_time: now,
+      sample_data: {
+        soc_percent: Math.round(liveStatus.percentage_charged * 100) / 100,
+        battery_kw: Math.round(Math.abs(liveStatus.battery_power) / 10) / 100,
+        solar_kw: Math.round(liveStatus.solar_power / 10) / 100,
+        grid_kw: Math.round(liveStatus.grid_power / 10) / 100,
+      },
+    } as IBasicEntity & ISiteCalibrationSample);
+  }
+
   async setGridCharging(product: Product, setting: string): Promise<void> {
     const disallow = setting === "disabled";
     if (setting !== "enabled" && setting !== "disabled") {
@@ -929,6 +986,17 @@ export class Fleet {
     const chargeRateSource: "calibrated" | "formula" =
       calibrationData?.kw !== undefined ? "calibrated" : "formula";
 
+    const chargeCurve = await this.getChargeCurve(
+      product.energy_site_id.toString(),
+    );
+    const chargeRateCurveSource: "lookup" | "defaults" = chargeCurve
+      ? "lookup"
+      : "defaults";
+
+    if (liveStatus.battery_power < -500) {
+      this.recordChargeCurveSample(product, liveStatus).catch(() => {});
+    }
+
     if (isTouMode) {
       const tariff = parseTariffContent(siteInfo.tariff_content);
       if (!hasTouData(tariff)) {
@@ -994,6 +1062,7 @@ export class Fleet {
                 liveStatus.percentage_charged,
                 config.targetSoc,
                 effectiveChargeRateKw,
+                chargeCurve ?? undefined,
               );
             const latestGridStart = effectivePeakStart
               .clone()
@@ -1097,6 +1166,7 @@ export class Fleet {
               liveStatus.percentage_charged,
               config.targetSoc,
               effectiveChargeRateKw,
+              chargeCurve ?? undefined,
             );
           const latestGridStart = effectiveDeadline
             .clone()
@@ -1183,6 +1253,7 @@ export class Fleet {
       },
       chargeRateKw: Math.round(effectiveChargeRateKw * 100) / 100,
       chargeRateSource,
+      chargeRateCurveSource,
       reason,
     };
   }

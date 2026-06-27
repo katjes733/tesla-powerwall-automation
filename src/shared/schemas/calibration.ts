@@ -10,3 +10,9 @@ export const CalibrationClearSchema = z.object({
 
 export type CalibrationStartInput = z.infer<typeof CalibrationStartSchema>;
 export type CalibrationClearInput = z.infer<typeof CalibrationClearSchema>;
+
+export const CurveStartSchema = z.object({
+  siteId: z.string().min(1),
+});
+
+export type CurveStartInput = z.infer<typeof CurveStartSchema>;

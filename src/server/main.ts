@@ -11,7 +11,10 @@ import { router as SessionRouter } from "~/server/routes/session";
 import { router as UserRouter } from "~/server/routes/user";
 import { router as SignupVerificationRouter } from "~/server/routes/signupVerification";
 import { router as TouConfigRouter } from "~/server/routes/touConfig";
-import { router as CalibrationRouter } from "~/server/routes/calibration";
+import {
+  router as CalibrationRouter,
+  recoverCurveCalibrations,
+} from "~/server/routes/calibration";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -50,7 +53,7 @@ app.use(
       }
     },
     credentials: true,
-    methods: ["GET", "POST"],
+    methods: ["GET", "POST", "DELETE"],
   }),
 );
 
@@ -168,6 +171,10 @@ if (process.env.DRY_RUN === "true") {
     "DRY RUN mode is enabled. No Tesla API write calls will be made.",
   );
 }
+
+recoverCurveCalibrations().catch((err) =>
+  logger.error(err, "Curve calibration recovery failed at startup"),
+);
 
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   Scheduler.getInstance().initialize();

@@ -7,6 +7,7 @@ import type {
   IScheduleCondition,
 } from "~/server/database/models/schedule";
 import type { LiveStatus } from "~/server/types/common";
+import type { IBasicEntity } from "~/server/types/common";
 import { getAllEmails as getAllEmailsFromDb } from "~/server/util/routes/refreshToken";
 import {
   getAll as getAllSchedulesFromDb,
@@ -16,6 +17,14 @@ import {
 import { sendEmail } from "./mailing";
 import { Fleet, type SmartChargingLogResult } from "~/server/util/fleet";
 import { maskEmail } from "~/server/util/maskEmail";
+import AppDataSource from "~/server/database/datasource";
+import type { ISiteCalibration } from "~/server/database/models/siteCalibration";
+import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
+import {
+  buildChargeCurveBins,
+  meetsQualityThreshold,
+  type ChargeCurveCalibrationData,
+} from "~/server/util/curveFit";
 
 async function evaluateConditions(
   conditions: IScheduleCondition[],
@@ -93,6 +102,7 @@ export class Scheduler {
 
   private enabledScheduledTasks: Map<string, ScheduledTask> = new Map();
   private calibrationTask: ScheduledTask | null = null;
+  private curveCronTask: ScheduledTask | null = null;
   private validEmails: { id: string; email: string }[] = [];
   private schedulingEnabled: boolean = true;
 
@@ -377,6 +387,93 @@ export class Scheduler {
       }
     });
     logger.info("Calibration detection task initialized.");
+
+    this.curveCronTask?.stop();
+    this.curveCronTask = scheduleTask("0 */6 * * *", async () => {
+      logger.info("Running curve calibration aggregation job");
+      try {
+        const db = await AppDataSource.getInstance(true);
+        const sampleRepo = db.getRepository<
+          IBasicEntity & ISiteCalibrationSample
+        >("SiteCalibrationSample");
+        const calibRepo = db.getRepository<ISiteCalibration & IBasicEntity>(
+          "SiteCalibration",
+        );
+
+        const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000);
+        const rawGroups = await sampleRepo
+          .createQueryBuilder("s")
+          .select("s.email", "email")
+          .addSelect("s.site_id", "site_id")
+          .where("s.creation_time >= :cutoff", { cutoff })
+          .groupBy("s.email, s.site_id")
+          .getRawMany<{ email: string; site_id: string }>();
+
+        for (const { email, site_id } of rawGroups) {
+          try {
+            const samples = (await (sampleRepo as any).find({
+              where: { email, site_id },
+              order: { creation_time: "ASC" },
+            })) as Array<IBasicEntity & ISiteCalibrationSample>;
+            if (samples.length === 0) continue;
+
+            const candidate = buildChargeCurveBins(samples);
+            const existing = await calibRepo.findOne({
+              where: { email, site_id, calibration_type: "charge_curve" },
+              order: { creation_time: "DESC" },
+            });
+            const existingData = existing
+              ? (existing.calibration_data as unknown as ChargeCurveCalibrationData)
+              : null;
+
+            if (meetsQualityThreshold(candidate, existingData)) {
+              const now = new Date();
+              await calibRepo.save({
+                email,
+                site_id,
+                calibration_type: "charge_curve",
+                calibration_data: candidate as unknown as Record<
+                  string,
+                  unknown
+                >,
+                creation_time: now,
+                modified_time: now,
+              });
+              logger.info(
+                {
+                  email: maskEmail(email),
+                  site_id,
+                  bins: candidate!.bins.length,
+                },
+                "Curve aggregation: new charge_curve written",
+              );
+            }
+          } catch (err: any) {
+            logger.error(
+              err,
+              `Curve aggregation failed for site ${site_id} (${maskEmail(email)})`,
+            );
+          }
+        }
+
+        const { affected } = await sampleRepo
+          .createQueryBuilder()
+          .delete()
+          .where("creation_time < :cutoff", { cutoff })
+          .execute();
+        if (affected && affected > 0) {
+          logger.info(
+            { affected },
+            "Curve aggregation: purged expired calibration samples",
+          );
+        }
+      } catch (err: any) {
+        logger.error(err, "Curve calibration aggregation job failed");
+      }
+    });
+    logger.info(
+      "Curve calibration aggregation task initialized (every 6 hours).",
+    );
   }
 
   async stopAll() {
@@ -387,6 +484,8 @@ export class Scheduler {
     }
     this.calibrationTask?.stop();
     this.calibrationTask = null;
+    this.curveCronTask?.stop();
+    this.curveCronTask = null;
     logger.info("All scheduled tasks stopped.");
   }
 

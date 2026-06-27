@@ -1,4 +1,8 @@
 import type { SiteComponents } from "~/server/types/common";
+import {
+  lookupBatteryRateKw,
+  type ChargeCurveCalibrationData,
+} from "~/server/util/curveFit";
 
 const SAFETY_FACTOR = 0.8;
 const PW3_LEAD_WITH_EXPANSION_KW = 8;
@@ -90,6 +94,9 @@ function cvEffectiveRateKw(
  * Solar is allocated to the CC phase first (solar accumulates throughout the day, well
  * before the grid-charging window at the end of off-peak).
  * Returns the effective rate (kW) for use in log/reason strings.
+ *
+ * When a non-parametric charge curve is provided, numerical integration over the SOC
+ * range replaces the hardcoded CC/CV model. Existing callers that omit `curve` are unaffected.
  */
 export function calculateGridChargeHours(
   energyNeededKwh: number,
@@ -97,9 +104,23 @@ export function calculateGridChargeHours(
   currentSocPercent: number,
   targetSocPercent: number,
   chargeRateKw: number,
+  curve?: ChargeCurveCalibrationData,
 ): { hours: number; effectiveRateKw: number } {
   const gridEnergyKwh = Math.max(0, energyNeededKwh - estimatedSolarKwh);
   const startupBufferHours = GRID_CHARGE_STARTUP_BUFFER_MINUTES / 60;
+
+  if (curve && curve.bins.length > 0) {
+    return calculateGridChargeHoursCurve(
+      energyNeededKwh,
+      estimatedSolarKwh,
+      currentSocPercent,
+      targetSocPercent,
+      chargeRateKw,
+      curve,
+      gridEnergyKwh,
+      startupBufferHours,
+    );
+  }
 
   const taperStartSoc = Math.max(currentSocPercent, HIGH_SOC_TAPER_SOC_PERCENT);
   const cvSocDelta = Math.max(0, targetSocPercent - taperStartSoc);
@@ -133,6 +154,59 @@ export function calculateGridChargeHours(
   const effectiveRateKw =
     gridEnergyKwh > 0
       ? Math.round((gridEnergyKwh / chargeHours) * 100) / 100
+      : chargeRateKw;
+
+  return { hours: totalHours, effectiveRateKw };
+}
+
+const CURVE_STEP_SOC = 0.5;
+const CAPACITY_KWH_FALLBACK = 13.5;
+
+function calculateGridChargeHoursCurve(
+  energyNeededKwh: number,
+  estimatedSolarKwh: number,
+  currentSocPercent: number,
+  targetSocPercent: number,
+  chargeRateKw: number,
+  curve: ChargeCurveCalibrationData,
+  gridEnergyKwh: number,
+  startupBufferHours: number,
+): { hours: number; effectiveRateKw: number } {
+  const totalSocDelta = Math.max(0, targetSocPercent - currentSocPercent);
+  if (totalSocDelta <= 0) {
+    return { hours: startupBufferHours, effectiveRateKw: chargeRateKw };
+  }
+
+  // Estimate capacity from energyNeededKwh / totalSocDelta ratio, fallback to known default.
+  const capacityKwh =
+    totalSocDelta > 0
+      ? energyNeededKwh / (totalSocDelta / 100)
+      : CAPACITY_KWH_FALLBACK;
+
+  // Seed hours for solar rate estimate: rough estimate using chargeRateKw.
+  const seedHours =
+    ((totalSocDelta / 100) * capacityKwh) / Math.max(0.1, chargeRateKw);
+  const solarRateKw = seedHours > 0 ? estimatedSolarKwh / seedHours : 0;
+
+  let totalChargeHours = 0;
+  const steps = Math.ceil(totalSocDelta / CURVE_STEP_SOC);
+
+  for (let i = 0; i < steps; i++) {
+    const soc = currentSocPercent + i * CURVE_STEP_SOC;
+    const batteryCapKw = lookupBatteryRateKw(soc, curve.bins);
+    const gridRateKw = Math.max(
+      0,
+      Math.min(chargeRateKw, batteryCapKw - solarRateKw),
+    );
+    const stepEnergyKwh = capacityKwh * (CURVE_STEP_SOC / 100);
+    const stepHours = stepEnergyKwh / Math.max(0.1, gridRateKw);
+    totalChargeHours += stepHours;
+  }
+
+  const totalHours = totalChargeHours + startupBufferHours;
+  const effectiveRateKw =
+    gridEnergyKwh > 0 && totalChargeHours > 0
+      ? Math.round((gridEnergyKwh / totalChargeHours) * 100) / 100
       : chargeRateKw;
 
   return { hours: totalHours, effectiveRateKw };
