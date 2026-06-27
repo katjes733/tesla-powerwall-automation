@@ -3,6 +3,7 @@ import moment from "moment-timezone";
 import type {
   FleetOptions,
   FleetOptionsInput,
+  IBasicEntity,
   JWT,
   LiveStatus,
   Product,
@@ -18,6 +19,10 @@ import type {
   SeasonalWindow,
 } from "~/server/database/models/schedule";
 import type { ITouBackup } from "~/server/database/models/touBackup";
+import type {
+  ISiteCalibration,
+  IGridChargeRateCalibrationData,
+} from "~/server/database/models/siteCalibration";
 import type {
   SiteEventType,
   ISiteEvent,
@@ -67,6 +72,8 @@ export interface SmartChargingLogResult {
   weatherFactor: number | null;
   batteryChargeRateFromGridKw: number | null;
   liveKw: { solar: number; load: number; grid: number; battery: number };
+  chargeRateKw: number;
+  chargeRateSource: "calibrated" | "formula";
   reason: string;
 }
 
@@ -75,6 +82,12 @@ const siteInfoCache = new Map<number, { info: SiteInfo; at: number }>();
 
 const LIVE_STATUS_CACHE_TTL_MS = 30 * 1000;
 const liveStatusCache = new Map<number, { status: LiveStatus; at: number }>();
+
+const CALIBRATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const calibrationCache = new Map<
+  string,
+  { data: (ISiteCalibration & IBasicEntity) | null; at: number }
+>();
 
 // Ring buffer: last N battery_power readings per site (one per minute from cron).
 // Used to detect a sustained discharge during what should be an idle period.
@@ -736,6 +749,33 @@ export class Fleet {
     }
   }
 
+  private async getCalibration(
+    siteId: string,
+  ): Promise<(ISiteCalibration & IBasicEntity) | null> {
+    const cacheKey = `${this.email}:${siteId}`;
+    const cached = calibrationCache.get(cacheKey);
+    if (cached && performance.now() - cached.at < CALIBRATION_CACHE_TTL_MS) {
+      return cached.data;
+    }
+    const db = await AppDataSource.getInstance(true);
+    const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
+      "SiteCalibration",
+    );
+    const record = await repo.findOne({
+      where: {
+        email: this.email,
+        site_id: siteId,
+        calibration_type: "grid_charge_rate",
+      },
+      order: { creation_time: "DESC" },
+    });
+    calibrationCache.set(cacheKey, {
+      data: record ?? null,
+      at: performance.now(),
+    });
+    return record ?? null;
+  }
+
   async setGridCharging(product: Product, setting: string): Promise<void> {
     const disallow = setting === "disabled";
     if (setting !== "enabled" && setting !== "disabled") {
@@ -878,6 +918,16 @@ export class Fleet {
     let disableRequired = false;
     let reason: string;
     let solarForecast: SolarForecastResult | null = null;
+    const chargeRateKw = calculateChargeRateKw(siteInfo.components);
+    const calibration = await this.getCalibration(
+      product.energy_site_id.toString(),
+    );
+    const calibrationData = calibration?.calibration_data as
+      | IGridChargeRateCalibrationData
+      | undefined;
+    const effectiveChargeRateKw = calibrationData?.kw ?? chargeRateKw;
+    const chargeRateSource: "calibrated" | "formula" =
+      calibrationData?.kw !== undefined ? "calibrated" : "formula";
 
     if (isTouMode) {
       const tariff = parseTariffContent(siteInfo.tariff_content);
@@ -908,7 +958,6 @@ export class Fleet {
             0,
             effectivePeakStart.diff(now, "minutes"),
           );
-          const chargeRateKw = calculateChargeRateKw(siteInfo.components);
           const availableSolarKw = Math.max(
             0,
             (liveStatus.solar_power - liveStatus.load_power) / 1000,
@@ -944,7 +993,7 @@ export class Fleet {
                 estimatedSolarKwh,
                 liveStatus.percentage_charged,
                 config.targetSoc,
-                chargeRateKw,
+                effectiveChargeRateKw,
               );
             const latestGridStart = effectivePeakStart
               .clone()
@@ -1012,7 +1061,6 @@ export class Fleet {
           0,
           effectiveDeadline.diff(now, "minutes"),
         );
-        const chargeRateKw = calculateChargeRateKw(siteInfo.components);
         const availableSolarKw = Math.max(
           0,
           (liveStatus.solar_power - liveStatus.load_power) / 1000,
@@ -1048,7 +1096,7 @@ export class Fleet {
               estimatedSolarKwh,
               liveStatus.percentage_charged,
               config.targetSoc,
-              chargeRateKw,
+              effectiveChargeRateKw,
             );
           const latestGridStart = effectiveDeadline
             .clone()
@@ -1133,6 +1181,8 @@ export class Fleet {
         grid: Math.round(liveStatus.grid_power / 10) / 100,
         battery: Math.round(liveStatus.battery_power / 10) / 100,
       },
+      chargeRateKw: Math.round(effectiveChargeRateKw * 100) / 100,
+      chargeRateSource,
       reason,
     };
   }

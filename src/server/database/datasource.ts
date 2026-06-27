@@ -7,6 +7,7 @@ import { SiteEvent } from "~/server/database/models/siteEvent";
 import { User } from "~/server/database/models/user";
 import { SignupVerification } from "~/server/database/models/signupVerification";
 import { TouScheduleConfig } from "~/server/database/models/touScheduleConfig";
+import { SiteCalibration } from "~/server/database/models/siteCalibration";
 import { migrateTokenEncryption } from "~/server/database/migrateTokenEncryption";
 
 class AppDataSource {
@@ -55,6 +56,7 @@ class AppDataSource {
               SiteEvent,
               User,
               SignupVerification,
+              SiteCalibration,
             ],
           })
         : (() => {

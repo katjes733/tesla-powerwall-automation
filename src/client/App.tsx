@@ -16,6 +16,7 @@ import Schedules from "./components/schedules/Schedules";
 import PowerwallStatus from "./components/powerwall/PowerwallStatus";
 import TouConfigs from "./components/tou/TouConfigs";
 import ManualSettings from "./components/manualSettings/ManualSettings";
+import Calibration from "./components/calibration/Calibration";
 
 type ProtectedRouteProps = {
   children: React.ReactNode;
@@ -88,6 +89,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <ManualSettings />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/calibration"
+                  element={
+                    <ProtectedRoute>
+                      <Calibration />
                     </ProtectedRoute>
                   }
                 />

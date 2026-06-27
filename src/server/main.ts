@@ -11,6 +11,7 @@ import { router as SessionRouter } from "~/server/routes/session";
 import { router as UserRouter } from "~/server/routes/user";
 import { router as SignupVerificationRouter } from "~/server/routes/signupVerification";
 import { router as TouConfigRouter } from "~/server/routes/touConfig";
+import { router as CalibrationRouter } from "~/server/routes/calibration";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -107,6 +108,7 @@ app.use("/api/session", SessionRouter);
 app.use("/api/user", UserRouter);
 app.use("/api/auth", SignupVerificationRouter);
 app.use("/api/tou-config", TouConfigRouter);
+app.use("/api/calibration", CalibrationRouter);
 
 if (process.env.NODE_ENV !== "development") {
   logger.info("Serving static files from 'public' directory");

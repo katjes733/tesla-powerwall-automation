@@ -71,6 +71,11 @@ export default function NavMenu() {
     navigate("/settings");
   }, [navigate]);
 
+  const handleNavigateToCalibration = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/calibration");
+  }, [navigate]);
+
   return (
     <AppBar
       position="fixed"
@@ -120,6 +125,9 @@ export default function NavMenu() {
                 </MenuItem>
                 <MenuItem onClick={handleNavigateToSettings}>
                   Manual Settings
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToCalibration}>
+                  Calibration
                 </MenuItem>
               </Menu>
             </>
