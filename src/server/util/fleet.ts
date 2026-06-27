@@ -798,7 +798,7 @@ export class Fleet {
       "SiteCalibration",
     );
     const record = await repo.findOne({
-      where: { site_id: siteId, calibration_type: "charge_curve" },
+      where: { site_id: siteId, calibration_type: "chargeCurve" },
       order: { creation_time: "DESC" },
     });
     const data = record
@@ -821,7 +821,7 @@ export class Fleet {
     await repo.save({
       email: this.email,
       site_id: siteId,
-      calibration_type: "passive",
+      calibration_type: "chargeCurve",
       creation_time: now,
       modified_time: now,
       sample_data: {

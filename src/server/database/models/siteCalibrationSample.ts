@@ -11,7 +11,7 @@ export interface ISiteCalibrationSampleData {
 export interface ISiteCalibrationSample {
   email: string;
   site_id: string;
-  calibration_type: string; // "passive" | "manual"
+  calibration_type: string; // matches site_calibrations.calibration_type (e.g. "chargeCurve")
   sample_data: ISiteCalibrationSampleData;
 }
 

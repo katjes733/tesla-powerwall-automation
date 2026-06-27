@@ -18,6 +18,7 @@ export interface ChargeCurveCalibrationData {
 const MIN_BIN_SAMPLES = 3;
 const MIN_BINS_REQUIRED = 10;
 const MIN_SOC_RANGE_PERCENT = 8;
+const SAMPLE_RETENTION_DAYS = 60;
 
 // Minimum grid contribution to treat a sample as BMS-limited rather than
 // supply-limited. Solar-only charging may under-drive the battery, making
@@ -104,7 +105,15 @@ export function meetsQualityThreshold(
   if (candidate.soc_range_percent < MIN_SOC_RANGE_PERCENT) return false;
   if (!existing) return true;
 
-  const hasBroaderCoverage = candidate.bins.length >= existing.bins.length;
+  // The existing curve may have been built from samples that have since been
+  // purged. Once the curve is older than the retention window, its source data
+  // no longer exists and the current population is a different dataset — always
+  // rebuild in that case so drifting medians are captured.
+  const existingAgeMs = Date.now() - new Date(existing.built_at).getTime();
+  const retentionMs = SAMPLE_RETENTION_DAYS * 24 * 3600 * 1000;
+  if (existingAgeMs >= retentionMs) return true;
+
+  const hasBroaderCoverage = candidate.bins.length > existing.bins.length;
   const hasMoreSamples =
     candidate.total_sample_count >= existing.total_sample_count * 1.2;
 

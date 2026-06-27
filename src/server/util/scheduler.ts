@@ -390,7 +390,7 @@ export class Scheduler {
 
     this.curveCronTask?.stop();
     this.curveCronTask = scheduleTask("0 */6 * * *", async () => {
-      logger.info("Running curve calibration aggregation job");
+      logger.info("Running charge curve aggregation and sample purge job");
       try {
         const db = await AppDataSource.getInstance(true);
         const sampleRepo = db.getRepository<
@@ -412,14 +412,14 @@ export class Scheduler {
         for (const { email, site_id } of rawGroups) {
           try {
             const samples = (await (sampleRepo as any).find({
-              where: { email, site_id },
+              where: { email, site_id, calibration_type: "chargeCurve" },
               order: { creation_time: "ASC" },
             })) as Array<IBasicEntity & ISiteCalibrationSample>;
             if (samples.length === 0) continue;
 
             const candidate = buildChargeCurveBins(samples);
             const existing = await calibRepo.findOne({
-              where: { email, site_id, calibration_type: "charge_curve" },
+              where: { email, site_id, calibration_type: "chargeCurve" },
               order: { creation_time: "DESC" },
             });
             const existingData = existing
@@ -431,7 +431,7 @@ export class Scheduler {
               await calibRepo.save({
                 email,
                 site_id,
-                calibration_type: "charge_curve",
+                calibration_type: "chargeCurve",
                 calibration_data: candidate as unknown as Record<
                   string,
                   unknown
@@ -468,11 +468,14 @@ export class Scheduler {
           );
         }
       } catch (err: any) {
-        logger.error(err, "Curve calibration aggregation job failed");
+        logger.error(
+          err,
+          "Charge curve aggregation and sample purge job failed",
+        );
       }
     });
     logger.info(
-      "Curve calibration aggregation task initialized (every 6 hours).",
+      "Charge curve aggregation and sample purge task initialized (every 6 hours).",
     );
   }
 

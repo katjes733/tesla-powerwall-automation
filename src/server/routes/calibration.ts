@@ -39,7 +39,7 @@ const SAMPLE_INTERVAL_MS = 15 * 1000;
 const JOB_TTL_MS = 30 * 60 * 1000;
 const CALIBRATION_TYPE = "grid_charge_rate";
 
-const CURVE_CALIBRATION_TYPE = "charge_curve";
+const CURVE_CALIBRATION_TYPE = "chargeCurve";
 const CURVE_JOB_TTL_MS = 4 * 60 * 60 * 1000;
 const CURVE_SAMPLE_INTERVAL_MS = 15 * 1000;
 const CURVE_MAX_DURATION_MS = 3 * 60 * 60 * 1000;
@@ -446,7 +446,11 @@ async function finalizeCurveCalibration(
 
   const since = new Date(jobStartedAtMs);
   const sessionSamples = (await (sampleRepo as any).find({
-    where: { site_id: energySiteId, email, calibration_type: "manual" },
+    where: {
+      site_id: energySiteId,
+      email,
+      calibration_type: CURVE_CALIBRATION_TYPE,
+    },
     order: { creation_time: "ASC" },
   })) as Array<IBasicEntity & ISiteCalibrationSample>;
   const recentSamples = sessionSamples.filter(
@@ -524,7 +528,7 @@ async function runCurveCalibration(
         await sampleRepo.save({
           email,
           site_id: energySiteId,
-          calibration_type: "manual",
+          calibration_type: CURVE_CALIBRATION_TYPE,
           creation_time: now,
           modified_time: now,
           sample_data: {
