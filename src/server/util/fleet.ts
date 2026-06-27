@@ -109,6 +109,13 @@ export function isDischargeCalibrating(siteId: number): boolean {
   return dischargeCalibrationActive.get(siteId) ?? false;
 }
 
+function formatScheduledTime(t: moment.Moment, now: moment.Moment): string {
+  if (t.isSame(now, "day")) return t.format("HH:mm");
+  if (t.isSame(now.clone().add(1, "day"), "day"))
+    return `tomorrow ${t.format("HH:mm")}`;
+  return `${t.format("ddd")} ${t.format("HH:mm")}`;
+}
+
 function buildSolarLabel(
   forecast: SolarForecastResult | null,
   linearKwh: number,
@@ -970,6 +977,9 @@ export class Fleet {
     const betweenHoursCond = conditions.find(
       (c) => c.condition === "betweenHours",
     );
+    const holidayCond = conditions.find((c) => c.condition === "holidayList");
+    const holidayEntries =
+      (holidayCond?.value as HolidayEntry[] | undefined) ?? [];
 
     let desired: "enabled" | "disabled";
     let disableRequired = false;
@@ -1014,7 +1024,7 @@ export class Fleet {
         desired = "disabled";
         reason = `target SOC already reached (${liveStatus.percentage_charged.toFixed(1)}%)`;
       } else {
-        const nextPeakStart = findNextPeakStart(tariff!, now);
+        const nextPeakStart = findNextPeakStart(tariff!, now, holidayEntries);
         if (!nextPeakStart) {
           desired = "disabled";
           reason = "no upcoming peak found in tariff";
@@ -1090,13 +1100,13 @@ export class Fleet {
 
             if (nowIsAtOrAfterLatestStart && withinWindow) {
               desired = "enabled";
-              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW (${solarLabel}, peak at ${nextPeakStart.format("HH:mm")})`;
+              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
             } else if (!nowIsAtOrAfterLatestStart) {
               desired = "disabled";
-              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${latestGridStart.format("HH:mm")} (${solarLabel}, peak at ${nextPeakStart.format("HH:mm")})`;
+              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
             } else {
               desired = "disabled";
-              reason = `outside allowed window — grid start due at ${latestGridStart.format("HH:mm")} but window is closed`;
+              reason = `outside allowed window — grid start due at ${formatScheduledTime(latestGridStart, now)} but window is closed`;
             }
           }
         }
@@ -1179,10 +1189,10 @@ export class Fleet {
             reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW (${solarLabel}, deadline ${window.to})`;
           } else if (!nowIsAtOrAfterLatestStart) {
             desired = "disabled";
-            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${latestGridStart.format("HH:mm")} (${solarLabel}, deadline ${window.to})`;
+            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)} (${solarLabel}, deadline ${window.to})`;
           } else {
             desired = "disabled";
-            reason = `outside allowed window — grid start due at ${latestGridStart.format("HH:mm")} but window is closed`;
+            reason = `outside allowed window — grid start due at ${formatScheduledTime(latestGridStart, now)} but window is closed`;
           }
         }
       }
