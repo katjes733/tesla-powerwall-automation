@@ -17,6 +17,7 @@ import PowerwallStatus from "./components/powerwall/PowerwallStatus";
 import TouConfigs from "./components/tou/TouConfigs";
 import ManualSettings from "./components/manualSettings/ManualSettings";
 import Calibration from "./components/calibration/Calibration";
+import EnergyHistory from "./components/history/EnergyHistory";
 
 type ProtectedRouteProps = {
   children: React.ReactNode;
@@ -97,6 +98,14 @@ function App() {
                   element={
                     <ProtectedRoute>
                       <Calibration />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/history"
+                  element={
+                    <ProtectedRoute>
+                      <EnergyHistory />
                     </ProtectedRoute>
                   }
                 />

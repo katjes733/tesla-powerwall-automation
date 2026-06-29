@@ -21,7 +21,13 @@ function makeDay(
           TZ,
         )
         .toISOString();
-      points.push({ timestamp: ts, solar_power: map.get(h) ?? 0 });
+      points.push({
+        timestamp: ts,
+        solar_power: map.get(h) ?? 0,
+        battery_power: 0,
+        grid_power: 0,
+        load_power: 0,
+      });
     }
   }
   return points;

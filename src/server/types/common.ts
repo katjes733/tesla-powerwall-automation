@@ -86,10 +86,16 @@ export interface TariffContent {
   };
 }
 
-export interface SolarPowerDataPoint {
+export interface PowerHistoryPoint {
   timestamp: string; // ISO 8601
-  solar_power: number; // Watts
+  solar_power: number; // Watts (≥0)
+  battery_power: number; // Watts (positive = discharge, negative = charge)
+  grid_power: number; // Watts (positive = import, negative = export)
+  load_power: number; // Watts (home consumption, ≥0)
 }
+
+// Backward-compat alias: getSolarHistory only uses solar_power.
+export type SolarPowerDataPoint = PowerHistoryPoint;
 
 export interface SmartChargingActionConfig {
   targetSoc: number;

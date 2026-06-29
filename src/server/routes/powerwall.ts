@@ -4,6 +4,8 @@ import {
   isCalibrating,
   isDischargeCalibrating,
 } from "~/server/util/fleet";
+import AppDataSource from "~/server/database/datasource";
+import moment from "moment-timezone";
 
 const MANUAL_ACTIONS = new Set([
   "setBackupReserve",
@@ -163,6 +165,76 @@ router.post("/apply-settings", async (req, res, next) => {
     res.json({ success: true });
   } catch (error: any) {
     logger.error(error, "Error applying manual settings");
+    next(error);
+  }
+});
+
+router.get("/history", async (req, res, next) => {
+  const email = req.session.user;
+  if (!email) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+  const siteId = req.query.siteId as string | undefined;
+  const date = req.query.date as string | undefined;
+  const forceRefresh = req.query.refresh === "true";
+
+  if (!siteId) {
+    res
+      .status(400)
+      .json({ success: false, message: "siteId query parameter required" });
+    return;
+  }
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    res.status(400).json({
+      success: false,
+      message: "date query parameter required (YYYY-MM-DD)",
+    });
+    return;
+  }
+
+  try {
+    const fleet = Fleet.getInstance(email, {
+      throwOnError: false,
+      mailOnError: false,
+    });
+    const products = await fleet.getEnergyProducts();
+    const product = products.find((p) => p.id === siteId);
+    if (!product) {
+      res.status(404).json({ success: false, message: "Site not found" });
+      return;
+    }
+
+    const siteInfo = await fleet.getSiteInfo(product);
+    const timezone = siteInfo?.installation_time_zone ?? "UTC";
+
+    const [{ points, cached }, socRows] = await Promise.all([
+      fleet.getDayHistory(product, timezone, date, forceRefresh),
+      AppDataSource.getInstance(true).then((ds) =>
+        ds
+          .getRepository("LiveDataSample")
+          .createQueryBuilder("s")
+          .where("s.site_id = :siteId", { siteId })
+          .andWhere("s.type = :type", { type: "soc" })
+          .andWhere("s.creation_time >= :start", {
+            start: moment.tz(date, timezone).startOf("day").toDate(),
+          })
+          .andWhere("s.creation_time <= :end", {
+            end: moment.tz(date, timezone).endOf("day").toDate(),
+          })
+          .orderBy("s.creation_time", "ASC")
+          .getMany(),
+      ),
+    ]);
+
+    const socPoints = socRows.map((r: any) => ({
+      timestamp: (r.creation_time as Date).toISOString(),
+      soc_percent: (r.data as { soc_percent: number }).soc_percent,
+    }));
+
+    res.json({ success: true, data: { date, points, socPoints, cached } });
+  } catch (error: any) {
+    logger.error(error, "Error fetching power history");
     next(error);
   }
 });

@@ -90,6 +90,8 @@
     "cron-parser": "^5.6.0",
     "dayjs": "^1.11.21",
     "dedent": "^1.7.2",
+    "echarts": "^6.1.0",
+    "echarts-for-react": "^3.0.6",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
     "express-session": "^1.19.0",

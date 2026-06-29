@@ -6,6 +6,7 @@ import type {
   IBasicEntity,
   JWT,
   LiveStatus,
+  PowerHistoryPoint,
   Product,
   RefreshTokenData,
   SiteInfo,
@@ -419,7 +420,7 @@ export class Fleet {
     timezone: string,
     dateStr: string,
     options: { method: string; headers: Record<string, string> },
-  ): Promise<SolarPowerDataPoint[]> {
+  ): Promise<PowerHistoryPoint[]> {
     // Avoid 00:00:00 — the API returns empty data at midnight.
     const endDate = moment
       .tz(`${dateStr} 23:45`, "YYYY-MM-DD HH:mm", timezone)
@@ -445,13 +446,79 @@ export class Fleet {
         2000,
         2,
       );
-      return (response.time_series ?? []) as SolarPowerDataPoint[];
+      return ((response.time_series ?? []) as Record<string, any>[]).map(
+        (pt) => {
+          const solar = (pt.solar_power as number) ?? 0;
+          const battery = (pt.battery_power as number) ?? 0;
+          const grid = (pt.grid_power as number) ?? 0;
+          // Tesla API returns load_power=0 for some sites; derive from energy balance.
+          const load = Math.max(0, solar + battery + grid);
+          return {
+            timestamp: (pt.timestamp as string) ?? "",
+            solar_power: solar,
+            battery_power: battery,
+            grid_power: grid,
+            load_power: load,
+          };
+        },
+      );
     } catch (error: any) {
       logger.warn(
         `[solar history] fetch for ${dateStr} failed: ${error.message}`,
       );
       return [];
     }
+  }
+
+  // Public: fetch one day of full power history with Redis caching.
+  // forceRefresh bypasses the cache (only meaningful for today's data).
+  async getDayHistory(
+    product: Product,
+    timezone: string,
+    dateStr: string,
+    forceRefresh = false,
+  ): Promise<{ points: PowerHistoryPoint[]; cached: boolean }> {
+    const isToday = moment().tz(timezone).format("YYYY-MM-DD") === dateStr;
+    const cacheKey = `power_history:${product.energy_site_id}:${dateStr}`;
+
+    if (!forceRefresh) {
+      try {
+        const raw = await redis.get(cacheKey);
+        if (raw) {
+          return {
+            points: JSON.parse(raw) as PowerHistoryPoint[],
+            cached: true,
+          };
+        }
+      } catch {
+        // Redis unavailable — fall through.
+      }
+    }
+
+    const options = await this.getDefaultGetOptions();
+    const rawPoints = await this.fetchDayHistory(
+      product,
+      timezone,
+      dateStr,
+      options,
+    );
+
+    // Tesla returns a full day's worth of 5-minute slots, including future ones
+    // filled with zeros. Strip those so charts don't show a flat line at 0 for
+    // the portion of the day that hasn't happened yet.
+    const now = moment();
+    const points = isToday
+      ? rawPoints.filter((p) => !moment(p.timestamp).isAfter(now))
+      : rawPoints;
+
+    try {
+      const ttl = isToday ? 5 * 60 : 30 * 24 * 3600;
+      await redis.setex(cacheKey, ttl, JSON.stringify(points));
+    } catch {
+      // Redis write failed — non-fatal.
+    }
+
+    return { points, cached: false };
   }
 
   async getSolarHistory(

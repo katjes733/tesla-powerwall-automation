@@ -76,6 +76,11 @@ export default function NavMenu() {
     navigate("/calibration");
   }, [navigate]);
 
+  const handleNavigateToHistory = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/history");
+  }, [navigate]);
+
   return (
     <AppBar
       position="fixed"
@@ -128,6 +133,9 @@ export default function NavMenu() {
                 </MenuItem>
                 <MenuItem onClick={handleNavigateToCalibration}>
                   Calibration
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToHistory}>
+                  Energy History
                 </MenuItem>
               </Menu>
             </>

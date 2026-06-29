@@ -1,5 +1,6 @@
 import AppDataSource from "./database/datasource";
 import { Scheduler } from "./util/scheduler";
+import { startLiveDataSampler } from "./util/liveDataSampler";
 import { pinoHttp } from "pino-http";
 import express from "express";
 import session from "express-session";
@@ -178,6 +179,7 @@ recoverCurveCalibrations().catch((err) =>
 
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   Scheduler.getInstance().initialize();
+  startLiveDataSampler();
 } else {
   // const email =
   //   process.env.TESLA_ACCOUNT_EMAIL ||
