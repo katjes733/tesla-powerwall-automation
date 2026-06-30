@@ -1,4 +1,5 @@
 import { readFileSync } from "fs";
+import { checkServerIdentity, type PeerCertificate } from "tls";
 import { DataSource } from "typeorm";
 import { RefreshToken } from "~/server/database/models/refreshToken";
 import { Schedule } from "~/server/database/models/schedule";
@@ -45,10 +46,15 @@ class AppDataSource {
             schema: process.env.DB_SCHEMA || "public",
             synchronize: false,
             ssl: dbSsl
-              ? {
+              ? ({
                   rejectUnauthorized: true,
                   ca: readFileSync(process.env.DB_SSL_CA_PATH!).toString(),
-                }
+                  // pg doesn't pass a valid SNI servername when host is an IP address,
+                  // causing Node.js TLS to fall back to 'localhost' for checkServerIdentity.
+                  // Override to verify against the actual DB host.
+                  checkServerIdentity: (_host: string, cert: PeerCertificate) =>
+                    checkServerIdentity(process.env.DB_HOST!, cert),
+                } as any)
               : false,
             entities: [
               RefreshToken,
