@@ -5,6 +5,10 @@ export interface ChargeCurveBin {
   soc_percent: number;
   battery_kw: number;
   sample_count: number;
+  // Accumulated EWMA confidence — starts at EWMA_ALPHA for newly introduced bins,
+  // asymptotically approaches 1.0 as more sessions are blended in.
+  // Absent on curves stored before EWMA was introduced; treated as 1.0 (fully trusted).
+  ewma_weight?: number;
 }
 
 export interface ChargeCurveCalibrationData {
@@ -24,6 +28,15 @@ const SAMPLE_RETENTION_DAYS = 60;
 // supply-limited. Solar-only charging may under-drive the battery, making
 // battery_kw reflect solar availability rather than the true acceptance curve.
 const MIN_GRID_KW_FOR_SAMPLE = 1.0;
+// Maximum SOC at which a calibration session must have started. Ensures the
+// dataset covers the CC region and carries through the full CV taper to ~100%.
+// Used both here (dataset gate) and in the manual calibration route (start gate).
+export const MAX_CURVE_START_SOC_PERCENT = 85;
+
+// Blend factor applied per scheduler run. New candidate data moves each bin
+// at most this fraction toward the new value, so a single session has limited
+// influence over an established curve. After ~10 sessions a bin is ~80% updated.
+export const EWMA_ALPHA = 0.15;
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -48,6 +61,14 @@ export function buildChargeCurveBins(
     (s) => Number(s.sample_data.grid_kw) >= MIN_GRID_KW_FOR_SAMPLE,
   );
   if (valid.length === 0) return null;
+
+  // Reject datasets that don't cover the CC region. Without samples at or below
+  // this threshold the curve would consist of taper fragments only, which the
+  // forecaster would flat-extrapolate incorrectly below the lowest calibrated bin.
+  const minValidSoc = Math.min(
+    ...valid.map((s) => Number(s.sample_data.soc_percent)),
+  );
+  if (minValidSoc > MAX_CURVE_START_SOC_PERCENT) return null;
 
   const buckets = new Map<number, number[]>();
   for (const s of valid) {
@@ -118,6 +139,70 @@ export function meetsQualityThreshold(
     candidate.total_sample_count >= existing.total_sample_count * 1.2;
 
   return hasBroaderCoverage || hasMoreSamples;
+}
+
+// Structural-only quality check used by the scheduler before blending a candidate
+// into the existing curve. Does not compare against the existing curve — that
+// gate is only relevant for full replacement (manual calibration path).
+export function isValidCandidate(
+  candidate: ChargeCurveCalibrationData | null,
+): candidate is ChargeCurveCalibrationData {
+  if (!candidate) return false;
+  if (candidate.bins.length < MIN_BINS_REQUIRED) return false;
+  if (candidate.soc_range_percent < MIN_SOC_RANGE_PERCENT) return false;
+  return true;
+}
+
+// Blend a new candidate curve into an existing one using per-bin EWMA.
+// Bins present in both curves are blended by alpha. Bins only in the candidate
+// (new SOC territory) enter at ewma_weight=alpha — cautious until confirmed by
+// further sessions. Bins only in the existing curve are kept unchanged.
+export function blendChargeCurveBins(
+  existing: ChargeCurveCalibrationData,
+  candidate: ChargeCurveCalibrationData,
+  alpha: number = EWMA_ALPHA,
+): ChargeCurveCalibrationData {
+  const binMap = new Map<number, ChargeCurveBin>();
+
+  for (const bin of existing.bins) {
+    binMap.set(bin.soc_percent, { ...bin });
+  }
+
+  for (const newBin of candidate.bins) {
+    const ex = binMap.get(newBin.soc_percent);
+    if (ex) {
+      const existingWeight = ex.ewma_weight ?? 1.0;
+      binMap.set(newBin.soc_percent, {
+        soc_percent: newBin.soc_percent,
+        battery_kw:
+          Math.round(
+            ((1 - alpha) * ex.battery_kw + alpha * newBin.battery_kw) * 1000,
+          ) / 1000,
+        sample_count: ex.sample_count + newBin.sample_count,
+        ewma_weight: Math.min(
+          1.0,
+          existingWeight + alpha * (1 - existingWeight),
+        ),
+      });
+    } else {
+      binMap.set(newBin.soc_percent, { ...newBin, ewma_weight: alpha });
+    }
+  }
+
+  const bins = [...binMap.values()].sort(
+    (a, b) => a.soc_percent - b.soc_percent,
+  );
+  const minSoc = bins[0].soc_percent;
+  const maxSoc = bins[bins.length - 1].soc_percent;
+
+  return {
+    bins,
+    total_sample_count:
+      existing.total_sample_count + candidate.total_sample_count,
+    soc_range_percent: maxSoc - minSoc,
+    data_window_days: candidate.data_window_days,
+    built_at: new Date().toISOString(),
+  };
 }
 
 export function lookupBatteryRateKw(

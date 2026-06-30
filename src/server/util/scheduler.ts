@@ -22,7 +22,8 @@ import type { ISiteCalibration } from "~/server/database/models/siteCalibration"
 import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
 import {
   buildChargeCurveBins,
-  meetsQualityThreshold,
+  blendChargeCurveBins,
+  isValidCandidate,
   type ChargeCurveCalibrationData,
 } from "~/server/util/curveFit";
 
@@ -411,13 +412,6 @@ export class Scheduler {
 
         for (const { email, site_id } of rawGroups) {
           try {
-            const samples = (await (sampleRepo as any).find({
-              where: { email, site_id, calibration_type: "chargeCurve" },
-              order: { creation_time: "ASC" },
-            })) as Array<IBasicEntity & ISiteCalibrationSample>;
-            if (samples.length === 0) continue;
-
-            const candidate = buildChargeCurveBins(samples);
             const existing = await calibRepo.findOne({
               where: { email, site_id, calibration_type: "chargeCurve" },
               order: { creation_time: "DESC" },
@@ -426,28 +420,49 @@ export class Scheduler {
               ? (existing.calibration_data as unknown as ChargeCurveCalibrationData)
               : null;
 
-            if (meetsQualityThreshold(candidate, existingData)) {
-              const now = new Date();
-              await calibRepo.save({
-                email,
+            // Fetch only samples recorded after the last curve update so each
+            // batch is blended exactly once. Fall back to the full retention
+            // window when no curve exists yet (first-ever build).
+            const since = existing
+              ? new Date(existing.creation_time as unknown as string)
+              : cutoff;
+
+            const samples = (await sampleRepo
+              .createQueryBuilder("s")
+              .where(
+                "s.email = :email AND s.site_id = :site_id AND s.calibration_type = :type AND s.creation_time > :since",
+                { email, site_id, type: "chargeCurve", since },
+              )
+              .orderBy("s.creation_time", "ASC")
+              .getMany()) as Array<IBasicEntity & ISiteCalibrationSample>;
+
+            if (samples.length === 0) continue;
+
+            const candidate = buildChargeCurveBins(samples);
+            if (!isValidCandidate(candidate)) continue;
+
+            const updated = existingData
+              ? blendChargeCurveBins(existingData, candidate)
+              : candidate;
+
+            const now = new Date();
+            await calibRepo.save({
+              email,
+              site_id,
+              calibration_type: "chargeCurve",
+              calibration_data: updated as unknown as Record<string, unknown>,
+              creation_time: now,
+              modified_time: now,
+            });
+            logger.info(
+              {
+                email: maskEmail(email),
                 site_id,
-                calibration_type: "chargeCurve",
-                calibration_data: candidate as unknown as Record<
-                  string,
-                  unknown
-                >,
-                creation_time: now,
-                modified_time: now,
-              });
-              logger.info(
-                {
-                  email: maskEmail(email),
-                  site_id,
-                  bins: candidate!.bins.length,
-                },
-                "Curve aggregation: new charge_curve written",
-              );
-            }
+                bins: updated.bins.length,
+                blended: existingData !== null,
+              },
+              "Curve aggregation: charge_curve updated",
+            );
           } catch (err: any) {
             logger.error(
               err,

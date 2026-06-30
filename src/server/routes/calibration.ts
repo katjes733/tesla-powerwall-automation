@@ -25,10 +25,12 @@ import { redis } from "~/server/util/redis";
 import {
   buildChargeCurveBins,
   meetsQualityThreshold,
+  MAX_CURVE_START_SOC_PERCENT,
   type ChargeCurveCalibrationData,
 } from "~/server/util/curveFit";
 
-const MAX_CALIBRATION_SOC_PERCENT = 80;
+const MAX_GRID_RATE_SOC_PERCENT = 80;
+const MAX_CURVE_CALIBRATION_SOC_PERCENT = MAX_CURVE_START_SOC_PERCENT;
 const MAX_SOLAR_KW = 0.1;
 const STABILITY_POLL_INTERVAL_MS = 15 * 1000;
 const STABILITY_WINDOW = 4;
@@ -150,10 +152,15 @@ router.get("/", async (req, res, next) => {
     const offPeakOk = !hasTouData(tariff) || !isCurrentlyInPeak(tariff!, now);
     const safeguards = liveStatus
       ? {
-          socOk: liveStatus.percentage_charged < MAX_CALIBRATION_SOC_PERCENT,
+          socOkGridRate:
+            liveStatus.percentage_charged < MAX_GRID_RATE_SOC_PERCENT,
+          socOkCurve:
+            liveStatus.percentage_charged < MAX_CURVE_CALIBRATION_SOC_PERCENT,
           solarOk: liveStatus.solar_power / 1000 < MAX_SOLAR_KW,
           onGrid: liveStatus.island_status !== "island_mode",
           offPeakOk,
+          socThresholdGridRate: MAX_GRID_RATE_SOC_PERCENT,
+          socThresholdCurve: MAX_CURVE_CALIBRATION_SOC_PERCENT,
           socValue: Math.round(liveStatus.percentage_charged * 10) / 10,
           solarKw: Math.round(liveStatus.solar_power / 10) / 100,
           batteryKw: Math.round(liveStatus.battery_power / 10) / 100,
@@ -205,13 +212,13 @@ router.post(
       const now = moment().tz(timezone);
       const offPeakOk = !hasTouData(tariff) || !isCurrentlyInPeak(tariff!, now);
 
-      const socOk = liveStatus.percentage_charged < MAX_CALIBRATION_SOC_PERCENT;
+      const socOk = liveStatus.percentage_charged < MAX_GRID_RATE_SOC_PERCENT;
       const solarOk = liveStatus.solar_power / 1000 < MAX_SOLAR_KW;
       const onGrid = liveStatus.island_status !== "island_mode";
       if (!socOk || !solarOk || !onGrid || !offPeakOk) {
         const failed = [
           !socOk &&
-            `SOC must be below ${MAX_CALIBRATION_SOC_PERCENT}% (currently ${liveStatus.percentage_charged.toFixed(1)}%)`,
+            `SOC must be below ${MAX_GRID_RATE_SOC_PERCENT}% (currently ${liveStatus.percentage_charged.toFixed(1)}%)`,
           !solarOk &&
             `Solar must be below ${MAX_SOLAR_KW} kW — calibrate at night (currently ${(liveStatus.solar_power / 1000).toFixed(2)} kW)`,
           !onGrid && "System must be on-grid",
@@ -621,13 +628,14 @@ router.post(
       const timezone = siteInfo.installation_time_zone ?? "UTC";
       const now = moment().tz(timezone);
       const offPeakOk = !hasTouData(tariff) || !isCurrentlyInPeak(tariff!, now);
-      const socOk = liveStatus.percentage_charged < MAX_CALIBRATION_SOC_PERCENT;
+      const socOk =
+        liveStatus.percentage_charged < MAX_CURVE_CALIBRATION_SOC_PERCENT;
       const onGrid = liveStatus.island_status !== "island_mode";
 
       if (!socOk || !onGrid || !offPeakOk) {
         const failed = [
           !socOk &&
-            `SOC must be below ${MAX_CALIBRATION_SOC_PERCENT}% (currently ${liveStatus.percentage_charged.toFixed(1)}%)`,
+            `SOC must be below ${MAX_CURVE_CALIBRATION_SOC_PERCENT}% (currently ${liveStatus.percentage_charged.toFixed(1)}%)`,
           !onGrid && "System must be on-grid",
           !offPeakOk && "Must be during off-peak hours",
         ].filter(Boolean);

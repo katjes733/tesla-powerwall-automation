@@ -20,10 +20,13 @@ import { useNotification } from "../notification/NotificationContext";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
 
 interface SafeguardStatus {
-  socOk: boolean;
+  socOkGridRate: boolean;
+  socOkCurve: boolean;
   solarOk: boolean;
   onGrid: boolean;
   offPeakOk: boolean;
+  socThresholdGridRate: number;
+  socThresholdCurve: number;
   socValue: number;
   solarKw: number;
   batteryKw: number;
@@ -444,13 +447,13 @@ export default function Calibration() {
 
   const allSafeguardsOk =
     safeguards !== null &&
-    safeguards.socOk &&
+    safeguards.socOkGridRate &&
     safeguards.solarOk &&
     safeguards.onGrid &&
     safeguards.offPeakOk;
   const allCurveSafeguardsOk =
     safeguards !== null &&
-    safeguards.socOk &&
+    safeguards.socOkCurve &&
     safeguards.onGrid &&
     safeguards.offPeakOk;
   const jobRunning = jobStatus?.status === "running";
@@ -547,8 +550,8 @@ export default function Calibration() {
               {safeguards ? (
                 <>
                   <SafeguardRow
-                    ok={safeguards.socOk}
-                    label={`SOC below 80% (currently ${safeguards.socValue}%)`}
+                    ok={safeguards.socOkGridRate}
+                    label={`SOC below ${safeguards.socThresholdGridRate}% (currently ${safeguards.socValue}%)`}
                   />
                   <SafeguardRow
                     ok={safeguards.solarOk}
@@ -576,8 +579,9 @@ export default function Calibration() {
                 sx={{ mt: 2, mb: 2 }}
               >
                 Calibration must be performed at night (solar &lt; 0.1 kW),
-                during off-peak hours, with SOC below 80%. When all conditions
-                are met, click Start Calibration. The system will enable grid
+                during off-peak hours, with SOC below{" "}
+                {safeguards?.socThresholdGridRate}%. When all conditions are
+                met, click Start Calibration. The system will enable grid
                 charging, wait for the charge rate to stabilize (detected
                 dynamically — up to 10 minutes), sample for 3 minutes, then
                 restore your previous grid charging state automatically.
@@ -737,8 +741,8 @@ export default function Calibration() {
               {safeguards ? (
                 <>
                   <SafeguardRow
-                    ok={safeguards.socOk}
-                    label={`SOC below 80% (currently ${safeguards.socValue}%)`}
+                    ok={safeguards.socOkCurve}
+                    label={`SOC below ${safeguards.socThresholdCurve}% (currently ${safeguards.socValue}%)`}
                   />
                   <SafeguardRow ok={safeguards.onGrid} label="On grid" />
                   <SafeguardRow
