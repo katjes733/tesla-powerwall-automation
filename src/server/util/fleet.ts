@@ -421,9 +421,10 @@ export class Fleet {
     dateStr: string,
     options: { method: string; headers: Record<string, string> },
   ): Promise<PowerHistoryPoint[]> {
-    // Avoid 00:00:00 — the API returns empty data at midnight.
+    // The API treats end_date as exclusive and returns empty data at midnight.
+    // 23:59 covers all five-minute slots through 23:55 without hitting that edge case.
     const endDate = moment
-      .tz(`${dateStr} 23:45`, "YYYY-MM-DD HH:mm", timezone)
+      .tz(`${dateStr} 23:59`, "YYYY-MM-DD HH:mm", timezone)
       .format("YYYY-MM-DDTHH:mm:ssZ");
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/calendar_history`,
