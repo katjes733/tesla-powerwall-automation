@@ -10,6 +10,7 @@ import { SignupVerification } from "~/server/database/models/signupVerification"
 import { TouScheduleConfig } from "~/server/database/models/touScheduleConfig";
 import { SiteCalibration } from "~/server/database/models/siteCalibration";
 import { SiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
+import { SiteSettings } from "~/server/database/models/siteSettings";
 import { LiveDataSample } from "~/server/database/models/liveDataSample";
 import { migrateTokenEncryption } from "~/server/database/migrateTokenEncryption";
 
@@ -66,6 +67,7 @@ class AppDataSource {
               SignupVerification,
               SiteCalibration,
               SiteCalibrationSample,
+              SiteSettings,
               LiveDataSample,
             ],
           })

@@ -20,6 +20,8 @@ import { maskEmail } from "~/server/util/maskEmail";
 import AppDataSource from "~/server/database/datasource";
 import type { ISiteCalibration } from "~/server/database/models/siteCalibration";
 import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
+import type { ISiteSettings } from "~/server/database/models/siteSettings";
+import { resolveSiteSettings } from "~/server/database/models/siteSettings";
 import {
   buildChargeCurveBins,
   blendChargeCurveBins,
@@ -409,8 +411,26 @@ export class Scheduler {
           .groupBy("s.site_id")
           .getRawMany<{ site_id: string }>();
 
+        const settingsRepo = db.getRepository<IBasicEntity & ISiteSettings>(
+          "SiteSettings",
+        );
+
         for (const { site_id } of rawGroups) {
           try {
+            const settingsRecord = await settingsRepo.findOne({
+              where: { site_id },
+            });
+            const siteSettings = resolveSiteSettings(
+              settingsRecord?.settings ?? null,
+            );
+            if (!siteSettings.auto_curve_calibration_enabled) {
+              logger.info(
+                { site_id },
+                "Curve aggregation skipped — auto calibration disabled for site",
+              );
+              continue;
+            }
+
             const existing = await calibRepo.findOne({
               where: { site_id, calibration_type: "chargeCurve" },
               order: { creation_time: "DESC" },

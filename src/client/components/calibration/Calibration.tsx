@@ -7,7 +7,9 @@ import {
   DialogContent,
   DialogContentText,
   DialogTitle,
+  FormControlLabel,
   Paper,
+  Switch,
   Tab,
   Tabs,
   Typography,
@@ -148,6 +150,8 @@ export default function Calibration() {
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [curveClearing, setCurveClearing] = useState(false);
   const [curveClearDialogOpen, setCurveClearDialogOpen] = useState(false);
+  const [autoCurveEnabled, setAutoCurveEnabled] = useState(true);
+  const [autoCurveLoading, setAutoCurveLoading] = useState(false);
 
   // Curve tab state
   const [curveJobStatus, setCurveJobStatus] = useState<CurveJobResponse | null>(
@@ -215,6 +219,7 @@ export default function Calibration() {
     setSafeguards(null);
     setCalibration(null);
     setCurveCalibration(null);
+    setAutoCurveEnabled(true);
     setJobId(null);
     setJobStatus(null);
     setCurveJobStatus(null);
@@ -254,6 +259,16 @@ export default function Calibration() {
       })
       .catch(() => showNotification("Failed to load calibration data", "error"))
       .finally(() => setLoadingData(false));
+
+    axiosInstance
+      .get<{
+        success: boolean;
+        data: { auto_curve_calibration_enabled: boolean };
+      }>(`/api/site-settings?siteId=${encodeURIComponent(selectedSiteId)}`)
+      .then((res) =>
+        setAutoCurveEnabled(res.data.data.auto_curve_calibration_enabled),
+      )
+      .catch(() => {});
 
     fetchCurveStatus(selectedSiteId);
 
@@ -367,6 +382,23 @@ export default function Calibration() {
       showNotification("Failed to clear curve calibration", "error");
     } finally {
       setCurveClearing(false);
+    }
+  };
+
+  const handleToggleAutoCurve = async (enabled: boolean) => {
+    if (!selectedSiteId) return;
+    setAutoCurveEnabled(enabled);
+    setAutoCurveLoading(true);
+    try {
+      await axiosInstance.patch("/api/site-settings", {
+        siteId: selectedSiteId,
+        settings: { auto_curve_calibration_enabled: enabled },
+      });
+    } catch {
+      setAutoCurveEnabled(!enabled);
+      showNotification("Failed to update setting", "error");
+    } finally {
+      setAutoCurveLoading(false);
     }
   };
 
@@ -485,7 +517,7 @@ export default function Calibration() {
         : null;
 
   return (
-    <Box sx={{ display: "flex", mt: 3, width: "100%" }}>
+    <Box sx={{ display: "flex", mt: 1, width: "100%" }}>
       {/* left spacer — yields space to content when viewport is narrow */}
       <Box sx={{ flex: "1 1 20%", minWidth: 0 }} />
 
@@ -752,87 +784,131 @@ export default function Calibration() {
               </Typography>
             </SettingCard>
 
-            <SettingCard>
-              <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
-                Manual Curve Calibration
-              </Typography>
+            <Box sx={{ display: "flex", gap: 2, mb: 2, alignItems: "stretch" }}>
+              {/* Manual Curve Calibration — 2/3 width */}
+              <Paper
+                variant="outlined"
+                sx={{ p: 3, flex: "2 1 0", minWidth: 0 }}
+              >
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                  Manual Curve Calibration
+                </Typography>
 
-              {safeguards ? (
-                <>
-                  <SafeguardRow
-                    ok={safeguards.socOkCurve}
-                    label={`SOC below ${safeguards.socThresholdCurve}% (currently ${safeguards.socValue}%)`}
-                  />
-                  <SafeguardRow ok={safeguards.onGrid} label="On grid" />
-                  <SafeguardRow
-                    ok={safeguards.offPeakOk}
-                    label="Off-peak period"
-                  />
-                </>
-              ) : (
+                {safeguards ? (
+                  <>
+                    <SafeguardRow
+                      ok={safeguards.socOkCurve}
+                      label={`SOC below ${safeguards.socThresholdCurve}% (currently ${safeguards.socValue}%)`}
+                    />
+                    <SafeguardRow ok={safeguards.onGrid} label="On grid" />
+                    <SafeguardRow
+                      ok={safeguards.offPeakOk}
+                      label="Off-peak period"
+                    />
+                  </>
+                ) : (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mb: 1 }}
+                  >
+                    Safeguard status unavailable
+                  </Typography>
+                )}
+
                 <Typography
                   variant="body2"
                   color="text.secondary"
-                  sx={{ mb: 1 }}
+                  sx={{ mt: 2, mb: 2 }}
                 >
-                  Safeguard status unavailable
+                  Enables grid charging from current SOC to 100%, sampling every
+                  15 s. Covers the full SOC range that automatic collection may
+                  not reach. Takes up to 3 hours. Can be stopped early — any
+                  sufficient data collected will be saved.
                 </Typography>
-              )}
-
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{ mt: 2, mb: 2 }}
-              >
-                Enables grid charging from current SOC to 100%, sampling every
-                15 s. Covers the full SOC range that automatic collection may
-                not reach. Takes up to 3 hours. Can be stopped early — any
-                sufficient data collected will be saved.
-              </Typography>
-
-              {curveJobStatus?.status === "running" && (
-                <Box
-                  sx={{ display: "flex", alignItems: "center", gap: 1, mb: 2 }}
-                >
-                  <CircularProgress size={18} />
-                  <Typography variant="body2">
-                    Charging… SOC {curveJobStatus.currentSoc.toFixed(1)}% →
-                    100%, {curveJobStatus.sampleCount} samples
-                  </Typography>
-                </Box>
-              )}
-
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <Button
-                  variant="contained"
-                  onClick={handleStartCurveCalibration}
-                  disabled={
-                    !allCurveSafeguardsOk ||
-                    curveJobStatus?.status === "running" ||
-                    curveStarting
-                  }
-                  startIcon={
-                    curveStarting ? <CircularProgress size={16} /> : undefined
-                  }
-                >
-                  {curveStarting ? "Starting…" : "Start Curve Calibration"}
-                </Button>
 
                 {curveJobStatus?.status === "running" && (
+                  <Box
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      mb: 2,
+                    }}
+                  >
+                    <CircularProgress size={18} />
+                    <Typography variant="body2">
+                      Charging… SOC {curveJobStatus.currentSoc.toFixed(1)}% →
+                      100%, {curveJobStatus.sampleCount} samples
+                    </Typography>
+                  </Box>
+                )}
+
+                <Box sx={{ display: "flex", gap: 1 }}>
                   <Button
-                    variant="outlined"
-                    color="warning"
-                    onClick={handleStopCurveCalibration}
-                    disabled={curveStopping}
+                    variant="contained"
+                    onClick={handleStartCurveCalibration}
+                    disabled={
+                      !allCurveSafeguardsOk ||
+                      curveJobStatus?.status === "running" ||
+                      curveStarting
+                    }
                     startIcon={
-                      curveStopping ? <CircularProgress size={16} /> : undefined
+                      curveStarting ? <CircularProgress size={16} /> : undefined
                     }
                   >
-                    {curveStopping ? "Stopping…" : "Stop"}
+                    {curveStarting ? "Starting…" : "Start Curve Calibration"}
                   </Button>
+
+                  {curveJobStatus?.status === "running" && (
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      onClick={handleStopCurveCalibration}
+                      disabled={curveStopping}
+                      startIcon={
+                        curveStopping ? (
+                          <CircularProgress size={16} />
+                        ) : undefined
+                      }
+                    >
+                      {curveStopping ? "Stopping…" : "Stop"}
+                    </Button>
+                  )}
+                </Box>
+              </Paper>
+
+              {/* Automatic Calibration — 1/3 width */}
+              <Paper
+                variant="outlined"
+                sx={{ p: 3, flex: "1 1 0", minWidth: 0 }}
+              >
+                <Typography variant="subtitle1" fontWeight="bold" gutterBottom>
+                  Automatic Calibration
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Switch
+                      checked={autoCurveEnabled}
+                      disabled={autoCurveLoading}
+                      onChange={(e) => handleToggleAutoCurve(e.target.checked)}
+                    />
+                  }
+                  label="Automatically build charge curve from charging sessions"
+                  componentsProps={{ typography: { variant: "body2" } }}
+                />
+                {!autoCurveEnabled && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ mt: 1 }}
+                  >
+                    The scheduled aggregation job will skip this site. Manual
+                    calibration runs are unaffected.
+                  </Typography>
                 )}
-              </Box>
-            </SettingCard>
+              </Paper>
+            </Box>
 
             <SettingCard>
               <Typography variant="subtitle1" fontWeight="bold" gutterBottom>

@@ -16,6 +16,7 @@ import {
   router as CalibrationRouter,
   recoverCurveCalibrations,
 } from "~/server/routes/calibration";
+import { router as SiteSettingsRouter } from "~/server/routes/siteSettings";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -113,6 +114,7 @@ app.use("/api/user", UserRouter);
 app.use("/api/auth", SignupVerificationRouter);
 app.use("/api/tou-config", TouConfigRouter);
 app.use("/api/calibration", CalibrationRouter);
+app.use("/api/site-settings", SiteSettingsRouter);
 
 if (process.env.NODE_ENV !== "development") {
   logger.info("Serving static files from 'public' directory");

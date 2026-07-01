@@ -215,7 +215,7 @@ export default function ManualSettings() {
   }, []);
 
   return (
-    <Box sx={{ maxWidth: 680, mx: "auto", px: 2, pt: 10, pb: 10 }}>
+    <Box sx={{ maxWidth: 680, mx: "auto", px: 2, pt: 3, pb: 10 }}>
       <Typography variant="h5" fontWeight={600} mb={1}>
         Manual Settings
       </Typography>
