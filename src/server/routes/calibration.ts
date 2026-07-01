@@ -434,6 +434,42 @@ router.delete(
   },
 );
 
+router.delete(
+  "/curve-clear",
+  validateBody(CalibrationClearSchema),
+  async (req, res, next) => {
+    const email = req.session.user!;
+    const { siteId } = req.body;
+    try {
+      const fleet = Fleet.getInstance(email, {
+        throwOnError: false,
+        mailOnError: false,
+      });
+      const products = await fleet.getEnergyProducts();
+      const product = products.find((p) => p.id === siteId);
+      if (!product) {
+        res.status(404).json({ success: false, message: "Site not found" });
+        return;
+      }
+
+      const db = await AppDataSource.getInstance();
+      const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
+        "SiteCalibration",
+      );
+      await repo.delete({
+        email,
+        site_id: String(product.energy_site_id),
+        calibration_type: CURVE_CALIBRATION_TYPE,
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      logger.error(error, "Error clearing curve calibration data");
+      next(error);
+    }
+  },
+);
+
 // ---------------------------------------------------------------------------
 // Curve calibration helpers
 // ---------------------------------------------------------------------------

@@ -146,6 +146,8 @@ export default function Calibration() {
   const [starting, setStarting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
+  const [curveClearing, setCurveClearing] = useState(false);
+  const [curveClearDialogOpen, setCurveClearDialogOpen] = useState(false);
 
   // Curve tab state
   const [curveJobStatus, setCurveJobStatus] = useState<CurveJobResponse | null>(
@@ -348,6 +350,23 @@ export default function Calibration() {
       showNotification("Failed to clear calibration", "error");
     } finally {
       setClearing(false);
+    }
+  };
+
+  const handleClearCurveCalibration = async () => {
+    setCurveClearDialogOpen(false);
+    if (!selectedSiteId) return;
+    setCurveClearing(true);
+    try {
+      await axiosInstance.delete("/api/calibration/curve-clear", {
+        data: { siteId: selectedSiteId },
+      });
+      setCurveCalibration(null);
+      showNotification("Curve calibration cleared", "success");
+    } catch {
+      showNotification("Failed to clear curve calibration", "error");
+    } finally {
+      setCurveClearing(false);
     }
   };
 
@@ -883,6 +902,21 @@ export default function Calibration() {
                           ).toLocaleString()}
                         </Typography>
                       </Box>
+                      <Button
+                        variant="outlined"
+                        color="error"
+                        size="small"
+                        sx={{ mt: 1 }}
+                        onClick={() => setCurveClearDialogOpen(true)}
+                        disabled={curveClearing}
+                        startIcon={
+                          curveClearing ? (
+                            <CircularProgress size={16} />
+                          ) : undefined
+                        }
+                      >
+                        {curveClearing ? "Clearing…" : "Clear Curve Data"}
+                      </Button>
                     </>
                   );
                 })()
@@ -914,6 +948,30 @@ export default function Calibration() {
           <Button onClick={() => setClearDialogOpen(false)}>Cancel</Button>
           <Button
             onClick={handleClearCalibration}
+            color="error"
+            variant="contained"
+          >
+            Clear
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={curveClearDialogOpen}
+        onClose={() => setCurveClearDialogOpen(false)}
+      >
+        <DialogTitle>Clear Curve Calibration</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            This will delete the stored charge curve for this site. Smart
+            charging will fall back to default acceptance estimates until the
+            curve is rebuilt from a full charging session.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCurveClearDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={handleClearCurveCalibration}
             color="error"
             variant="contained"
           >

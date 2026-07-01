@@ -32,11 +32,44 @@ const MIN_GRID_KW_FOR_SAMPLE = 1.0;
 // dataset covers the CC region and carries through the full CV taper to ~100%.
 // Used both here (dataset gate) and in the manual calibration route (start gate).
 export const MAX_CURVE_START_SOC_PERCENT = 85;
+// A gap larger than this between consecutive samples marks the boundary between
+// two distinct charging sessions (e.g. overnight charge vs next-day top-up).
+const SESSION_GAP_MS = 60 * 60 * 1000; // 1 hour
+// Sessions that never reached this SOC are considered partial (e.g. a grid-rate
+// calibration run that stops mid-charge) and are excluded from curve building.
+const MIN_SESSION_PEAK_SOC = 98;
 
 // Blend factor applied per scheduler run. New candidate data moves each bin
 // at most this fraction toward the new value, so a single session has limited
 // influence over an established curve. After ~10 sessions a bin is ~80% updated.
 export const EWMA_ALPHA = 0.15;
+
+type Sample = Pick<
+  IBasicEntity & ISiteCalibrationSample,
+  "sample_data" | "creation_time"
+>;
+
+function splitIntoSessions(sorted: Sample[]): Sample[][] {
+  if (sorted.length === 0) return [];
+  const sessions: Sample[][] = [];
+  let current: Sample[] = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prevMs = new Date(
+      sorted[i - 1].creation_time as unknown as string,
+    ).getTime();
+    const currMs = new Date(
+      sorted[i].creation_time as unknown as string,
+    ).getTime();
+    if (currMs - prevMs > SESSION_GAP_MS) {
+      sessions.push(current);
+      current = [sorted[i]];
+    } else {
+      current.push(sorted[i]);
+    }
+  }
+  sessions.push(current);
+  return sessions;
+}
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b);
@@ -47,17 +80,32 @@ function median(values: number[]): number {
 }
 
 export function buildChargeCurveBins(
-  samples: Pick<
-    IBasicEntity & ISiteCalibrationSample,
-    "sample_data" | "creation_time"
-  >[],
+  samples: Sample[],
 ): ChargeCurveCalibrationData | null {
   if (samples.length === 0) return null;
+
+  // Keep only samples from sessions that reached MIN_SESSION_PEAK_SOC.
+  // Partial sessions — e.g. a grid-rate calibration run that stops at ~72% —
+  // would otherwise inject a dense CC-plateau cluster at one SOC with no
+  // corresponding CV-taper coverage, producing a spurious cliff in the curve.
+  const sorted = [...samples].sort(
+    (a, b) =>
+      new Date(a.creation_time as unknown as string).getTime() -
+      new Date(b.creation_time as unknown as string).getTime(),
+  );
+  const fullSessionSamples = splitIntoSessions(sorted)
+    .filter(
+      (sess) =>
+        Math.max(...sess.map((s) => Number(s.sample_data.soc_percent))) >=
+        MIN_SESSION_PEAK_SOC,
+    )
+    .flat();
+  if (fullSessionSamples.length === 0) return null;
 
   // Only use samples where grid is contributing ≥ MIN_GRID_KW_FOR_SAMPLE.
   // This excludes solar-only periods where battery_kw is capped by solar
   // availability rather than by the battery BMS acceptance curve.
-  const valid = samples.filter(
+  const valid = fullSessionSamples.filter(
     (s) => Number(s.sample_data.grid_kw) >= MIN_GRID_KW_FOR_SAMPLE,
   );
   if (valid.length === 0) return null;
