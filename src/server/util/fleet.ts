@@ -11,6 +11,7 @@ import type {
   RefreshTokenData,
   SiteInfo,
   SmartChargingActionConfig,
+  SocPoint,
   SolarPowerDataPoint,
   TokenData,
 } from "~/server/types/common";
@@ -511,6 +512,92 @@ export class Fleet {
     const points = isToday
       ? rawPoints.filter((p) => !moment(p.timestamp).isAfter(now))
       : rawPoints;
+
+    try {
+      const ttl = isToday ? 5 * 60 : 30 * 24 * 3600;
+      await redis.setex(cacheKey, ttl, JSON.stringify(points));
+    } catch {
+      // Redis write failed — non-fatal.
+    }
+
+    return { points, cached: false };
+  }
+
+  async getDaySoeHistory(
+    product: Product,
+    timezone: string,
+    dateStr: string,
+    forceRefresh = false,
+  ): Promise<{ points: SocPoint[]; cached: boolean }> {
+    const isToday = moment().tz(timezone).format("YYYY-MM-DD") === dateStr;
+    const cacheKey = `soe_history:${product.energy_site_id}:${dateStr}`;
+
+    if (!forceRefresh) {
+      try {
+        const raw = await redis.get(cacheKey);
+        if (raw) {
+          return { points: JSON.parse(raw) as SocPoint[], cached: true };
+        }
+      } catch {
+        // Redis unavailable — fall through.
+      }
+    }
+
+    const endDate = moment
+      .tz(`${dateStr} 23:59`, "YYYY-MM-DD HH:mm", timezone)
+      .format("YYYY-MM-DDTHH:mm:ssZ");
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/calendar_history`,
+      baseApiUrl,
+    );
+    url.searchParams.set("kind", "soe");
+    url.searchParams.set("end_date", endDate);
+
+    const options = await this.getDefaultGetOptions();
+    const res = await fetch(url.toString(), options);
+    if (!res.ok) {
+      throw new Error(
+        `SOE history fetch failed for site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+      );
+    }
+    const json = (await res.json()) as Record<string, any>;
+    const raw15 = (json?.response?.time_series ?? []) as Array<{
+      timestamp: string;
+      soe: number;
+    }>;
+
+    // Linearly interpolate 15-minute snapshots to 5-minute resolution so the
+    // SOC chart aligns with the power history chart (also 5-minute).
+    const interpolated: SocPoint[] = [];
+    for (let i = 0; i < raw15.length; i++) {
+      const cur = raw15[i];
+      interpolated.push({
+        timestamp: cur.timestamp,
+        soc_percent: Math.round(cur.soe * 10) / 10,
+      });
+      const next = raw15[i + 1];
+      if (next) {
+        const t0 = moment(cur.timestamp).valueOf();
+        const t1 = moment(next.timestamp).valueOf();
+        const gapMs = t1 - t0;
+        // Only interpolate when the gap is exactly 15 minutes.
+        if (gapMs === 15 * 60 * 1000) {
+          for (const frac of [1 / 3, 2 / 3]) {
+            interpolated.push({
+              timestamp: moment(t0 + gapMs * frac).toISOString(),
+              soc_percent:
+                Math.round((cur.soe + (next.soe - cur.soe) * frac) * 10) / 10,
+            });
+          }
+        }
+      }
+    }
+
+    // Strip future slots for today.
+    const now = moment();
+    const points = isToday
+      ? interpolated.filter((p) => !moment(p.timestamp).isAfter(now))
+      : interpolated;
 
     try {
       const ttl = isToday ? 5 * 60 : 30 * 24 * 3600;

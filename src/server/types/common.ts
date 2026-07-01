@@ -94,6 +94,11 @@ export interface PowerHistoryPoint {
   load_power: number; // Watts (home consumption, ≥0)
 }
 
+export interface SocPoint {
+  timestamp: string; // ISO 8601
+  soc_percent: number; // 0–100
+}
+
 // Backward-compat alias: getSolarHistory only uses solar_power.
 export type SolarPowerDataPoint = PowerHistoryPoint;
 

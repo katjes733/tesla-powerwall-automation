@@ -4,8 +4,6 @@ import {
   isCalibrating,
   isDischargeCalibrating,
 } from "~/server/util/fleet";
-import AppDataSource from "~/server/database/datasource";
-import moment from "moment-timezone";
 
 const MANUAL_ACTIONS = new Set([
   "setBackupReserve",
@@ -208,29 +206,10 @@ router.get("/history", async (req, res, next) => {
     const siteInfo = await fleet.getSiteInfo(product);
     const timezone = siteInfo?.installation_time_zone ?? "UTC";
 
-    const [{ points, cached }, socRows] = await Promise.all([
+    const [{ points, cached }, { points: socPoints }] = await Promise.all([
       fleet.getDayHistory(product, timezone, date, forceRefresh),
-      AppDataSource.getInstance(true).then((ds) =>
-        ds
-          .getRepository("LiveDataSample")
-          .createQueryBuilder("s")
-          .where("s.site_id = :siteId", { siteId })
-          .andWhere("s.type = :type", { type: "soc" })
-          .andWhere("s.creation_time >= :start", {
-            start: moment.tz(date, timezone).startOf("day").toDate(),
-          })
-          .andWhere("s.creation_time <= :end", {
-            end: moment.tz(date, timezone).endOf("day").toDate(),
-          })
-          .orderBy("s.creation_time", "ASC")
-          .getMany(),
-      ),
+      fleet.getDaySoeHistory(product, timezone, date, forceRefresh),
     ]);
-
-    const socPoints = socRows.map((r: any) => ({
-      timestamp: (r.creation_time as Date).toISOString(),
-      soc_percent: (r.data as { soc_percent: number }).soc_percent,
-    }));
 
     res.json({ success: true, data: { date, points, socPoints, cached } });
   } catch (error: any) {
