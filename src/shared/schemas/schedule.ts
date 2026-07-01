@@ -10,6 +10,10 @@ const ScheduleConditionSchema = z.object({
   value: z.unknown(),
 });
 
+const ScheduleOptionsSchema = z.object({
+  recovery: z.enum(["none", "on_restart"]).optional(),
+});
+
 export const ScheduleUpsertSchema = z.object({
   id: z.string().uuid().optional(),
   cron: z.string().optional(),
@@ -19,6 +23,7 @@ export const ScheduleUpsertSchema = z.object({
   expires_at: z.string().nullable().optional(),
   actions: z.array(ScheduleActionSchema).nullable().optional(),
   conditions: z.array(ScheduleConditionSchema).nullable().optional(),
+  options: ScheduleOptionsSchema.nullable().optional(),
 });
 
 export const ScheduleDeleteSchema = z.object({

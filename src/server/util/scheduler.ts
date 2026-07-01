@@ -1,11 +1,13 @@
 import type { ScheduledTask } from "node-cron";
 import { schedule as scheduleTask } from "node-cron";
 import moment from "moment-timezone";
+import CronExpressionParser from "cron-parser";
 import type {
   ISchedule,
   IScheduleAction,
   IScheduleCondition,
 } from "~/server/database/models/schedule";
+import { resolveScheduleOptions } from "~/server/database/models/schedule";
 import type { LiveStatus } from "~/server/types/common";
 import type { IBasicEntity } from "~/server/types/common";
 import { getAllEmails as getAllEmailsFromDb } from "~/server/util/routes/refreshToken";
@@ -97,6 +99,17 @@ async function evaluateConditions(
         `Unknown condition "${primary.condition}" — treating as passed`,
       );
       return true;
+  }
+}
+
+function isTickBased(cron: string): boolean {
+  try {
+    const interval = CronExpressionParser.parse(cron);
+    const t1 = interval.next().toDate().getTime();
+    const t2 = interval.next().toDate().getTime();
+    return t2 - t1 <= 60_000;
+  } catch {
+    return false;
   }
 }
 
@@ -332,6 +345,35 @@ export class Scheduler {
     }
   }
 
+  private async maybeRecoverSchedule(schedule: ISchedule): Promise<void> {
+    const options = resolveScheduleOptions(schedule.options);
+    if (options.recovery !== "on_restart") return;
+    if (isTickBased(schedule.cron)) return;
+
+    try {
+      const interval = CronExpressionParser.parse(schedule.cron, {
+        tz: schedule.timezone,
+        currentDate: new Date(),
+      });
+      const lastExpectedFire = interval.prev().toDate();
+      const lastRun = schedule.last_run_time;
+
+      if (lastRun && new Date(lastRun) >= lastExpectedFire) {
+        logger.info(
+          `Schedule ${schedule.id} already ran after last expected fire — no recovery needed`,
+        );
+        return;
+      }
+
+      logger.info(
+        `Recovering missed run for schedule ${schedule.id} — last expected: ${lastExpectedFire.toISOString()}, last run: ${lastRun ? new Date(lastRun).toISOString() : "never"}`,
+      );
+      await this.runEvaluation(schedule, new Map());
+    } catch (err: any) {
+      logger.error(err, `Recovery check failed for schedule ${schedule.id}`);
+    }
+  }
+
   async initializeOneSchedule(schedule: ISchedule) {
     if (!this.isValidSchedule(schedule)) {
       return;
@@ -346,6 +388,7 @@ export class Scheduler {
       `Registered schedule ID ${schedule.id} | cron: "${schedule.cron}" | timezone: ${schedule.timezone} | next run: ${task.getNextRun()?.toISOString() ?? "unknown"}`,
     );
     this.enabledScheduledTasks.set(schedule.id || "", task);
+    await this.maybeRecoverSchedule(schedule);
   }
 
   async initialize(schedulingEnabled = true) {
@@ -374,6 +417,7 @@ export class Scheduler {
       await this.initializeOneSchedule(schedule);
     }
 
+    // Internal task — not user-configurable, tick-rate, no recovery mechanism.
     this.calibrationTask?.stop();
     this.calibrationTask = scheduleTask("* * * * *", async () => {
       for (const { email } of this.validEmails) {
@@ -393,6 +437,7 @@ export class Scheduler {
     });
     logger.info("Calibration detection task initialized.");
 
+    // Internal task — not user-configurable, idempotent at 6-hour granularity, no recovery mechanism.
     this.curveCronTask?.stop();
     this.curveCronTask = scheduleTask("0 */6 * * *", async () => {
       logger.info("Running charge curve aggregation and sample purge job");
@@ -554,6 +599,7 @@ export class Scheduler {
       expiresAt: schedule.expires_at,
       conditions: schedule.conditions,
       actions: schedule.actions,
+      options: schedule.options,
     });
     schedule.id = result?.data?.id ?? schedule.id;
     if (this.schedulingEnabled && this.isValidSchedule(schedule)) {

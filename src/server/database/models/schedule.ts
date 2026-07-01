@@ -32,6 +32,19 @@ export interface IScheduleAction {
   value: string;
 }
 
+export interface IScheduleOptions {
+  recovery?: "none" | "on_restart";
+}
+
+export function resolveScheduleOptions(
+  raw: unknown,
+): Required<IScheduleOptions> {
+  const opts = (raw ?? {}) as Partial<IScheduleOptions>;
+  return {
+    recovery: opts.recovery ?? "none",
+  };
+}
+
 export interface ISchedule {
   id?: string;
   email: string;
@@ -47,6 +60,7 @@ export interface ISchedule {
   last_error?: string;
   last_error_time?: Date;
   last_success_time?: Date;
+  options?: IScheduleOptions | null;
 }
 
 export const Schedule = new EntitySchema<IBasicEntity & ISchedule>({
@@ -69,6 +83,7 @@ export const Schedule = new EntitySchema<IBasicEntity & ISchedule>({
     last_error: { type: "text", nullable: true },
     last_error_time: { type: "timestamp with time zone", nullable: true },
     last_success_time: { type: "timestamp with time zone", nullable: true },
+    options: { type: "jsonb", nullable: true },
   },
   indices: [
     {

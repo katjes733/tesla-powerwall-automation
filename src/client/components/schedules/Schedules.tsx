@@ -3226,6 +3226,7 @@ export default function Schedules() {
               expires_at: null,
               conditions: null,
               actions: null,
+              options: { recovery: "none" },
             };
             setSchedule(newSchedule);
             setHolidayEntries([]);
@@ -3314,6 +3315,29 @@ export default function Schedules() {
                 setActionValues={setActionValues}
                 setSchedule={setSchedule}
               />
+              <Tooltip
+                title="Controls missed-run recovery. When set to 'On server restart', the schedule fires immediately on startup if a scheduled run was missed while the server was offline."
+                placement="top"
+                arrow
+              >
+                <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                  <InputLabel id="recovery-label-time">Recovery</InputLabel>
+                  <Select
+                    labelId="recovery-label-time"
+                    value={schedule?.options?.recovery ?? "none"}
+                    label="Recovery"
+                    onChange={(e) =>
+                      setSchedule((prev: any) => ({
+                        ...prev,
+                        options: { ...prev?.options, recovery: e.target.value },
+                      }))
+                    }
+                  >
+                    <MenuItem value="none">Disabled</MenuItem>
+                    <MenuItem value="on_restart">On server restart</MenuItem>
+                  </Select>
+                </FormControl>
+              </Tooltip>
             </Box>
           )}
           {dialogTab === 1 && (
@@ -3416,6 +3440,29 @@ export default function Schedules() {
                 autoPopulateToolbarSource={autoPopulateToolbarSource}
                 setAutoPopulateToolbarSource={setAutoPopulateToolbarSource}
               />
+              <Tooltip
+                title="Controls missed-run recovery. When set to 'On server restart', the schedule fires immediately on startup if a scheduled run was missed while the server was offline."
+                placement="top"
+                arrow
+              >
+                <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                  <InputLabel id="recovery-label-holidays">Recovery</InputLabel>
+                  <Select
+                    labelId="recovery-label-holidays"
+                    value={schedule?.options?.recovery ?? "none"}
+                    label="Recovery"
+                    onChange={(e) =>
+                      setSchedule((prev: any) => ({
+                        ...prev,
+                        options: { ...prev?.options, recovery: e.target.value },
+                      }))
+                    }
+                  >
+                    <MenuItem value="none">Disabled</MenuItem>
+                    <MenuItem value="on_restart">On server restart</MenuItem>
+                  </Select>
+                </FormControl>
+              </Tooltip>
             </Box>
           )}
         </DialogContent>
