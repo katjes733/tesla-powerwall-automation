@@ -114,7 +114,7 @@ router.get("/", async (req, res, next) => {
       mailOnError: false,
     });
     const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => p.id === siteId);
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
     if (!product) {
       res.status(404).json({ success: false, message: "Site not found" });
       return;
@@ -187,7 +187,7 @@ router.post(
         mailOnError: false,
       });
       const products = await fleet.getEnergyProducts();
-      const product = products.find((p) => p.id === siteId);
+      const product = products.find((p) => String(p.energy_site_id) === siteId);
       if (!product) {
         res.status(404).json({ success: false, message: "Site not found" });
         return;
@@ -404,7 +404,7 @@ router.delete(
         mailOnError: false,
       });
       const products = await fleet.getEnergyProducts();
-      const product = products.find((p) => p.id === siteId);
+      const product = products.find((p) => String(p.energy_site_id) === siteId);
       if (!product) {
         res.status(404).json({ success: false, message: "Site not found" });
         return;
@@ -439,7 +439,7 @@ router.delete(
         mailOnError: false,
       });
       const products = await fleet.getEnergyProducts();
-      const product = products.find((p) => p.id === siteId);
+      const product = products.find((p) => String(p.energy_site_id) === siteId);
       if (!product) {
         res.status(404).json({ success: false, message: "Site not found" });
         return;
@@ -581,7 +581,7 @@ async function runCurveCalibration(
     logger.error(err, "Curve calibration job failed");
   } finally {
     job.phase = "done";
-    curveJobBySite.delete(product.id);
+    curveJobBySite.delete(String(product.energy_site_id));
 
     await fleet
       .setGridCharging(product, previousGridState)
@@ -620,7 +620,7 @@ router.post(
         mailOnError: false,
       });
       const products = await fleet.getEnergyProducts();
-      const product = products.find((p) => p.id === siteId);
+      const product = products.find((p) => String(p.energy_site_id) === siteId);
       if (!product) {
         res.status(404).json({ success: false, message: "Site not found" });
         return;
@@ -816,7 +816,7 @@ router.get("/curve-status", async (req, res, next) => {
       mailOnError: false,
     });
     const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => p.id === siteId);
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
     if (!product) {
       res.status(404).json({ success: false, message: "Site not found" });
       return;

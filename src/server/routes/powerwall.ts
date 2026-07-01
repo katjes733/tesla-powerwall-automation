@@ -38,7 +38,7 @@ router.get("/sites", async (req, res, next) => {
     res.json({
       success: true,
       data: products.map((p, i) => ({
-        id: p.id,
+        id: String(p.energy_site_id),
         site_name: p.site_name,
         is_online:
           statuses[i] !== null && statuses[i]?.island_status === "on_grid",
@@ -70,7 +70,7 @@ router.get("/tariff-info", async (req, res, next) => {
       mailOnError: false,
     });
     const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => p.id === siteId);
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
     if (!product) {
       res.status(404).json({ success: false, message: "Site not found" });
       return;
@@ -154,7 +154,7 @@ router.post("/apply-settings", async (req, res, next) => {
       mailOnError: false,
     });
     const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => p.id === siteId);
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
     if (!product) {
       res.status(404).json({ success: false, message: "Site not found" });
       return;
@@ -197,7 +197,7 @@ router.get("/history", async (req, res, next) => {
       mailOnError: false,
     });
     const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => p.id === siteId);
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
     if (!product) {
       res.status(404).json({ success: false, message: "Site not found" });
       return;

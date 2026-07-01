@@ -187,7 +187,9 @@ export class Scheduler {
       const siteIds = schedule.site_ids;
       const products = await Fleet.getInstance(schedule.email)
         .getEnergyProducts()
-        .then((all) => all.filter((p) => siteIds.includes(p.id)));
+        .then((all) =>
+          all.filter((p) => siteIds.includes(String(p.energy_site_id))),
+        );
 
       const hasConditions =
         schedule.conditions && schedule.conditions.length > 0;

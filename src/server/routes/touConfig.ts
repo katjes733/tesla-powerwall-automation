@@ -102,7 +102,7 @@ router.post(
       });
       const products = await fleet.getEnergyProducts();
       const product = products.find(
-        (p) => String(p.energy_site_id) === site_id || p.id === site_id,
+        (p) => String(p.energy_site_id) === site_id,
       );
       if (!product) {
         res.status(404).json({ success: false, message: "Site not found" });

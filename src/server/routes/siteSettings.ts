@@ -27,7 +27,7 @@ async function resolveEnergySiteId(
     mailOnError: false,
   });
   const products = await fleet.getEnergyProducts();
-  const product = products.find((p) => p.id === siteId);
+  const product = products.find((p) => String(p.energy_site_id) === siteId);
   return product ? String(product.energy_site_id) : null;
 }
 

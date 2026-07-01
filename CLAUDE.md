@@ -113,6 +113,7 @@ Node.js / Bun validate TLS certificates by default (`rejectUnauthorized: true`).
 
 ## Key conventions
 
+- **Site identifier** — Always use `String(product.energy_site_id)` (e.g. `"2252499435259085"`) as the canonical `site_id` for all DB writes, Redis cache keys, and API responses. `product.id` is the gateway string (`STE…`) returned by Tesla's `/products` endpoint and is only valid as a transient lookup key when resolving a client-supplied `siteId` to a `Product`. Do not store or expose `product.id` in the DB or API surface.
 - **Dependency audit** — `bun run verify` ends with `bun audit` and fails if vulnerabilities are found. When it fails, surface the findings to the user and discuss the appropriate fix together — the options include `bun update` (latest compatible versions), `bun update --latest` (allows major version bumps, may introduce breaking changes), or an `overrides` entry in `package.json` to pin a specific transitive dependency. Do not silently apply overrides or auto-update without the user's input.
 - **Path alias** — `~/` maps to `src/` (configured in `tsconfig.json` and Vite). Use it for all cross-module imports within `src/`.
 - **TypeORM Entity Schema** — models use `EntitySchema` (not decorators). See `src/server/database/models/` for the pattern.
