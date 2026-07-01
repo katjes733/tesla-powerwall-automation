@@ -28,6 +28,11 @@ const SAMPLE_RETENTION_DAYS = 60;
 // supply-limited. Solar-only charging may under-drive the battery, making
 // battery_kw reflect solar availability rather than the true acceptance curve.
 const MIN_GRID_KW_FOR_SAMPLE = 1.0;
+// Above this SOC the battery acceptance naturally falls below MIN_GRID_KW_FOR_SAMPLE
+// even under full grid charging. Samples here are exempt from the grid_kw gate
+// because the recorded battery_kw is the true BMS acceptance limit regardless
+// of how much the grid happens to be contributing.
+const CV_TAPER_SOC_EXEMPT_PERCENT = 95;
 // Maximum SOC at which a calibration session must have started. Ensures the
 // dataset covers the CC region and carries through the full CV taper to ~100%.
 // Used both here (dataset gate) and in the manual calibration route (start gate).
@@ -102,11 +107,14 @@ export function buildChargeCurveBins(
     .flat();
   if (fullSessionSamples.length === 0) return null;
 
-  // Only use samples where grid is contributing ≥ MIN_GRID_KW_FOR_SAMPLE.
-  // This excludes solar-only periods where battery_kw is capped by solar
-  // availability rather than by the battery BMS acceptance curve.
+  // Require grid_kw >= MIN_GRID_KW_FOR_SAMPLE to exclude supply-limited solar
+  // samples. Exempt samples above CV_TAPER_SOC_EXEMPT_PERCENT: at that SOC the
+  // battery's BMS acceptance naturally falls below MIN_GRID_KW_FOR_SAMPLE even
+  // under full grid charging, so the recorded battery_kw is the true limit.
   const valid = fullSessionSamples.filter(
-    (s) => Number(s.sample_data.grid_kw) >= MIN_GRID_KW_FOR_SAMPLE,
+    (s) =>
+      Number(s.sample_data.grid_kw) >= MIN_GRID_KW_FOR_SAMPLE ||
+      Number(s.sample_data.soc_percent) >= CV_TAPER_SOC_EXEMPT_PERCENT,
   );
   if (valid.length === 0) return null;
 
