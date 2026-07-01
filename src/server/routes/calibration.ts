@@ -131,7 +131,6 @@ router.get("/", async (req, res, next) => {
     const [calibration, curveCalibration] = await Promise.all([
       repo.findOne({
         where: {
-          email,
           site_id: energySiteId,
           calibration_type: CALIBRATION_TYPE,
         },
@@ -139,7 +138,6 @@ router.get("/", async (req, res, next) => {
       }),
       repo.findOne({
         where: {
-          email,
           site_id: energySiteId,
           calibration_type: CURVE_CALIBRATION_TYPE,
         },
@@ -249,11 +247,9 @@ router.post(
 
       res.json({ success: true, data: { jobId } });
 
-      runCalibration(email, fleet, product, job, previousGridState).catch(
-        (err) => {
-          logger.error(err, "Unexpected error in calibration background job");
-        },
-      );
+      runCalibration(fleet, product, job, previousGridState).catch((err) => {
+        logger.error(err, "Unexpected error in calibration background job");
+      });
     } catch (error: any) {
       logger.error(error, "Error starting calibration");
       next(error);
@@ -262,7 +258,6 @@ router.post(
 );
 
 async function runCalibration(
-  email: string,
   fleet: Fleet,
   product: Product,
   job: CalibrationJob,
@@ -331,7 +326,6 @@ async function runCalibration(
       "SiteCalibration",
     );
     const saved = await repo.save({
-      email,
       site_id: String(product.energy_site_id),
       calibration_type: CALIBRATION_TYPE,
       calibration_data: calibrationData as unknown as Record<string, unknown>,
@@ -421,7 +415,6 @@ router.delete(
         "SiteCalibration",
       );
       await repo.delete({
-        email,
         site_id: String(product.energy_site_id),
         calibration_type: CALIBRATION_TYPE,
       });
@@ -457,7 +450,6 @@ router.delete(
         "SiteCalibration",
       );
       await repo.delete({
-        email,
         site_id: String(product.energy_site_id),
         calibration_type: CURVE_CALIBRATION_TYPE,
       });
@@ -475,7 +467,6 @@ router.delete(
 // ---------------------------------------------------------------------------
 
 async function finalizeCurveCalibration(
-  email: string,
   energySiteId: string,
   jobStartedAtMs: number,
 ): Promise<void> {
@@ -491,7 +482,6 @@ async function finalizeCurveCalibration(
   const sessionSamples = (await (sampleRepo as any).find({
     where: {
       site_id: energySiteId,
-      email,
       calibration_type: CURVE_CALIBRATION_TYPE,
     },
     order: { creation_time: "ASC" },
@@ -512,7 +502,6 @@ async function finalizeCurveCalibration(
   if (meetsQualityThreshold(candidate, existingData)) {
     const now = new Date();
     await calibRepo.save({
-      email,
       site_id: energySiteId,
       calibration_type: CURVE_CALIBRATION_TYPE,
       calibration_data: candidate as unknown as Record<string, unknown>,
@@ -536,7 +525,6 @@ async function finalizeCurveCalibration(
 }
 
 async function runCurveCalibration(
-  email: string,
   fleet: Fleet,
   product: Product,
   jobId: string,
@@ -569,7 +557,6 @@ async function runCurveCalibration(
       if (live.battery_power < -500) {
         const now = new Date();
         await sampleRepo.save({
-          email,
           site_id: energySiteId,
           calibration_type: CURVE_CALIBRATION_TYPE,
           creation_time: now,
@@ -611,7 +598,7 @@ async function runCurveCalibration(
       // non-fatal
     }
 
-    await finalizeCurveCalibration(email, energySiteId, startedAtMs).catch(
+    await finalizeCurveCalibration(energySiteId, startedAtMs).catch(
       (err: any) => logger.error(err, "Failed to finalize curve calibration"),
     );
   }
@@ -726,7 +713,6 @@ router.post(
       res.json({ success: true, data: { jobId } });
 
       runCurveCalibration(
-        email,
         fleet,
         product,
         jobId,
@@ -844,7 +830,7 @@ router.get("/curve-status", async (req, res, next) => {
     // TypeORM doesn't distribute FindOptionsOrder over intersection types;
     // cast around it and re-annotate the result.
     const samples = (await (repo as any).find({
-      where: { email, site_id: energySiteId },
+      where: { site_id: energySiteId },
       order: { creation_time: "ASC" },
     })) as Array<IBasicEntity & ISiteCalibrationSample>;
 
@@ -952,7 +938,6 @@ export async function recoverCurveCalibrations(): Promise<void> {
             .catch(() => {});
           await redis.del(key);
           await finalizeCurveCalibration(
-            payload.email,
             payload.energySiteId,
             payload.startedAtMs,
           ).catch(() => {});
@@ -966,7 +951,6 @@ export async function recoverCurveCalibrations(): Promise<void> {
             "Curve calibration recovered: resuming background job",
           );
           runCurveCalibration(
-            payload.email,
             fleet,
             product,
             payload.jobId,

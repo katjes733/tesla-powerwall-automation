@@ -836,8 +836,7 @@ export class Fleet {
   private async getCalibration(
     siteId: string,
   ): Promise<(ISiteCalibration & IBasicEntity) | null> {
-    const cacheKey = `${this.email}:${siteId}`;
-    const cached = calibrationCache.get(cacheKey);
+    const cached = calibrationCache.get(siteId);
     if (cached && performance.now() - cached.at < CALIBRATION_CACHE_TTL_MS) {
       return cached.data;
     }
@@ -847,13 +846,12 @@ export class Fleet {
     );
     const record = await repo.findOne({
       where: {
-        email: this.email,
         site_id: siteId,
         calibration_type: "grid_charge_rate",
       },
       order: { creation_time: "DESC" },
     });
-    calibrationCache.set(cacheKey, {
+    calibrationCache.set(siteId, {
       data: record ?? null,
       at: performance.now(),
     });
@@ -894,7 +892,6 @@ export class Fleet {
     );
     const now = new Date();
     await repo.save({
-      email: this.email,
       site_id: siteId,
       calibration_type: "chargeCurve",
       creation_time: now,
@@ -1719,7 +1716,6 @@ export class Fleet {
   ): Promise<void> {
     const openEvent = await repo.findOne({
       where: {
-        email: this.email,
         site_id: siteId,
         event_payload: IsNull(),
         event_type: eventType,
@@ -1732,7 +1728,6 @@ export class Fleet {
         id: uuidv4(),
         creation_time: now,
         modified_time: now,
-        email: this.email,
         site_id: siteId,
         site_name: siteName,
         event_type: eventType,

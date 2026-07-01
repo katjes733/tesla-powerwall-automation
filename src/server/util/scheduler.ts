@@ -404,16 +404,15 @@ export class Scheduler {
         const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000);
         const rawGroups = await sampleRepo
           .createQueryBuilder("s")
-          .select("s.email", "email")
-          .addSelect("s.site_id", "site_id")
+          .select("s.site_id", "site_id")
           .where("s.creation_time >= :cutoff", { cutoff })
-          .groupBy("s.email, s.site_id")
-          .getRawMany<{ email: string; site_id: string }>();
+          .groupBy("s.site_id")
+          .getRawMany<{ site_id: string }>();
 
-        for (const { email, site_id } of rawGroups) {
+        for (const { site_id } of rawGroups) {
           try {
             const existing = await calibRepo.findOne({
-              where: { email, site_id, calibration_type: "chargeCurve" },
+              where: { site_id, calibration_type: "chargeCurve" },
               order: { creation_time: "DESC" },
             });
             const existingData = existing
@@ -430,8 +429,8 @@ export class Scheduler {
             const samples = (await sampleRepo
               .createQueryBuilder("s")
               .where(
-                "s.email = :email AND s.site_id = :site_id AND s.calibration_type = :type AND s.creation_time > :since",
-                { email, site_id, type: "chargeCurve", since },
+                "s.site_id = :site_id AND s.calibration_type = :type AND s.creation_time > :since",
+                { site_id, type: "chargeCurve", since },
               )
               .orderBy("s.creation_time", "ASC")
               .getMany()) as Array<IBasicEntity & ISiteCalibrationSample>;
@@ -447,7 +446,6 @@ export class Scheduler {
 
             const now = new Date();
             await calibRepo.save({
-              email,
               site_id,
               calibration_type: "chargeCurve",
               calibration_data: updated as unknown as Record<string, unknown>,
@@ -456,7 +454,6 @@ export class Scheduler {
             });
             logger.info(
               {
-                email: maskEmail(email),
                 site_id,
                 bins: updated.bins.length,
                 blended: existingData !== null,
@@ -464,10 +461,7 @@ export class Scheduler {
               "Curve aggregation: charge_curve updated",
             );
           } catch (err: any) {
-            logger.error(
-              err,
-              `Curve aggregation failed for site ${site_id} (${maskEmail(email)})`,
-            );
+            logger.error(err, `Curve aggregation failed for site ${site_id}`);
           }
         }
 

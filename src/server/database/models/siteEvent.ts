@@ -6,7 +6,6 @@ export interface ISiteEvent {
   id?: string;
   creation_time: Date;
   modified_time: Date;
-  email: string;
   site_id: string;
   site_name: string;
   event_type: SiteEventType;
@@ -20,7 +19,6 @@ export const SiteEvent = new EntitySchema<ISiteEvent>({
     id: { type: "uuid", primary: true, generated: "uuid", nullable: false },
     creation_time: { type: "timestamp with time zone", nullable: false },
     modified_time: { type: "timestamp with time zone", nullable: false },
-    email: { type: "varchar", length: 255, nullable: false },
     site_id: { type: "varchar", length: 255, nullable: false },
     site_name: { type: "varchar", length: 255, nullable: false },
     event_type: { type: "varchar", length: 50, nullable: false },
@@ -28,8 +26,8 @@ export const SiteEvent = new EntitySchema<ISiteEvent>({
   },
   indices: [
     {
-      name: "idx_site_event_email_site",
-      columns: ["email", "site_id"],
+      name: "idx_site_event_site",
+      columns: ["site_id"],
       unique: false,
     },
     {

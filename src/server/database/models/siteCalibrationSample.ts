@@ -9,7 +9,6 @@ export interface ISiteCalibrationSampleData {
 }
 
 export interface ISiteCalibrationSample {
-  email: string;
   site_id: string;
   calibration_type: string; // matches site_calibrations.calibration_type (e.g. "chargeCurve")
   sample_data: ISiteCalibrationSampleData;
@@ -24,7 +23,6 @@ export const SiteCalibrationSample = new EntitySchema<
     id: { type: "uuid", primary: true, generated: "uuid", nullable: false },
     creation_time: { type: "timestamp with time zone", nullable: false },
     modified_time: { type: "timestamp with time zone", nullable: false },
-    email: { type: "varchar", length: 255, nullable: false },
     site_id: { type: "varchar", length: 255, nullable: false },
     calibration_type: { type: "varchar", length: 100, nullable: false },
     sample_data: { type: "jsonb", nullable: false },
@@ -32,7 +30,7 @@ export const SiteCalibrationSample = new EntitySchema<
   indices: [
     {
       name: "idx_calsample_lookup",
-      columns: ["email", "site_id", "calibration_type", "creation_time"],
+      columns: ["site_id", "calibration_type", "creation_time"],
       unique: false,
     },
   ],
