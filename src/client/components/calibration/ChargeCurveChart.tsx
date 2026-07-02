@@ -33,25 +33,31 @@ function niceTickInterval(dataMin: number, dataMax: number): number {
   return niceFrac * Math.pow(10, exp);
 }
 
+interface ChartPoint {
+  soc: number;
+  kw: number;
+}
+
 interface ChargeCurveTooltipProps {
   active?: boolean;
-  payload?: readonly unknown[];
   label?: number | string;
   theme: Theme;
   color: string;
+  chartData: ChartPoint[];
 }
 
 function ChargeCurveTooltip({
   active,
-  payload,
   label,
   theme,
   color,
+  chartData,
 }: ChargeCurveTooltipProps) {
-  if (!active || !payload?.length || label == null) return null;
-  const soc = Number(label).toFixed(1);
-  const item = (payload as readonly { value?: number | null }[])[0];
-  if (item?.value == null) return null;
+  if (!active || label == null || chartData.length === 0) return null;
+  const hovered = Number(label);
+  const nearest = chartData.reduce((prev, curr) =>
+    Math.abs(curr.soc - hovered) < Math.abs(prev.soc - hovered) ? curr : prev,
+  );
   return (
     <div
       style={{
@@ -63,10 +69,10 @@ function ChargeCurveTooltip({
         color: theme.palette.text.primary,
       }}
     >
-      <div style={{ fontWeight: 600, marginBottom: 4 }}>SOC {soc}%</div>
+      <div style={{ fontWeight: 600, marginBottom: 4 }}>SOC {nearest.soc}%</div>
       <div>
         <span style={{ color }}>●</span> Charge rate:{" "}
-        <b>{item.value.toFixed(2)} kW</b>
+        <b>{nearest.kw.toFixed(2)} kW</b>
       </div>
     </div>
   );
@@ -151,20 +157,16 @@ export default function ChargeCurveChart({
   }, [bins]);
 
   const renderTooltip = useCallback(
-    (props: {
-      active?: boolean;
-      payload?: readonly unknown[];
-      label?: number | string;
-    }) => (
+    (props: { active?: boolean; label?: number | string }) => (
       <ChargeCurveTooltip
         active={props.active}
-        payload={props.payload}
         label={props.label}
         theme={theme}
         color={color}
+        chartData={chartData}
       />
     ),
-    [theme, color],
+    [theme, color, chartData],
   );
 
   if (bins.length === 0) return null;
