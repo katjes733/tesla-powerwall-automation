@@ -118,7 +118,7 @@ export default function ManualSettings() {
         .get<{ success: boolean; data: any[] }>("/api/powerwall/status")
         .then((res) => {
           const entry = res.data.data.find(
-            (d: any) => d.product?.id === siteId,
+            (d: any) => String(d.product?.energy_site_id) === siteId,
           );
           if (!entry) {
             showNotification("Site status not found", "warning");
