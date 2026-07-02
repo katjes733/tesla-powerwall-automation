@@ -23,6 +23,20 @@ import helmet from "helmet";
 import http from "http";
 import path from "path";
 
+// connect-redis v9 expects node-redis v4 API ({ EX: ttl }); ioredis v5 uses
+// positional args ('EX', ttl). This adapter bridges the two.
+const redisStoreClient = {
+  get: (key: string) => redis.get(key),
+  set: (key: string, value: string, options?: { EX?: number; PX?: number }) =>
+    options?.EX != null
+      ? redis.set(key, value, "EX", options.EX)
+      : options?.PX != null
+        ? redis.set(key, value, "PX", options.PX)
+        : redis.set(key, value),
+  del: (...keys: string[]) => redis.del(...keys),
+  expire: (key: string, seconds: number) => redis.expire(key, seconds),
+};
+
 const httpLogger = pinoHttp({
   logger,
   customLogLevel: (_req, res, err) => {
@@ -93,7 +107,7 @@ if (!sslEnabled && process.env.NODE_ENV !== "development") {
 
 app.use(
   session({
-    store: new RedisStore({ client: redis }),
+    store: new RedisStore({ client: redisStoreClient as any }),
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
