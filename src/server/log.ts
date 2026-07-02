@@ -2,6 +2,11 @@ import pino from "pino";
 import path from "path";
 
 export default function createLogger(env = Bun.env) {
+  const prettyPrint =
+    env.LOG_PRETTY_PRINT !== undefined
+      ? env.LOG_PRETTY_PRINT === "true"
+      : env.NODE_ENV !== "production";
+
   return pino(
     {
       level: env.LOG_LEVEL ?? "info",
@@ -10,7 +15,7 @@ export default function createLogger(env = Bun.env) {
         level: (label: string): { level: string } => ({ level: label }),
         bindings: (): Record<string, unknown> => ({}),
       },
-      ...((env.LOG_PRETTY_PRINT ?? true) && {
+      ...(prettyPrint && {
         transport: {
           target: path.resolve("node_modules/pino-pretty"),
           options: {
