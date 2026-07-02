@@ -14,6 +14,7 @@ import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibr
 import {
   CalibrationStartSchema,
   CalibrationClearSchema,
+  CurveClearSchema,
   CurveStartSchema,
 } from "~/shared/schemas/calibration";
 import {
@@ -24,9 +25,9 @@ import {
 import { redis } from "~/server/util/redis";
 import {
   buildChargeCurveBins,
-  meetsQualityThreshold,
+  isValidCandidate,
+  SAMPLE_RETENTION_DAYS,
   MAX_CURVE_START_SOC_PERCENT,
-  type ChargeCurveCalibrationData,
 } from "~/server/util/curveFit";
 
 const MAX_GRID_RATE_SOC_PERCENT = 80;
@@ -429,10 +430,10 @@ router.delete(
 
 router.delete(
   "/curve-clear",
-  validateBody(CalibrationClearSchema),
+  validateBody(CurveClearSchema),
   async (req, res, next) => {
     const email = req.session.user!;
-    const { siteId } = req.body;
+    const { siteId, mode } = req.body;
     try {
       const fleet = Fleet.getInstance(email, {
         throwOnError: false,
@@ -445,14 +446,72 @@ router.delete(
         return;
       }
 
+      const energySiteId = String(product.energy_site_id);
       const db = await AppDataSource.getInstance();
-      const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
+      const calibRepo = db.getRepository<ISiteCalibration & IBasicEntity>(
         "SiteCalibration",
       );
-      await repo.delete({
-        site_id: String(product.energy_site_id),
-        calibration_type: CURVE_CALIBRATION_TYPE,
-      });
+      const sampleRepo = db.getRepository<
+        IBasicEntity & ISiteCalibrationSample
+      >("SiteCalibrationSample");
+
+      if (mode === "all") {
+        await sampleRepo.delete({
+          site_id: energySiteId,
+          calibration_type: CURVE_CALIBRATION_TYPE,
+        });
+        await calibRepo.delete({
+          site_id: energySiteId,
+          calibration_type: CURVE_CALIBRATION_TYPE,
+        });
+      } else {
+        // mode === "last-session": remove the most recent session's samples,
+        // then rebuild the curve from whatever remains.
+        const SESSION_GAP_MS = 60 * 60 * 1000;
+        const allSamples = (await (sampleRepo as any).find({
+          where: {
+            site_id: energySiteId,
+            calibration_type: CURVE_CALIBRATION_TYPE,
+          },
+          order: { creation_time: "ASC" },
+        })) as Array<IBasicEntity & ISiteCalibrationSample>;
+
+        if (allSamples.length > 0) {
+          let lastSessionStart = 0;
+          for (let i = allSamples.length - 2; i >= 0; i--) {
+            const curr = new Date(
+              allSamples[i + 1].creation_time as unknown as string,
+            ).getTime();
+            const prev = new Date(
+              allSamples[i].creation_time as unknown as string,
+            ).getTime();
+            if (curr - prev > SESSION_GAP_MS) {
+              lastSessionStart = i + 1;
+              break;
+            }
+          }
+
+          await sampleRepo.remove(allSamples.slice(lastSessionStart));
+
+          const remaining = allSamples.slice(0, lastSessionStart);
+          const candidate = buildChargeCurveBins(remaining);
+          if (isValidCandidate(candidate)) {
+            const now = new Date();
+            await calibRepo.save({
+              site_id: energySiteId,
+              calibration_type: CURVE_CALIBRATION_TYPE,
+              calibration_data: candidate as unknown as Record<string, unknown>,
+              creation_time: now,
+              modified_time: now,
+            });
+          } else {
+            await calibRepo.delete({
+              site_id: energySiteId,
+              calibration_type: CURVE_CALIBRATION_TYPE,
+            });
+          }
+        }
+      }
 
       res.json({ success: true });
     } catch (error: any) {
@@ -466,10 +525,7 @@ router.delete(
 // Curve calibration helpers
 // ---------------------------------------------------------------------------
 
-async function finalizeCurveCalibration(
-  energySiteId: string,
-  jobStartedAtMs: number,
-): Promise<void> {
+async function finalizeCurveCalibration(energySiteId: string): Promise<void> {
   const db = await AppDataSource.getInstance(true);
   const sampleRepo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
     "SiteCalibrationSample",
@@ -478,28 +534,23 @@ async function finalizeCurveCalibration(
     "SiteCalibration",
   );
 
-  const since = new Date(jobStartedAtMs);
-  const sessionSamples = (await (sampleRepo as any).find({
-    where: {
-      site_id: energySiteId,
-      calibration_type: CURVE_CALIBRATION_TYPE,
-    },
+  // Pool all samples within the retention window so that multiple manual
+  // calibration sessions accumulate into a single curve. buildChargeCurveBins
+  // already handles session splitting and partial-session filtering internally.
+  const cutoff = new Date(
+    Date.now() - SAMPLE_RETENTION_DAYS * 24 * 3600 * 1000,
+  );
+  const allSamples = (await (sampleRepo as any).find({
+    where: { site_id: energySiteId, calibration_type: CURVE_CALIBRATION_TYPE },
     order: { creation_time: "ASC" },
   })) as Array<IBasicEntity & ISiteCalibrationSample>;
-  const recentSamples = sessionSamples.filter(
-    (s) => new Date(s.creation_time as unknown as string) >= since,
+  const pooledSamples = allSamples.filter(
+    (s) => new Date(s.creation_time as unknown as string) >= cutoff,
   );
 
-  const candidate = buildChargeCurveBins(recentSamples);
-  const existing = await calibRepo.findOne({
-    where: { site_id: energySiteId, calibration_type: CURVE_CALIBRATION_TYPE },
-    order: { creation_time: "DESC" },
-  });
-  const existingData = existing
-    ? (existing.calibration_data as unknown as ChargeCurveCalibrationData)
-    : null;
+  const candidate = buildChargeCurveBins(pooledSamples);
 
-  if (meetsQualityThreshold(candidate, existingData)) {
+  if (isValidCandidate(candidate)) {
     const now = new Date();
     await calibRepo.save({
       site_id: energySiteId,
@@ -511,15 +562,15 @@ async function finalizeCurveCalibration(
     logger.info(
       {
         energySiteId,
-        bins: candidate!.bins.length,
-        samples: candidate!.total_sample_count,
+        bins: candidate.bins.length,
+        samples: candidate.total_sample_count,
       },
       "Curve calibration written to site_calibrations",
     );
   } else {
     logger.info(
-      { energySiteId, candidateBins: candidate?.bins.length ?? 0 },
-      "Curve calibration session did not meet quality threshold — not written",
+      { energySiteId },
+      "Pooled curve calibration did not meet quality threshold — not written",
     );
   }
 }
@@ -529,7 +580,6 @@ async function runCurveCalibration(
   product: Product,
   jobId: string,
   previousGridState: "enabled" | "disabled",
-  startedAtMs: number,
 ): Promise<void> {
   const job = curveJobs.get(jobId);
   if (!job) return;
@@ -571,7 +621,7 @@ async function runCurveCalibration(
         job.sampleCount++;
       }
 
-      if (live.percentage_charged >= 99.5) break;
+      if (live.percentage_charged >= 100) break;
     }
 
     job.status = job.interruptRequested ? "interrupted" : "complete";
@@ -598,8 +648,8 @@ async function runCurveCalibration(
       // non-fatal
     }
 
-    await finalizeCurveCalibration(energySiteId, startedAtMs).catch(
-      (err: any) => logger.error(err, "Failed to finalize curve calibration"),
+    await finalizeCurveCalibration(energySiteId).catch((err: any) =>
+      logger.error(err, "Failed to finalize curve calibration"),
     );
   }
 }
@@ -712,17 +762,12 @@ router.post(
 
       res.json({ success: true, data: { jobId } });
 
-      runCurveCalibration(
-        fleet,
-        product,
-        jobId,
-        previousGridState,
-        startedAtMs,
-      ).catch((err) =>
-        logger.error(
-          err,
-          "Unexpected error in curve calibration background job",
-        ),
+      runCurveCalibration(fleet, product, jobId, previousGridState).catch(
+        (err) =>
+          logger.error(
+            err,
+            "Unexpected error in curve calibration background job",
+          ),
       );
     } catch (error: any) {
       logger.error(error, "Error starting curve calibration");
@@ -937,10 +982,7 @@ export async function recoverCurveCalibrations(): Promise<void> {
             .setGridCharging(product, payload.previousGridState)
             .catch(() => {});
           await redis.del(key);
-          await finalizeCurveCalibration(
-            payload.energySiteId,
-            payload.startedAtMs,
-          ).catch(() => {});
+          await finalizeCurveCalibration(payload.energySiteId).catch(() => {});
           logger.info(
             { energySiteId: payload.energySiteId },
             "Curve calibration recovered: SOC already complete, finalized",
@@ -955,7 +997,6 @@ export async function recoverCurveCalibrations(): Promise<void> {
             product,
             payload.jobId,
             payload.previousGridState,
-            payload.startedAtMs,
           ).catch((err) =>
             logger.error(err, "Error in recovered curve calibration job"),
           );

@@ -22,7 +22,7 @@ export interface ChargeCurveCalibrationData {
 const MIN_BIN_SAMPLES = 3;
 const MIN_BINS_REQUIRED = 10;
 const MIN_SOC_RANGE_PERCENT = 8;
-const SAMPLE_RETENTION_DAYS = 60;
+export const SAMPLE_RETENTION_DAYS = 60;
 
 // Minimum grid contribution to treat a sample as BMS-limited rather than
 // supply-limited. Solar-only charging may under-drive the battery, making
@@ -141,7 +141,7 @@ export function buildChargeCurveBins(
   for (const [bucket, values] of buckets.entries()) {
     if (values.length < MIN_BIN_SAMPLES) continue;
     bins.push({
-      soc_percent: bucket + 0.5,
+      soc_percent: bucket,
       battery_kw: Math.round(median(values) * 1000) / 1000,
       sample_count: values.length,
     });
@@ -267,8 +267,16 @@ export function lookupBatteryRateKw(
 ): number {
   if (bins.length === 0) return 0;
   if (soc <= bins[0].soc_percent) return bins[0].battery_kw;
-  if (soc >= bins[bins.length - 1].soc_percent)
-    return bins[bins.length - 1].battery_kw;
+
+  const lastBin = bins[bins.length - 1];
+  if (soc >= lastBin.soc_percent) {
+    // Interpolate from the last recorded bin toward 0 kW at 100% SOC.
+    // Flat-extrapolating the last bin's rate overstates how fast the final
+    // stretch charges — the battery always accepts zero power at full charge.
+    if (lastBin.soc_percent >= 100) return Math.max(0, lastBin.battery_kw);
+    const t = (soc - lastBin.soc_percent) / (100 - lastBin.soc_percent);
+    return Math.max(0, lastBin.battery_kw * (1 - t));
+  }
 
   for (let i = 0; i < bins.length - 1; i++) {
     const lo = bins[i];
@@ -279,5 +287,5 @@ export function lookupBatteryRateKw(
     }
   }
 
-  return bins[bins.length - 1].battery_kw;
+  return lastBin.battery_kw;
 }

@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
+import ChargeCurveChart from "./ChargeCurveChart";
 
 interface SafeguardStatus {
   socOkGridRate: boolean;
@@ -150,6 +151,7 @@ export default function Calibration() {
   const [clearDialogOpen, setClearDialogOpen] = useState(false);
   const [curveClearing, setCurveClearing] = useState(false);
   const [curveClearDialogOpen, setCurveClearDialogOpen] = useState(false);
+  const [curveStartDialogOpen, setCurveStartDialogOpen] = useState(false);
   const [autoCurveEnabled, setAutoCurveEnabled] = useState(true);
   const [autoCurveLoading, setAutoCurveLoading] = useState(false);
 
@@ -368,16 +370,21 @@ export default function Calibration() {
     }
   };
 
-  const handleClearCurveCalibration = async () => {
+  const handleClearCurveCalibration = async (mode: "all" | "last-session") => {
     setCurveClearDialogOpen(false);
     if (!selectedSiteId) return;
     setCurveClearing(true);
     try {
       await axiosInstance.delete("/api/calibration/curve-clear", {
-        data: { siteId: selectedSiteId },
+        data: { siteId: selectedSiteId, mode },
       });
-      setCurveCalibration(null);
-      showNotification("Curve calibration cleared", "success");
+      if (mode === "all") {
+        setCurveCalibration(null);
+        showNotification("Curve data cleared", "success");
+      } else {
+        fetchCurveStatus(selectedSiteId);
+        showNotification("Last session removed — curve rebuilt", "success");
+      }
     } catch {
       showNotification("Failed to clear curve calibration", "error");
     } finally {
@@ -457,10 +464,17 @@ export default function Calibration() {
     };
   }, [selectedSiteId, curveJobStatus?.status === "running", pollCurveJob]);
 
-  const handleStartCurveCalibration = async () => {
+  const handleStartCurveCalibration = async (mode: "add" | "fresh") => {
+    setCurveStartDialogOpen(false);
     if (!selectedSiteId) return;
     setCurveStarting(true);
     try {
+      if (mode === "fresh") {
+        await axiosInstance.delete("/api/calibration/curve-clear", {
+          data: { siteId: selectedSiteId, mode: "all" },
+        });
+        setCurveCalibration(null);
+      }
       await axiosInstance.post("/api/calibration/curve-start", {
         siteId: selectedSiteId,
       });
@@ -847,7 +861,7 @@ export default function Calibration() {
                 <Box sx={{ display: "flex", gap: 1 }}>
                   <Button
                     variant="contained"
-                    onClick={handleStartCurveCalibration}
+                    onClick={() => setCurveStartDialogOpen(true)}
                     disabled={
                       !allCurveSafeguardsOk ||
                       curveJobStatus?.status === "running" ||
@@ -938,61 +952,93 @@ export default function Calibration() {
                     <>
                       <Box
                         sx={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr",
-                          gap: 1,
-                          mb: 1,
+                          display: "flex",
+                          gap: 2,
+                          alignItems: "stretch",
                         }}
                       >
-                        <Typography variant="body2">
-                          Bins: <strong>{bins.length}</strong>
-                        </Typography>
-                        <Typography variant="body2">
-                          SOC range:{" "}
-                          <strong>{data.soc_range_percent?.toFixed(1)}%</strong>
-                        </Typography>
-                        <Typography variant="body2">
-                          Max rate: <strong>{maxRate.toFixed(2)} kW</strong>
-                        </Typography>
-                        <Typography variant="body2">
-                          Min rate: <strong>{minRate.toFixed(2)} kW</strong>
-                        </Typography>
-                        {biggestDrop.drop > 0 && (
-                          <Typography
-                            variant="body2"
-                            sx={{ gridColumn: "span 2" }}
-                          >
-                            Largest step-down:{" "}
-                            <strong>{biggestDrop.drop.toFixed(2)} kW</strong> at{" "}
-                            {biggestDrop.soc.toFixed(1)}% SOC
-                          </Typography>
-                        )}
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{ gridColumn: "span 2" }}
+                        <Box
+                          sx={{
+                            display: "flex",
+                            flexDirection: "column",
+                            flex: 1,
+                          }}
                         >
-                          Built{" "}
-                          {new Date(
-                            curveCalibration.creation_time,
-                          ).toLocaleString()}
-                        </Typography>
+                          <Box
+                            sx={{
+                              display: "grid",
+                              gridTemplateColumns: "auto auto",
+                              columnGap: 3,
+                              rowGap: 0.5,
+                              alignContent: "start",
+                            }}
+                          >
+                            <Typography variant="body2">
+                              Bins: <strong>{bins.length}</strong>
+                            </Typography>
+                            <Typography variant="body2">
+                              SOC range:{" "}
+                              <strong>
+                                {data.soc_range_percent?.toFixed(1)}%
+                              </strong>
+                            </Typography>
+                            <Typography variant="body2">
+                              Max rate: <strong>{maxRate.toFixed(2)} kW</strong>
+                            </Typography>
+                            <Typography variant="body2">
+                              Min rate: <strong>{minRate.toFixed(2)} kW</strong>
+                            </Typography>
+                            {biggestDrop.drop > 0 && (
+                              <Typography
+                                variant="body2"
+                                sx={{ gridColumn: "span 2" }}
+                              >
+                                Largest step-down:{" "}
+                                <strong>
+                                  {biggestDrop.drop.toFixed(2)} kW
+                                </strong>{" "}
+                                at {biggestDrop.soc.toFixed(1)}% SOC
+                              </Typography>
+                            )}
+                            <Typography
+                              variant="body2"
+                              color="text.secondary"
+                              sx={{ gridColumn: "span 2" }}
+                            >
+                              Built{" "}
+                              {new Date(
+                                curveCalibration.creation_time,
+                              ).toLocaleString()}
+                            </Typography>
+                          </Box>
+                          <Button
+                            variant="outlined"
+                            color="error"
+                            size="small"
+                            sx={{ mt: "auto", pt: 1, alignSelf: "flex-start" }}
+                            onClick={() => setCurveClearDialogOpen(true)}
+                            disabled={curveClearing}
+                            startIcon={
+                              curveClearing ? (
+                                <CircularProgress size={16} />
+                              ) : undefined
+                            }
+                          >
+                            {curveClearing ? "Clearing…" : "Clear Curve Data"}
+                          </Button>
+                        </Box>
+                        <Box sx={{ flex: "0 0 50%", minWidth: 0 }}>
+                          <Typography
+                            variant="caption"
+                            color="text.secondary"
+                            display="block"
+                            sx={{ mb: 0.5 }}
+                          >
+                            Charge Rate vs. State of Charge
+                          </Typography>
+                          <ChargeCurveChart bins={bins} />
+                        </Box>
                       </Box>
-                      <Button
-                        variant="outlined"
-                        color="error"
-                        size="small"
-                        sx={{ mt: 1 }}
-                        onClick={() => setCurveClearDialogOpen(true)}
-                        disabled={curveClearing}
-                        startIcon={
-                          curveClearing ? (
-                            <CircularProgress size={16} />
-                          ) : undefined
-                        }
-                      >
-                        {curveClearing ? "Clearing…" : "Clear Curve Data"}
-                      </Button>
                     </>
                   );
                 })()
@@ -1036,22 +1082,59 @@ export default function Calibration() {
         open={curveClearDialogOpen}
         onClose={() => setCurveClearDialogOpen(false)}
       >
-        <DialogTitle>Clear Curve Calibration</DialogTitle>
+        <DialogTitle>Clear Curve Data</DialogTitle>
         <DialogContent>
           <DialogContentText>
-            This will delete the stored charge curve for this site. Smart
-            charging will fall back to default acceptance estimates until the
-            curve is rebuilt from a full charging session.
+            Choose how much curve data to remove. Removing the last session
+            keeps all earlier sessions and rebuilds the curve from them.
+            Clearing all data resets completely — smart charging will fall back
+            to default estimates until a new calibration is run.
           </DialogContentText>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setCurveClearDialogOpen(false)}>Cancel</Button>
           <Button
-            onClick={handleClearCurveCalibration}
+            onClick={() => handleClearCurveCalibration("last-session")}
+            color="error"
+            variant="outlined"
+          >
+            Remove Last Session
+          </Button>
+          <Button
+            onClick={() => handleClearCurveCalibration("all")}
             color="error"
             variant="contained"
           >
-            Clear
+            Clear All Data
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog
+        open={curveStartDialogOpen}
+        onClose={() => setCurveStartDialogOpen(false)}
+      >
+        <DialogTitle>Start Curve Calibration</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Add samples to the existing pool to refine the curve, or start fresh
+            by clearing all previous samples first.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setCurveStartDialogOpen(false)}>Cancel</Button>
+          <Button
+            onClick={() => handleStartCurveCalibration("fresh")}
+            color="error"
+            variant="outlined"
+          >
+            Start Fresh
+          </Button>
+          <Button
+            onClick={() => handleStartCurveCalibration("add")}
+            variant="contained"
+          >
+            Add Samples
           </Button>
         </DialogActions>
       </Dialog>
