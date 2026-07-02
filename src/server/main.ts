@@ -16,6 +16,8 @@ import {
   recoverCurveCalibrations,
 } from "~/server/routes/calibration";
 import { router as SiteSettingsRouter } from "~/server/routes/siteSettings";
+import { RedisStore } from "connect-redis";
+import { redis } from "~/server/util/redis";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -91,6 +93,7 @@ if (!sslEnabled && process.env.NODE_ENV !== "development") {
 
 app.use(
   session({
+    store: new RedisStore({ client: redis }),
     secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
