@@ -19,6 +19,10 @@ export default defineConfig(({ mode }) => {
 
   return {
     root: "src/client",
+    build: {
+      outDir: "../../public",
+      emptyOutDir: true,
+    },
     resolve: {
       alias: {
         "~": fileURLToPath(new URL("./src", import.meta.url)),
