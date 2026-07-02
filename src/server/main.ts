@@ -106,7 +106,20 @@ app.use(
   }),
 );
 
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:"],
+        fontSrc: ["'self'", "data:"],
+        connectSrc: ["'self'"],
+      },
+    },
+  }),
+);
 
 app.use("/api/powerwall", PowerwallRouter);
 app.use("/api/health", HealthRouter);
