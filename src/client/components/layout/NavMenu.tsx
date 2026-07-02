@@ -61,6 +61,26 @@ export default function NavMenu() {
     navigate("/schedules");
   }, [navigate]);
 
+  const handleNavigateToTouConfigs = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/tou-configs");
+  }, [navigate]);
+
+  const handleNavigateToSettings = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/settings");
+  }, [navigate]);
+
+  const handleNavigateToCalibration = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/calibration");
+  }, [navigate]);
+
+  const handleNavigateToHistory = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/history");
+  }, [navigate]);
+
   return (
     <AppBar
       position="fixed"
@@ -104,6 +124,18 @@ export default function NavMenu() {
                 <MenuItem onClick={handleNavigateToHealth}>App Health</MenuItem>
                 <MenuItem onClick={handleNavigateToSchedules}>
                   Schedules
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToTouConfigs}>
+                  TOU Configs
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToSettings}>
+                  Manual Settings
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToCalibration}>
+                  Calibration
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToHistory}>
+                  Energy History
                 </MenuItem>
               </Menu>
             </>

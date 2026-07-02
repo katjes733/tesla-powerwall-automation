@@ -1,0 +1,70 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, qnap, linux]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t 192.168.2.106:5000/tesla-powerwall-automation:latest .
+
+      - name: Push image to local registry
+        run: |
+          docker push 192.168.2.106:5000/tesla-powerwall-automation:latest
+
+      - name: Stop and remove existing container
+        run: |
+          docker stop tesla-powerwall-automation || true
+          docker rm tesla-powerwall-automation || true
+
+      - name: Start new container
+        run: |
+          docker run -d \
+            --name tesla-powerwall-automation \
+            --network tesla-macvlan \
+            --ip 192.168.2.108 \
+            --restart unless-stopped \
+            -v /share/Container/container-data/tesla-powerwall-automation/certs:/app/ssl:ro \
+            -v /share/Container/container-data/postgres-certs:/app/db-certs:ro \
+            -e NODE_ENV=production \
+            -e PORT=3001 \
+            -e DB_HOST="${{ secrets.DB_HOST }}" \
+            -e DB_PORT="${{ secrets.DB_PORT }}" \
+            -e DB_USERNAME="${{ secrets.DB_USERNAME }}" \
+            -e DB_PASSWORD="${{ secrets.DB_PASSWORD }}" \
+            -e DB_NAME="${{ secrets.DB_NAME }}" \
+            -e DB_SCHEMA="${{ secrets.DB_SCHEMA }}" \
+            -e DB_SSL=true \
+            -e DB_SSL_CA_PATH=/app/db-certs/ca.crt \
+            -e REDIS_HOST="${{ secrets.REDIS_HOST }}" \
+            -e REDIS_PORT="${{ secrets.REDIS_PORT }}" \
+            -e REDIS_PASSWORD="${{ secrets.REDIS_PASSWORD }}" \
+            -e SESSION_SECRET="${{ secrets.SESSION_SECRET }}" \
+            -e TOKEN_ENCRYPTION_KEY="${{ secrets.TOKEN_ENCRYPTION_KEY }}" \
+            -e TESLA_CLIENT_ID="${{ secrets.TESLA_CLIENT_ID }}" \
+            -e TESLA_CLIENT_SECRET="${{ secrets.TESLA_CLIENT_SECRET }}" \
+            -e TESLA_REDIRECT_URI="${{ secrets.TESLA_REDIRECT_URI }}" \
+            -e TESLA_AUTH_BASE_URL=https://fleet-auth.prd.vn.cloud.tesla.com \
+            -e TESLA_API_BASE_URL=https://fleet-api.prd.na.vn.cloud.tesla.com \
+            -e SMTP_PORT="${{ secrets.SMTP_PORT }}" \
+            -e SMTP_HOST="${{ secrets.SMTP_HOST }}" \
+            -e SENDER_EMAIL="${{ secrets.SENDER_EMAIL }}" \
+            -e SENDER_PASSWORD="${{ secrets.SENDER_PASSWORD }}" \
+            -e RECIPIENT_EMAIL="${{ secrets.RECIPIENT_EMAIL }}" \
+            -e SSL_ENABLED=true \
+            -e SSL_KEY_PATH=ssl/key.pem \
+            -e SSL_CERT_PATH=ssl/cert.pem \
+            -e ALLOWED_ORIGINS="${{ secrets.ALLOWED_ORIGINS }}" \
+            -e SCHEDULED_JOBS_DISABLED=false \
+            -e DRY_RUN=false \
+            192.168.2.106:5000/tesla-powerwall-automation:latest

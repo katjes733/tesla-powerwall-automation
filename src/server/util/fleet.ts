@@ -3,12 +3,15 @@ import moment from "moment-timezone";
 import type {
   FleetOptions,
   FleetOptionsInput,
+  IBasicEntity,
   JWT,
   LiveStatus,
+  PowerHistoryPoint,
   Product,
   RefreshTokenData,
   SiteInfo,
   SmartChargingActionConfig,
+  SocPoint,
   SolarPowerDataPoint,
   TokenData,
 } from "~/server/types/common";
@@ -18,7 +21,18 @@ import type {
   SeasonalWindow,
 } from "~/server/database/models/schedule";
 import type { ITouBackup } from "~/server/database/models/touBackup";
+import type {
+  ISiteCalibration,
+  IGridChargeRateCalibrationData,
+} from "~/server/database/models/siteCalibration";
+import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
+import { type ChargeCurveCalibrationData } from "~/server/util/curveFit";
+import type {
+  SiteEventType,
+  ISiteEvent,
+} from "~/server/database/models/siteEvent";
 import AppDataSource from "~/server/database/datasource";
+import { IsNull } from "typeorm";
 import { v4 as uuidv4 } from "uuid";
 import { isObservedHolidayOnDate } from "~/server/util/holidays";
 import { getNewTokenWithRefreshToken } from "~/server/util/auth";
@@ -30,7 +44,9 @@ import {
 } from "~/server/util/routes/refreshToken";
 import {
   calculateChargeRateKw,
+  calculateGridChargeHours,
   calculateTotalCapacityKwh,
+  PEAK_BUFFER_MINUTES,
 } from "~/server/util/chargeRate";
 import {
   parseTariffContent,
@@ -43,11 +59,64 @@ import {
 import { redis } from "~/server/util/redis";
 import {
   estimateSolarKwhFromHistory,
+  SOLAR_FORECAST_DISCOUNT,
   type SolarForecastResult,
 } from "~/server/util/solarForecast";
 
+export interface SmartChargingLogResult {
+  site: string;
+  energySiteId: number;
+  desired: "enabled" | "disabled";
+  current: "enabled" | "disabled";
+  action: "enabled" | "disabled" | "no_change";
+  soc: number;
+  targetSoc: number;
+  forecastMethod: "historical" | "linear-fallback";
+  estimatedSolarKwh: number | null;
+  weatherFactor: number | null;
+  batteryChargeRateFromGridKw: number | null;
+  liveKw: { solar: number; load: number; grid: number; battery: number };
+  chargeRateKw: number;
+  chargeRateSource: "calibrated" | "formula";
+  chargeRateCurveSource: "lookup" | "defaults";
+  reason: string;
+}
+
 const SITE_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
 const siteInfoCache = new Map<number, { info: SiteInfo; at: number }>();
+
+const LIVE_STATUS_CACHE_TTL_MS = 30 * 1000;
+const liveStatusCache = new Map<number, { status: LiveStatus; at: number }>();
+
+const CALIBRATION_CACHE_TTL_MS = 5 * 60 * 1000;
+const calibrationCache = new Map<
+  string,
+  { data: (ISiteCalibration & IBasicEntity) | null; at: number }
+>();
+
+const CURVE_CACHE_TTL_MS = 30 * 60 * 1000;
+const curveCache = new Map<
+  string,
+  { data: ChargeCurveCalibrationData | null; at: number }
+>();
+
+// Ring buffer: last N battery_power readings per site (one per minute from cron).
+// Used to detect a sustained discharge during what should be an idle period.
+const DISCHARGE_BUFFER_SIZE = 10;
+const DISCHARGE_MIN_POWER_W = 300;
+const dischargeBuffer = new Map<number, number[]>();
+const dischargeCalibrationActive = new Map<number, boolean>();
+
+export function isDischargeCalibrating(siteId: number): boolean {
+  return dischargeCalibrationActive.get(siteId) ?? false;
+}
+
+function formatScheduledTime(t: moment.Moment, now: moment.Moment): string {
+  if (t.isSame(now, "day")) return t.format("HH:mm");
+  if (t.isSame(now.clone().add(1, "day"), "day"))
+    return `tomorrow ${t.format("HH:mm")}`;
+  return `${t.format("ddd")} ${t.format("HH:mm")}`;
+}
 
 function buildSolarLabel(
   forecast: SolarForecastResult | null,
@@ -67,6 +136,32 @@ const baseApiUrl =
   process.env.TESLA_API_BASE_URL ||
   "https://fleet-api.prd.na.vn.cloud.tesla.com";
 
+/**
+ * Returns true when the live status matches the signature of a Powerwall 3
+ * BMS calibration cycle: SOC frozen at 0%, battery locked out (power = 0),
+ * grid healthy, no storm mode. The battery never truly depletes — Tesla's
+ * firmware reports 0% while the calibration runs, then snaps back to the
+ * actual SOC when complete.
+ */
+export function isCalibrating(live: LiveStatus): boolean {
+  return (
+    live.percentage_charged < 1 &&
+    live.battery_power === 0 &&
+    live.island_status === "on_grid" &&
+    !live.storm_mode_active
+  );
+}
+
+export const ALLOWED_ACTIONS = new Set([
+  "setBackupReserve",
+  "setSoftBackupReserve",
+  "setEnergyExports",
+  "setGridCharging",
+  "setSmartGridCharging",
+  "setTouHolidayOverride",
+  "setOperationalMode",
+]);
+
 export class Fleet {
   private static instanceMap = new Map<string, Fleet>();
 
@@ -75,6 +170,7 @@ export class Fleet {
   private tokenExpiresAt: number = 0;
   private refreshToken: string = "";
   private options: FleetOptions;
+  private tokenRefreshPromise: Promise<string> | null = null;
 
   private energyProducts: Product[] = [];
   private _actionMap: Record<string, Function>;
@@ -86,16 +182,9 @@ export class Fleet {
       throwOnError: options?.throwOnError ?? true,
     };
     this._actionMap = {};
-    Object.getOwnPropertyNames(Fleet.prototype)
-      .filter(
-        (key) =>
-          typeof (this as any)[key] === "function" &&
-          key !== "constructor" &&
-          key.startsWith("set"),
-      )
-      .forEach((key) => {
-        this._actionMap[key] = (this as any)[key].bind(this);
-      });
+    for (const key of ALLOWED_ACTIONS) {
+      this._actionMap[key] = (this as any)[key].bind(this);
+    }
   }
 
   public static getInstance(email: string, options?: FleetOptionsInput): Fleet {
@@ -109,7 +198,7 @@ export class Fleet {
     return this._actionMap;
   }
 
-  async getToken() {
+  async getToken(): Promise<string> {
     if (!this.refreshToken) {
       const result = await getRefreshTokenByEmail(this.email);
       if (result) {
@@ -124,20 +213,39 @@ export class Fleet {
       return this.token;
     }
 
+    // Deduplicate concurrent refresh calls — rotating tokens mean a second
+    // in-flight request would use an already-invalidated refresh token → 401.
+    if (this.tokenRefreshPromise) {
+      return this.tokenRefreshPromise;
+    }
+
+    this.tokenRefreshPromise = this.doTokenRefresh().finally(() => {
+      this.tokenRefreshPromise = null;
+    });
+    return this.tokenRefreshPromise;
+  }
+
+  private async doTokenRefresh(): Promise<string> {
     const tokenResponse = await getNewTokenWithRefreshToken(this.refreshToken);
     if (!tokenResponse.ok) {
       const errorMsg = `Failed to obtain new token with refresh token: ${tokenResponse.status} ${tokenResponse.statusText}`;
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Tesla API token refresh failed. Please check the server logs and re-authenticate if necessary.`,
         this.email,
         this.options.mailOnError,
       );
       throw new Error(errorMsg);
     }
     const tokenData = (await tokenResponse.json()) as TokenData;
+    this.token = "";
+    this.refreshToken = "";
     this.token = tokenData.access_token;
+    // jwt-decode only base64-decodes the payload; it does not verify the signature.
+    // The token arrives over TLS from Tesla's token endpoint, so tampering is unlikely.
+    // If Tesla publishes a JWKS endpoint, replace jwt-decode with jose's jwtVerify() to
+    // cryptographically verify the signature before trusting any claim.
     this.tokenExpiresAt = jwtDecode<JWT>(this.token).exp * 1000;
     this.refreshToken = tokenData.refresh_token;
     await upsertToken({
@@ -201,12 +309,12 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to retrieve energy products from the Tesla API. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
       return [];
     }
@@ -248,18 +356,22 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to retrieve site info for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
       return null;
     }
   }
 
   async getLiveStatus(product: Product): Promise<LiveStatus | null> {
+    const cached = liveStatusCache.get(product.energy_site_id);
+    if (cached && performance.now() - cached.at < LIVE_STATUS_CACHE_TTL_MS) {
+      return cached.status;
+    }
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/live_status`,
       baseApiUrl,
@@ -280,18 +392,23 @@ export class Fleet {
         2000,
         2,
       );
-      return response as LiveStatus;
+      const liveStatus = response as LiveStatus;
+      liveStatusCache.set(product.energy_site_id, {
+        status: liveStatus,
+        at: performance.now(),
+      });
+      return liveStatus;
     } catch (error: any) {
       const errorMsg = `Error getting Live Status for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to retrieve live status for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
       return null;
     }
@@ -304,10 +421,11 @@ export class Fleet {
     timezone: string,
     dateStr: string,
     options: { method: string; headers: Record<string, string> },
-  ): Promise<SolarPowerDataPoint[]> {
-    // Avoid 00:00:00 — the API returns empty data at midnight.
+  ): Promise<PowerHistoryPoint[]> {
+    // The API treats end_date as exclusive and returns empty data at midnight.
+    // 23:59 covers all five-minute slots through 23:55 without hitting that edge case.
     const endDate = moment
-      .tz(`${dateStr} 23:45`, "YYYY-MM-DD HH:mm", timezone)
+      .tz(`${dateStr} 23:59`, "YYYY-MM-DD HH:mm", timezone)
       .format("YYYY-MM-DDTHH:mm:ssZ");
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/calendar_history`,
@@ -330,13 +448,165 @@ export class Fleet {
         2000,
         2,
       );
-      return (response.time_series ?? []) as SolarPowerDataPoint[];
+      return ((response.time_series ?? []) as Record<string, any>[]).map(
+        (pt) => {
+          const solar = (pt.solar_power as number) ?? 0;
+          const battery = (pt.battery_power as number) ?? 0;
+          const grid = (pt.grid_power as number) ?? 0;
+          // Tesla API returns load_power=0 for some sites; derive from energy balance.
+          const load = Math.max(0, solar + battery + grid);
+          return {
+            timestamp: (pt.timestamp as string) ?? "",
+            solar_power: solar,
+            battery_power: battery,
+            grid_power: grid,
+            load_power: load,
+          };
+        },
+      );
     } catch (error: any) {
       logger.warn(
         `[solar history] fetch for ${dateStr} failed: ${error.message}`,
       );
       return [];
     }
+  }
+
+  // Public: fetch one day of full power history with Redis caching.
+  // forceRefresh bypasses the cache (only meaningful for today's data).
+  async getDayHistory(
+    product: Product,
+    timezone: string,
+    dateStr: string,
+    forceRefresh = false,
+  ): Promise<{ points: PowerHistoryPoint[]; cached: boolean }> {
+    const isToday = moment().tz(timezone).format("YYYY-MM-DD") === dateStr;
+    const cacheKey = `power_history:${product.energy_site_id}:${dateStr}`;
+
+    if (!forceRefresh) {
+      try {
+        const raw = await redis.get(cacheKey);
+        if (raw) {
+          return {
+            points: JSON.parse(raw) as PowerHistoryPoint[],
+            cached: true,
+          };
+        }
+      } catch {
+        // Redis unavailable — fall through.
+      }
+    }
+
+    const options = await this.getDefaultGetOptions();
+    const rawPoints = await this.fetchDayHistory(
+      product,
+      timezone,
+      dateStr,
+      options,
+    );
+
+    // Tesla returns a full day's worth of 5-minute slots, including future ones
+    // filled with zeros. Strip those so charts don't show a flat line at 0 for
+    // the portion of the day that hasn't happened yet.
+    const now = moment();
+    const points = isToday
+      ? rawPoints.filter((p) => !moment(p.timestamp).isAfter(now))
+      : rawPoints;
+
+    try {
+      const ttl = isToday ? 5 * 60 : 30 * 24 * 3600;
+      await redis.setex(cacheKey, ttl, JSON.stringify(points));
+    } catch {
+      // Redis write failed — non-fatal.
+    }
+
+    return { points, cached: false };
+  }
+
+  async getDaySoeHistory(
+    product: Product,
+    timezone: string,
+    dateStr: string,
+    forceRefresh = false,
+  ): Promise<{ points: SocPoint[]; cached: boolean }> {
+    const isToday = moment().tz(timezone).format("YYYY-MM-DD") === dateStr;
+    const cacheKey = `soe_history:${product.energy_site_id}:${dateStr}`;
+
+    if (!forceRefresh) {
+      try {
+        const raw = await redis.get(cacheKey);
+        if (raw) {
+          return { points: JSON.parse(raw) as SocPoint[], cached: true };
+        }
+      } catch {
+        // Redis unavailable — fall through.
+      }
+    }
+
+    const endDate = moment
+      .tz(`${dateStr} 23:59`, "YYYY-MM-DD HH:mm", timezone)
+      .format("YYYY-MM-DDTHH:mm:ssZ");
+    const url = new URL(
+      `/api/1/energy_sites/${product.energy_site_id}/calendar_history`,
+      baseApiUrl,
+    );
+    url.searchParams.set("kind", "soe");
+    url.searchParams.set("end_date", endDate);
+
+    const options = await this.getDefaultGetOptions();
+    const res = await fetch(url.toString(), options);
+    if (!res.ok) {
+      throw new Error(
+        `SOE history fetch failed for site ${product.energy_site_id}: ${res.status} ${res.statusText}`,
+      );
+    }
+    const json = (await res.json()) as Record<string, any>;
+    const raw15 = (json?.response?.time_series ?? []) as Array<{
+      timestamp: string;
+      soe: number;
+    }>;
+
+    // Linearly interpolate 15-minute snapshots to 5-minute resolution so the
+    // SOC chart aligns with the power history chart (also 5-minute).
+    const interpolated: SocPoint[] = [];
+    for (let i = 0; i < raw15.length; i++) {
+      const cur = raw15[i];
+      interpolated.push({
+        timestamp: cur.timestamp,
+        soc_percent: Math.round(cur.soe * 10) / 10,
+      });
+      const next = raw15[i + 1];
+      if (next) {
+        const t0 = moment(cur.timestamp).valueOf();
+        const t1 = moment(next.timestamp).valueOf();
+        const gapMs = t1 - t0;
+        // Only interpolate when the gap is exactly 15 minutes.
+        if (gapMs === 15 * 60 * 1000) {
+          for (const frac of [1 / 3, 2 / 3]) {
+            interpolated.push({
+              timestamp: moment(t0 + gapMs * frac).toISOString(),
+              soc_percent:
+                Math.round((cur.soe + (next.soe - cur.soe) * frac) * 10) / 10,
+            });
+          }
+        }
+      }
+    }
+
+    // Strip future slots for today.
+    const now = moment();
+    const points = isToday
+      ? interpolated.filter((p) => !moment(p.timestamp).isAfter(now))
+      : interpolated;
+
+    try {
+      const ttl = isToday ? 5 * 60 : 30 * 24 * 3600;
+      await redis.setex(cacheKey, ttl, JSON.stringify(points));
+    } catch {
+      // Redis write failed — non-fatal.
+    }
+
+    return { points, cached: false };
   }
 
   async getSolarHistory(
@@ -382,12 +652,23 @@ export class Fleet {
         .subtract(i + 1, "days")
         .format("YYYY-MM-DD"),
     );
+    const todayDate = nowLocal.format("YYYY-MM-DD");
+
+    // Exclude today from the cached-set check — today's data is always re-fetched
+    // on each cache refresh so the weather scaling factor stays current.
     const cachedDateSet = new Set(
-      cachedPoints.map((p) =>
-        moment.tz(p.timestamp, timezone).format("YYYY-MM-DD"),
-      ),
+      cachedPoints
+        .filter(
+          (p) =>
+            moment.tz(p.timestamp, timezone).format("YYYY-MM-DD") !== todayDate,
+        )
+        .map((p) => moment.tz(p.timestamp, timezone).format("YYYY-MM-DD")),
     );
-    const missingDates = neededDates.filter((d) => !cachedDateSet.has(d));
+    // Historical days that are not yet cached, plus today (always refreshed).
+    const missingDates = [
+      ...neededDates.filter((d) => !cachedDateSet.has(d)),
+      todayDate,
+    ];
 
     const options = await this.getDefaultGetOptions();
     const newResults = await Promise.all(
@@ -398,13 +679,15 @@ export class Fleet {
     const newPoints = newResults.flat();
 
     // Merge: keep existing points still within the window, append new ones.
+    // Exclude today's stale cached points — they are replaced by the fresh fetch above.
     const cutoffDate = nowLocal
       .clone()
       .subtract(days, "days")
       .format("YYYY-MM-DD");
-    const keptPoints = cachedPoints.filter(
-      (p) => moment.tz(p.timestamp, timezone).format("YYYY-MM-DD") > cutoffDate,
-    );
+    const keptPoints = cachedPoints.filter((p) => {
+      const date = moment.tz(p.timestamp, timezone).format("YYYY-MM-DD");
+      return date > cutoffDate && date !== todayDate;
+    });
     const allPoints = [...keptPoints, ...newPoints].sort((a, b) =>
       a.timestamp.localeCompare(b.timestamp),
     );
@@ -429,9 +712,11 @@ export class Fleet {
       );
     }
 
-    // Persist with a long TTL; refreshAfter drives logical expiry at next midnight.
+    // Persist with a long TTL. refreshAfter is set to 10 minutes so today's partial
+    // data (used for weather scaling) stays reasonably fresh throughout the day.
+    // Past completed days are kept by the longer Redis TTL and skipped by cachedDateSet.
     const updatedCache = {
-      refreshAfter: nowLocal.clone().endOf("day").toISOString(),
+      refreshAfter: nowLocal.clone().add(10, "minutes").toISOString(),
       points: allPoints,
     };
     try {
@@ -511,12 +796,12 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to set backup reserve for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
     }
   }
@@ -625,14 +910,86 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to set energy exports for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
     }
+  }
+
+  private async getCalibration(
+    siteId: string,
+  ): Promise<(ISiteCalibration & IBasicEntity) | null> {
+    const cached = calibrationCache.get(siteId);
+    if (cached && performance.now() - cached.at < CALIBRATION_CACHE_TTL_MS) {
+      return cached.data;
+    }
+    const db = await AppDataSource.getInstance(true);
+    const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
+      "SiteCalibration",
+    );
+    const record = await repo.findOne({
+      where: {
+        site_id: siteId,
+        calibration_type: "grid_charge_rate",
+      },
+      order: { creation_time: "DESC" },
+    });
+    calibrationCache.set(siteId, {
+      data: record ?? null,
+      at: performance.now(),
+    });
+    return record ?? null;
+  }
+
+  private async getChargeCurve(
+    siteId: string,
+  ): Promise<ChargeCurveCalibrationData | null> {
+    const cacheKey = `curve:${siteId}`;
+    const cached = curveCache.get(cacheKey);
+    if (cached && performance.now() - cached.at < CURVE_CACHE_TTL_MS) {
+      return cached.data;
+    }
+    const db = await AppDataSource.getInstance(true);
+    const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
+      "SiteCalibration",
+    );
+    const record = await repo.findOne({
+      where: { site_id: siteId, calibration_type: "chargeCurve" },
+      order: { creation_time: "DESC" },
+    });
+    const data = record
+      ? (record.calibration_data as unknown as ChargeCurveCalibrationData)
+      : null;
+    curveCache.set(cacheKey, { data, at: performance.now() });
+    return data;
+  }
+
+  private async recordChargeCurveSample(
+    product: Product,
+    liveStatus: LiveStatus,
+  ): Promise<void> {
+    const siteId = String(product.energy_site_id);
+    const db = await AppDataSource.getInstance(true);
+    const repo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
+      "SiteCalibrationSample",
+    );
+    const now = new Date();
+    await repo.save({
+      site_id: siteId,
+      calibration_type: "chargeCurve",
+      creation_time: now,
+      modified_time: now,
+      sample_data: {
+        soc_percent: Math.round(liveStatus.percentage_charged * 100) / 100,
+        battery_kw: Math.round(Math.abs(liveStatus.battery_power) / 10) / 100,
+        solar_kw: Math.round(liveStatus.solar_power / 10) / 100,
+        grid_kw: Math.round(liveStatus.grid_power / 10) / 100,
+      },
+    } as IBasicEntity & ISiteCalibrationSample);
   }
 
   async setGridCharging(product: Product, setting: string): Promise<void> {
@@ -696,12 +1053,12 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to set grid charging for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
     }
   }
@@ -710,7 +1067,7 @@ export class Fleet {
     product: Product,
     value: string,
     conditions: IScheduleCondition[] = [],
-  ): Promise<void> {
+  ): Promise<SmartChargingLogResult | null> {
     let config: SmartChargingActionConfig;
     try {
       config = JSON.parse(value) as SmartChargingActionConfig;
@@ -718,7 +1075,7 @@ export class Fleet {
       logger.error(
         `Smart charging: invalid config JSON for site "${product.site_name}": ${value}`,
       );
-      return;
+      return null;
     }
     const solarEfficiencyFactor = config.solarEfficiencyFactor ?? 0.5;
 
@@ -729,7 +1086,7 @@ export class Fleet {
       logger.warn(
         `Smart charging: cannot run — site info unavailable for site "${product.site_name}"`,
       );
-      return;
+      return null;
     }
 
     const timezone = siteInfo.installation_time_zone;
@@ -742,7 +1099,7 @@ export class Fleet {
       logger.warn(
         `Smart charging: cannot run — live status unavailable for site "${product.site_name}"`,
       );
-      return;
+      return null;
     }
     const now = moment().tz(timezone);
     const currentlyAllowed = !(
@@ -757,7 +1114,7 @@ export class Fleet {
       logger.warn(
         `Smart charging: battery capacity not available for site "${product.site_name}" — skipping tick`,
       );
-      return;
+      return null;
     }
     const energyNeededKwh = Math.max(
       0,
@@ -772,10 +1129,35 @@ export class Fleet {
     const betweenHoursCond = conditions.find(
       (c) => c.condition === "betweenHours",
     );
+    const holidayCond = conditions.find((c) => c.condition === "holidayList");
+    const holidayEntries =
+      (holidayCond?.value as HolidayEntry[] | undefined) ?? [];
 
     let desired: "enabled" | "disabled";
+    let disableRequired = false;
     let reason: string;
     let solarForecast: SolarForecastResult | null = null;
+    const chargeRateKw = calculateChargeRateKw(siteInfo.components);
+    const calibration = await this.getCalibration(
+      product.energy_site_id.toString(),
+    );
+    const calibrationData = calibration?.calibration_data as
+      | IGridChargeRateCalibrationData
+      | undefined;
+    const effectiveChargeRateKw = calibrationData?.kw ?? chargeRateKw;
+    const chargeRateSource: "calibrated" | "formula" =
+      calibrationData?.kw !== undefined ? "calibrated" : "formula";
+
+    const chargeCurve = await this.getChargeCurve(
+      product.energy_site_id.toString(),
+    );
+    const chargeRateCurveSource: "lookup" | "defaults" = chargeCurve
+      ? "lookup"
+      : "defaults";
+
+    if (liveStatus.battery_power < -500) {
+      this.recordChargeCurveSample(product, liveStatus).catch(() => {});
+    }
 
     if (isTouMode) {
       const tariff = parseTariffContent(siteInfo.tariff_content);
@@ -783,23 +1165,29 @@ export class Fleet {
         logger.warn(
           `Smart charging: no TOU data for site "${product.site_name}" — configure a TOU tariff in the Tesla app`,
         );
-        return;
+        return null;
       }
 
       if (isCurrentlyInPeak(tariff!, now)) {
         desired = "disabled";
+        disableRequired = true;
         reason = "currently in on-peak period";
       } else if (energyNeededKwh <= 0) {
         desired = "disabled";
         reason = `target SOC already reached (${liveStatus.percentage_charged.toFixed(1)}%)`;
       } else {
-        const nextPeakStart = findNextPeakStart(tariff!, now);
+        const nextPeakStart = findNextPeakStart(tariff!, now, holidayEntries);
         if (!nextPeakStart) {
           desired = "disabled";
           reason = "no upcoming peak found in tariff";
         } else {
-          const minutesToPeak = nextPeakStart.diff(now, "minutes");
-          const chargeRateKw = calculateChargeRateKw(siteInfo.components);
+          const effectivePeakStart = nextPeakStart
+            .clone()
+            .subtract(PEAK_BUFFER_MINUTES, "minutes");
+          const minutesToPeak = Math.max(
+            0,
+            effectivePeakStart.diff(now, "minutes"),
+          );
           const availableSolarKw = Math.max(
             0,
             (liveStatus.solar_power - liveStatus.load_power) / 1000,
@@ -809,13 +1197,12 @@ export class Fleet {
           solarForecast = estimateSolarKwhFromHistory(
             solarHistory,
             now,
-            nextPeakStart,
-            availableSolarKw,
+            effectivePeakStart,
             timezone,
           );
           const estimatedSolarKwh =
             solarForecast !== null
-              ? solarForecast.estimatedKwh
+              ? solarForecast.estimatedKwh * SOLAR_FORECAST_DISCOUNT
               : linearSolarKwh;
           const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
 
@@ -826,9 +1213,20 @@ export class Fleet {
             desired = "disabled";
             reason = `solar forecast to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
           } else {
-            const gridEnergyKwh = energyNeededKwh - estimatedSolarKwh;
-            const gridChargeHours = gridEnergyKwh / chargeRateKw;
-            const latestGridStart = nextPeakStart
+            const gridEnergyKwh = Math.max(
+              0,
+              energyNeededKwh - estimatedSolarKwh,
+            );
+            const { hours: gridChargeHours, effectiveRateKw } =
+              calculateGridChargeHours(
+                energyNeededKwh,
+                estimatedSolarKwh,
+                liveStatus.percentage_charged,
+                config.targetSoc,
+                effectiveChargeRateKw,
+                chargeCurve ?? undefined,
+              );
+            const latestGridStart = effectivePeakStart
               .clone()
               .subtract(gridChargeHours, "hours");
             const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
@@ -854,13 +1252,13 @@ export class Fleet {
 
             if (nowIsAtOrAfterLatestStart && withinWindow) {
               desired = "enabled";
-              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${chargeRateKw}kW (${solarLabel}, peak at ${nextPeakStart.format("HH:mm")})`;
+              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
             } else if (!nowIsAtOrAfterLatestStart) {
               desired = "disabled";
-              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${chargeRateKw}kW starting ${latestGridStart.format("HH:mm")} (${solarLabel}, peak at ${nextPeakStart.format("HH:mm")})`;
+              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
             } else {
               desired = "disabled";
-              reason = `outside allowed window — grid start due at ${latestGridStart.format("HH:mm")} but window is closed`;
+              reason = `outside allowed window — grid start due at ${formatScheduledTime(latestGridStart, now)} but window is closed`;
             }
           }
         }
@@ -881,13 +1279,19 @@ export class Fleet {
 
       if (!now.isBefore(deadline)) {
         desired = "disabled";
+        disableRequired = true;
         reason = `past charge-by deadline ${window.to}`;
       } else if (energyNeededKwh <= 0) {
         desired = "disabled";
         reason = `target SOC already reached (${liveStatus.percentage_charged.toFixed(1)}%)`;
       } else {
-        const minutesToDeadline = deadline.diff(now, "minutes");
-        const chargeRateKw = calculateChargeRateKw(siteInfo.components);
+        const effectiveDeadline = deadline
+          .clone()
+          .subtract(PEAK_BUFFER_MINUTES, "minutes");
+        const minutesToDeadline = Math.max(
+          0,
+          effectiveDeadline.diff(now, "minutes"),
+        );
         const availableSolarKw = Math.max(
           0,
           (liveStatus.solar_power - liveStatus.load_power) / 1000,
@@ -897,12 +1301,13 @@ export class Fleet {
         solarForecast = estimateSolarKwhFromHistory(
           solarHistory,
           now,
-          deadline,
-          availableSolarKw,
+          effectiveDeadline,
           timezone,
         );
         const estimatedSolarKwh =
-          solarForecast !== null ? solarForecast.estimatedKwh : linearSolarKwh;
+          solarForecast !== null
+            ? solarForecast.estimatedKwh * SOLAR_FORECAST_DISCOUNT
+            : linearSolarKwh;
         const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
 
         // Only early-disable based on solar when the historical forecast is
@@ -912,9 +1317,20 @@ export class Fleet {
           desired = "disabled";
           reason = `solar forecast to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
         } else {
-          const gridEnergyKwh = energyNeededKwh - estimatedSolarKwh;
-          const gridChargeHours = gridEnergyKwh / chargeRateKw;
-          const latestGridStart = deadline
+          const gridEnergyKwh = Math.max(
+            0,
+            energyNeededKwh - estimatedSolarKwh,
+          );
+          const { hours: gridChargeHours, effectiveRateKw } =
+            calculateGridChargeHours(
+              energyNeededKwh,
+              estimatedSolarKwh,
+              liveStatus.percentage_charged,
+              config.targetSoc,
+              effectiveChargeRateKw,
+              chargeCurve ?? undefined,
+            );
+          const latestGridStart = effectiveDeadline
             .clone()
             .subtract(gridChargeHours, "hours");
           const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
@@ -922,13 +1338,13 @@ export class Fleet {
 
           if (nowIsAtOrAfterLatestStart && withinWindow) {
             desired = "enabled";
-            reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${chargeRateKw}kW (${solarLabel}, deadline ${window.to})`;
+            reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW (${solarLabel}, deadline ${window.to})`;
           } else if (!nowIsAtOrAfterLatestStart) {
             desired = "disabled";
-            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${chargeRateKw}kW starting ${latestGridStart.format("HH:mm")} (${solarLabel}, deadline ${window.to})`;
+            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)} (${solarLabel}, deadline ${window.to})`;
           } else {
             desired = "disabled";
-            reason = `outside allowed window — grid start due at ${latestGridStart.format("HH:mm")} but window is closed`;
+            reason = `outside allowed window — grid start due at ${formatScheduledTime(latestGridStart, now)} but window is closed`;
           }
         }
       }
@@ -936,46 +1352,72 @@ export class Fleet {
       logger.warn(
         `Smart charging: no recognised condition for site "${product.site_name}" — skipping`,
       );
-      return;
+      return null;
     }
 
-    if (process.env.DRY_RUN === "true") {
-      logger.info(
-        {
-          dryRun: true,
-          site: product.site_name,
-          energySiteId: product.energy_site_id,
-          currentlyAllowed,
-          desired,
-          soc: liveStatus.percentage_charged,
-          targetSoc: config.targetSoc,
-          forecastMethod:
-            solarForecast !== null ? "historical" : "linear-fallback",
-          estimatedSolarKwh: solarForecast
-            ? Math.round(solarForecast.estimatedKwh * 100) / 100
-            : null,
-          reason,
-        },
-        `[DRY RUN] Smart charging "${product.site_name}": desired=${desired}, current=${currentlyAllowed ? "enabled" : "disabled"} — ${reason}`,
-      );
-      return;
-    }
+    const forecastMethod =
+      solarForecast !== null ? "historical" : "linear-fallback";
+    const estimatedSolarKwh = solarForecast
+      ? Math.round(solarForecast.estimatedKwh * 100) / 100
+      : null;
+    const weatherFactor = solarForecast
+      ? Math.round(solarForecast.scalingFactor * 100) / 100
+      : null;
+    const current: "enabled" | "disabled" = currentlyAllowed
+      ? "enabled"
+      : "disabled";
 
+    let action: "enabled" | "disabled" | "no_change";
     if (desired === "enabled" && !currentlyAllowed) {
-      logger.info(
-        `Smart charging [${product.site_name}]: enabling grid charging — ${reason}`,
-      );
-      await this.setGridCharging(product, "enabled");
-    } else if (desired === "disabled" && currentlyAllowed) {
-      logger.info(
-        `Smart charging [${product.site_name}]: disabling grid charging — ${reason}`,
-      );
-      await this.setGridCharging(product, "disabled");
+      if (process.env.DRY_RUN !== "true")
+        await this.setGridCharging(product, "enabled");
+      action = "enabled";
+    } else if (desired === "disabled" && disableRequired && currentlyAllowed) {
+      if (process.env.DRY_RUN !== "true")
+        await this.setGridCharging(product, "disabled");
+      action = "disabled";
     } else {
-      logger.info(
-        `Smart charging [${product.site_name}]: no change (desired=${desired}, current=${currentlyAllowed ? "enabled" : "disabled"}) — ${reason}`,
-      );
+      action = "no_change";
     }
+
+    return {
+      site: product.site_name,
+      energySiteId: product.energy_site_id,
+      desired,
+      current,
+      action,
+      soc: liveStatus.percentage_charged,
+      targetSoc: config.targetSoc,
+      forecastMethod,
+      estimatedSolarKwh,
+      weatherFactor,
+      batteryChargeRateFromGridKw: (() => {
+        const batteryChargingW =
+          liveStatus.battery_power < 0 ? -liveStatus.battery_power : 0;
+        if (batteryChargingW === 0) return null;
+        // Grid covers home load first; solar covers whatever remains.
+        // Only battery charging beyond that solar surplus came from grid.
+        const gridImportW = Math.max(0, liveStatus.grid_power);
+        const homeAfterGridW = Math.max(0, liveStatus.load_power - gridImportW);
+        const solarSurplusW = Math.max(
+          0,
+          liveStatus.solar_power - homeAfterGridW,
+        );
+        return (
+          Math.round(Math.max(0, batteryChargingW - solarSurplusW) / 10) / 100
+        );
+      })(),
+      liveKw: {
+        solar: Math.round(liveStatus.solar_power / 10) / 100,
+        load: Math.round(liveStatus.load_power / 10) / 100,
+        grid: Math.round(liveStatus.grid_power / 10) / 100,
+        battery: Math.round(liveStatus.battery_power / 10) / 100,
+      },
+      chargeRateKw: Math.round(effectiveChargeRateKw * 100) / 100,
+      chargeRateSource,
+      chargeRateCurveSource,
+      reason,
+    };
   }
 
   private buildWeekendTariff(tariff: Record<string, any>): Record<string, any> {
@@ -1249,13 +1691,155 @@ export class Fleet {
       logger.error(errorMsg);
       await sendEmail(
         "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${errorMsg}`,
+        `[${new Date().toLocaleString()}] Failed to set operational mode for Energy Site ${product.energy_site_id}. Please check the server logs.`,
         this.email,
         this.options.mailOnError,
       );
       if (this.options.throwOnError) {
-        throw new Error(errorMsg);
+        throw new Error(errorMsg, { cause: error });
       }
+    }
+  }
+
+  async setTouSchedule(
+    product: Product,
+    tariffV2: Record<string, any>,
+  ): Promise<void> {
+    await this.postTouSettings(product, tariffV2);
+    siteInfoCache.delete(product.energy_site_id);
+    logger.info(
+      `TOU schedule applied for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+    );
+  }
+
+  async detectCalibration(product: Product): Promise<void> {
+    const live = await this.getLiveStatus(product);
+    if (!live) return;
+
+    const bmsCalibrating = isCalibrating(live);
+    const siteId = String(product.energy_site_id);
+    const siteName = product.site_name ?? `Site ${product.energy_site_id}`;
+
+    // Update discharge ring buffer with the latest battery_power reading.
+    const buf = dischargeBuffer.get(product.energy_site_id) ?? [];
+    buf.push(live.battery_power);
+    if (buf.length > DISCHARGE_BUFFER_SIZE) buf.shift();
+    dischargeBuffer.set(product.energy_site_id, buf);
+
+    const bufferFull = buf.length >= DISCHARGE_BUFFER_SIZE;
+    const isOnGrid =
+      live.island_status === "on_grid" && !live.storm_mode_active;
+    const dischargeCalibrating =
+      bufferFull && isOnGrid && buf.every((p) => p > DISCHARGE_MIN_POWER_W);
+
+    if (process.env.DRY_RUN === "true") {
+      if (bmsCalibrating) {
+        logger.info(
+          `[DRY RUN] BMS calibration detected for site "${siteName}" — no DB write or email`,
+        );
+      }
+      if (dischargeCalibrating) {
+        logger.info(
+          `[DRY RUN] Discharge calibration detected for site "${siteName}" (${DISCHARGE_BUFFER_SIZE} consecutive readings >${DISCHARGE_MIN_POWER_W}W) — no DB write or email`,
+        );
+      }
+      return;
+    }
+
+    const db = await AppDataSource.getInstance();
+    const repo = db.getRepository<ISiteEvent>("SiteEvent");
+
+    await this.handleSiteEvent(
+      repo,
+      siteId,
+      siteName,
+      "calibration_bms_lock",
+      bmsCalibrating,
+      `Powerwall calibration started — ${siteName}`,
+      `A battery calibration cycle has been detected on "${siteName}".\n\nThe battery will report 0% SOC until the cycle completes. No action is required.`,
+      `Powerwall calibration complete — ${siteName}`,
+      `The battery calibration cycle on "${siteName}" has finished.\n\nNormal operation has resumed.`,
+    );
+
+    // Skip discharge detection until the buffer has enough readings (e.g. after
+    // a server restart) to avoid prematurely closing a stale open event.
+    if (!bufferFull) {
+      logger.debug(
+        `Discharge buffer filling for site "${siteName}" (${buf.length}/${DISCHARGE_BUFFER_SIZE})`,
+      );
+      return;
+    }
+
+    dischargeCalibrationActive.set(
+      product.energy_site_id,
+      dischargeCalibrating,
+    );
+
+    await this.handleSiteEvent(
+      repo,
+      siteId,
+      siteName,
+      "calibration_discharge",
+      dischargeCalibrating,
+      `Powerwall discharge calibration detected — ${siteName}`,
+      `A sustained battery discharge has been detected on "${siteName}" during what should be an idle period.\n\nThe battery has been actively discharging for ${DISCHARGE_BUFFER_SIZE}+ consecutive minutes above ${DISCHARGE_MIN_POWER_W}W. This may indicate a calibration discharge cycle.\n\nNo action is required unless this is unexpected.`,
+      `Powerwall discharge calibration complete — ${siteName}`,
+      `The sustained battery discharge on "${siteName}" has stopped.\n\nNormal standby operation has resumed.`,
+    );
+  }
+
+  private async handleSiteEvent(
+    repo: ReturnType<
+      Awaited<ReturnType<typeof AppDataSource.getInstance>>["getRepository"]
+    >,
+    siteId: string,
+    siteName: string,
+    eventType: SiteEventType,
+    active: boolean,
+    startSubject: string,
+    startBody: string,
+    endSubject: string,
+    endBody: string,
+  ): Promise<void> {
+    const openEvent = await repo.findOne({
+      where: {
+        site_id: siteId,
+        event_payload: IsNull(),
+        event_type: eventType,
+      },
+    });
+
+    if (active && !openEvent) {
+      const now = new Date();
+      await repo.save({
+        id: uuidv4(),
+        creation_time: now,
+        modified_time: now,
+        site_id: siteId,
+        site_name: siteName,
+        event_type: eventType,
+        event_payload: null,
+      } satisfies ISiteEvent);
+      logger.info(`${eventType} event started for site "${siteName}"`);
+      await sendEmail(
+        startSubject,
+        startBody,
+        this.email,
+        this.options.mailOnError,
+      );
+    } else if (!active && openEvent) {
+      const now = new Date();
+      await repo.update(openEvent.id!, {
+        modified_time: now,
+        event_payload: { ended_at: now.toISOString() },
+      });
+      logger.info(`${eventType} event completed for site "${siteName}"`);
+      await sendEmail(
+        endSubject,
+        endBody,
+        this.email,
+        this.options.mailOnError,
+      );
     }
   }
 }

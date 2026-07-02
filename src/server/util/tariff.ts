@@ -4,6 +4,8 @@ import type {
   TariffSeason,
   TouPeriod,
 } from "~/server/types/common";
+import type { HolidayEntry } from "~/server/database/models/schedule";
+import { isObservedHolidayOnDate } from "~/server/util/holidays";
 
 export function parseTariffContent(raw: unknown): TariffContent | null {
   if (!raw || typeof raw !== "object") return null;
@@ -61,7 +63,8 @@ export function getCurrentSeason(
 }
 
 function isMomentInPeriod(period: TouPeriod, now: Moment): boolean {
-  const dow = now.day(); // 0=Sun … 6=Sat
+  // Tesla uses ISO weekdays (0=Mon…6=Sun); Moment's isoWeekday() is 1=Mon…7=Sun.
+  const dow = now.isoWeekday() - 1;
   if (dow < period.fromDayOfWeek || dow > period.toDayOfWeek) return false;
   const nowMins = now.hours() * 60 + now.minutes();
   const fromMins = period.fromHour * 60 + period.fromMinute;
@@ -87,6 +90,7 @@ export function isCurrentlyInPeak(t: TariffContent, now: Moment): boolean {
 export function findNextPeakStart(
   t: TariffContent,
   now: Moment,
+  holidayEntries: HolidayEntry[] = [],
 ): Moment | null {
   const current = getCurrentSeason(t, now);
   if (!current) return null;
@@ -101,7 +105,16 @@ export function findNextPeakStart(
     if (earliest !== null && dayOffset > 0) break;
 
     const candidate = now.clone().add(dayOffset, "days");
-    const dow = candidate.day();
+
+    // Holidays apply an off-peak override for the entire day — skip them.
+    if (
+      holidayEntries.length > 0 &&
+      isObservedHolidayOnDate(holidayEntries, candidate.format("YYYY-MM-DD"))
+    ) {
+      continue;
+    }
+
+    const dow = candidate.isoWeekday() - 1; // Tesla: 0=Mon…6=Sun
 
     for (const period of periods) {
       if (dow < period.fromDayOfWeek || dow > period.toDayOfWeek) continue;

@@ -8,9 +8,8 @@
     "jsx": "react-jsx",
     "allowJs": true,
     "types": ["bun"],
-    "baseUrl": "./src",
     "paths": {
-      "~/*": ["*"]
+      "~/*": ["./src/*"]
     },
     "resolveJsonModule": true,
     "typeRoots": ["./node_modules/@types", "src/server/types"],

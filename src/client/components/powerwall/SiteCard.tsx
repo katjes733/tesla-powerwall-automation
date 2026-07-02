@@ -14,6 +14,7 @@ interface Props {
   product: Product;
   live: LiveStatus | null;
   info: SiteInfo | null;
+  calibrating?: boolean;
 }
 
 function batteryColor(pct: number): "success" | "warning" | "error" {
@@ -22,7 +23,8 @@ function batteryColor(pct: number): "success" | "warning" | "error" {
   return "error";
 }
 
-function powerwallState(live: LiveStatus): string {
+function powerwallState(live: LiveStatus, calibrating: boolean): string {
+  if (calibrating) return "Calibrating";
   if (live.battery_power > 100) return "Discharging";
   if (live.battery_power < -100) return "Charging";
   if (live.percentage_charged >= 100) return "Full";
@@ -38,7 +40,12 @@ function modeLabel(mode: string): string {
   return map[mode] ?? mode;
 }
 
-export default function SiteCard({ product, live, info }: Props) {
+export default function SiteCard({
+  product,
+  live,
+  info,
+  calibrating = false,
+}: Props) {
   const theme = useTheme();
 
   const isOnGrid =
@@ -122,9 +129,20 @@ export default function SiteCard({ product, live, info }: Props) {
               </Typography>
             </Box>
           </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            {isConnected && live ? powerwallState(live) : "No live data"}
-          </Typography>
+          {calibrating ? (
+            <Chip
+              label="Calibrating"
+              color="warning"
+              size="small"
+              sx={{ mt: 1 }}
+            />
+          ) : (
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              {isConnected && live
+                ? powerwallState(live, calibrating)
+                : "No live data"}
+            </Typography>
+          )}
         </Box>
 
         {/* Energy flow diagram */}

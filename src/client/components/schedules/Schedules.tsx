@@ -3,7 +3,7 @@ import Typography from "@mui/material/Typography";
 import Divider from "@mui/material/Divider";
 import { useAuth } from "../auth/AuthContext";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
-import { useCallback, useEffect, useRef, useState, memo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import axios from "axios";
 import Dialog from "@mui/material/Dialog";
 import DialogTitle from "@mui/material/DialogTitle";
@@ -49,6 +49,8 @@ import { v4 as uuidv4 } from "uuid";
 import Badge from "@mui/material/Badge";
 import CheckIcon from "@mui/icons-material/Check";
 import Alert from "@mui/material/Alert";
+import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import dayjs, { type Dayjs } from "dayjs";
 
 type HolidayEntry = {
   name: string;
@@ -620,9 +622,6 @@ function TimeSettings({
       const { time, days } = parseCronToTimeAndDays(schedule.cron);
       setTimeOfDay(time);
       setSelectedDays(days);
-      if (!time && days.length === 0) {
-        setSchedule((prev: any) => ({ ...prev, cron: null }));
-      }
     }
     setTabValid(schedule?.cron);
   }, [schedule?.cron]);
@@ -1503,6 +1502,19 @@ type SeasonalWindow = { seasonName: string; from: string; to: string };
 
 type TariffInfo = { hasTou: boolean; seasons: string[] } | null;
 
+function validateWindow(
+  from: string,
+  to: string,
+): { fromError: boolean; toError: boolean; message: string | null } {
+  if (from && to && from >= to)
+    return {
+      fromError: true,
+      toError: true,
+      message: "Earliest must be before Latest",
+    };
+  return { fromError: false, toError: false, message: null };
+}
+
 type SmartSettingsProps = {
   schedule: any;
   setSchedule: (row: any) => void;
@@ -1537,6 +1549,26 @@ function SmartSettings({
   setSmartSeasonalWindows,
 }: SmartSettingsProps) {
   const theme = useTheme();
+
+  const seasonalWindowErrors = useMemo(
+    () =>
+      smartSeasonalWindows.map((sw) => ({
+        seasonName: sw.seasonName,
+        ...validateWindow(sw.from, sw.to),
+      })),
+    [smartSeasonalWindows],
+  );
+
+  const customWindowError = useMemo(
+    () => validateWindow(smartWindow.from, smartWindow.to),
+    [smartWindow],
+  );
+
+  const windowsValid = useMemo(() => {
+    if (smartMode === "tou")
+      return seasonalWindowErrors.every((e) => !e.fromError && !e.toError);
+    return !customWindowError.fromError && !customWindowError.toError;
+  }, [smartMode, seasonalWindowErrors, customWindowError]);
 
   const updateScheduleForCurrentMode = useCallback(
     (
@@ -1587,13 +1619,14 @@ function SmartSettings({
       smartMode === "tou"
         ? tariffInfo?.hasTou === true
         : smartDays.length > 0 && smartWindow.to !== "";
-    setTabValid(hasSmartAction && modeValid);
+    setTabValid(hasSmartAction && modeValid && windowsValid);
   }, [
     actionValues.setSmartGridCharging,
     smartMode,
     tariffInfo,
     smartDays,
     smartWindow,
+    windowsValid,
     setTabValid,
   ]);
 
@@ -1766,43 +1799,62 @@ function SmartSettings({
               <Typography variant="caption" color="text.secondary">
                 Latest
               </Typography>
-              {smartSeasonalWindows.map((sw) => (
-                <>
-                  <Typography
-                    key={`${sw.seasonName}-label`}
-                    variant="body2"
-                    sx={{ textTransform: "capitalize" }}
-                  >
-                    {sw.seasonName}
-                  </Typography>
-                  <TextField
-                    key={`${sw.seasonName}-from`}
-                    type="time"
-                    size="small"
-                    value={sw.from}
-                    onChange={(e) =>
-                      handleSeasonalWindowChange(
-                        sw.seasonName,
-                        "from",
-                        e.target.value,
-                      )
-                    }
-                  />
-                  <TextField
-                    key={`${sw.seasonName}-to`}
-                    type="time"
-                    size="small"
-                    value={sw.to}
-                    onChange={(e) =>
-                      handleSeasonalWindowChange(
-                        sw.seasonName,
-                        "to",
-                        e.target.value,
-                      )
-                    }
-                  />
-                </>
-              ))}
+              {smartSeasonalWindows.map((sw) => {
+                const err = seasonalWindowErrors.find(
+                  (e: { seasonName: string }) => e.seasonName === sw.seasonName,
+                );
+                return (
+                  <>
+                    <Typography
+                      key={`${sw.seasonName}-label`}
+                      variant="body2"
+                      sx={{ textTransform: "capitalize" }}
+                    >
+                      {sw.seasonName}
+                    </Typography>
+                    <TimePicker
+                      key={`${sw.seasonName}-from`}
+                      value={sw.from ? dayjs(`2000-01-01T${sw.from}`) : null}
+                      onChange={(v: Dayjs | null) =>
+                        handleSeasonalWindowChange(
+                          sw.seasonName,
+                          "from",
+                          v ? v.format("HH:mm") : "",
+                        )
+                      }
+                      minutesStep={15}
+                      slotProps={{
+                        field: { clearable: true },
+                        textField: {
+                          size: "small",
+                          sx: { width: 170 },
+                          error: err?.fromError,
+                        },
+                      }}
+                    />
+                    <TimePicker
+                      key={`${sw.seasonName}-to`}
+                      value={sw.to ? dayjs(`2000-01-01T${sw.to}`) : null}
+                      onChange={(v: Dayjs | null) =>
+                        handleSeasonalWindowChange(
+                          sw.seasonName,
+                          "to",
+                          v ? v.format("HH:mm") : "",
+                        )
+                      }
+                      minutesStep={15}
+                      slotProps={{
+                        field: { clearable: true },
+                        textField: {
+                          size: "small",
+                          sx: { width: 170 },
+                          error: err?.toError,
+                        },
+                      }}
+                    />
+                  </>
+                );
+              })}
             </Box>
             <Typography
               variant="caption"
@@ -1810,33 +1862,75 @@ function SmartSettings({
               mt={1}
               display="block"
             >
-              Leave blank to allow grid charging any time off-peak
+              Leave blank for open-ended (midnight). Earliest must be before
+              Latest.
             </Typography>
+            {seasonalWindowErrors.some((e) => e.message) && (
+              <Alert severity="error" sx={{ mt: 1 }}>
+                {seasonalWindowErrors
+                  .filter((e) => e.message)
+                  .map((e) => (
+                    <Box
+                      key={e.seasonName}
+                      sx={{ textTransform: "capitalize" }}
+                    >
+                      {e.seasonName}: {e.message}
+                    </Box>
+                  ))}
+              </Alert>
+            )}
           </Box>
         ) : smartMode === "tou" ? (
           <Typography variant="body2" color="text.secondary">
             Season information will appear once a TOU tariff is detected.
           </Typography>
         ) : (
-          <Box display="flex" alignItems="center" gap={1}>
-            <TextField
-              type="time"
-              size="small"
-              label="Earliest"
-              value={smartWindow.from}
-              onChange={(e) => handleWindowChange("from", e.target.value)}
-              sx={{ width: 130 }}
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
-            <TextField
-              type="time"
-              size="small"
-              label="Latest / Charge by"
-              value={smartWindow.to}
-              onChange={(e) => handleWindowChange("to", e.target.value)}
-              sx={{ width: 160 }}
-              slotProps={{ inputLabel: { shrink: true } }}
-            />
+          <Box>
+            <Box display="flex" alignItems="center" gap={1}>
+              <TimePicker
+                label="Earliest"
+                value={
+                  smartWindow.from
+                    ? dayjs(`2000-01-01T${smartWindow.from}`)
+                    : null
+                }
+                onChange={(v: Dayjs | null) =>
+                  handleWindowChange("from", v ? v.format("HH:mm") : "")
+                }
+                minutesStep={15}
+                slotProps={{
+                  field: { clearable: true },
+                  textField: {
+                    size: "small",
+                    sx: { width: 170 },
+                    error: customWindowError.fromError,
+                  },
+                }}
+              />
+              <TimePicker
+                label="Latest / Charge by"
+                value={
+                  smartWindow.to ? dayjs(`2000-01-01T${smartWindow.to}`) : null
+                }
+                onChange={(v: Dayjs | null) =>
+                  handleWindowChange("to", v ? v.format("HH:mm") : "")
+                }
+                minutesStep={15}
+                slotProps={{
+                  field: { clearable: true },
+                  textField: {
+                    size: "small",
+                    sx: { width: 175 },
+                    error: customWindowError.toError,
+                  },
+                }}
+              />
+            </Box>
+            {customWindowError.message && (
+              <Alert severity="error" sx={{ mt: 1 }}>
+                {customWindowError.message}
+              </Alert>
+            )}
           </Box>
         )}
       </Box>
@@ -3132,6 +3226,7 @@ export default function Schedules() {
               expires_at: null,
               conditions: null,
               actions: null,
+              options: { recovery: "none" },
             };
             setSchedule(newSchedule);
             setHolidayEntries([]);
@@ -3220,6 +3315,29 @@ export default function Schedules() {
                 setActionValues={setActionValues}
                 setSchedule={setSchedule}
               />
+              <Tooltip
+                title="Controls missed-run recovery. When set to 'On server restart', the schedule fires immediately on startup if a scheduled run was missed while the server was offline."
+                placement="top"
+                arrow
+              >
+                <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                  <InputLabel id="recovery-label-time">Recovery</InputLabel>
+                  <Select
+                    labelId="recovery-label-time"
+                    value={schedule?.options?.recovery ?? "none"}
+                    label="Recovery"
+                    onChange={(e) =>
+                      setSchedule((prev: any) => ({
+                        ...prev,
+                        options: { ...prev?.options, recovery: e.target.value },
+                      }))
+                    }
+                  >
+                    <MenuItem value="none">Disabled</MenuItem>
+                    <MenuItem value="on_restart">On server restart</MenuItem>
+                  </Select>
+                </FormControl>
+              </Tooltip>
             </Box>
           )}
           {dialogTab === 1 && (
@@ -3322,6 +3440,29 @@ export default function Schedules() {
                 autoPopulateToolbarSource={autoPopulateToolbarSource}
                 setAutoPopulateToolbarSource={setAutoPopulateToolbarSource}
               />
+              <Tooltip
+                title="Controls missed-run recovery. When set to 'On server restart', the schedule fires immediately on startup if a scheduled run was missed while the server was offline."
+                placement="top"
+                arrow
+              >
+                <FormControl fullWidth size="small" sx={{ mt: 2 }}>
+                  <InputLabel id="recovery-label-holidays">Recovery</InputLabel>
+                  <Select
+                    labelId="recovery-label-holidays"
+                    value={schedule?.options?.recovery ?? "none"}
+                    label="Recovery"
+                    onChange={(e) =>
+                      setSchedule((prev: any) => ({
+                        ...prev,
+                        options: { ...prev?.options, recovery: e.target.value },
+                      }))
+                    }
+                  >
+                    <MenuItem value="none">Disabled</MenuItem>
+                    <MenuItem value="on_restart">On server restart</MenuItem>
+                  </Select>
+                </FormControl>
+              </Tooltip>
             </Box>
           )}
         </DialogContent>

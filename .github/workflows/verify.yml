@@ -46,3 +46,6 @@ jobs:
       - name: Run Test Coverage
         id: test-coverage-run
         run: bun test:coverage
+
+      - name: Audit Dependencies
+        run: bun audit

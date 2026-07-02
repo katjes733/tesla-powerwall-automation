@@ -5,6 +5,7 @@ import {
   type ISchedule,
   type IScheduleAction,
   type IScheduleCondition,
+  type IScheduleOptions,
 } from "~/server/database/models/schedule";
 
 export async function upsert({
@@ -22,6 +23,7 @@ export async function upsert({
   lastError,
   lastErrorTime,
   lastSuccessTime,
+  options,
 }: {
   id?: string;
   email?: string;
@@ -37,6 +39,7 @@ export async function upsert({
   lastError?: string;
   lastErrorTime?: Date;
   lastSuccessTime?: Date;
+  options?: IScheduleOptions | null;
 }) {
   const scheduleRepo = (await AppDataSource.getInstance()).getRepository(
     "Schedule",
@@ -66,6 +69,7 @@ export async function upsert({
       last_error: lastError,
       last_error_time: lastErrorTime,
       last_success_time: lastSuccessTime,
+      options,
     });
     status = 200;
   } else {
@@ -85,6 +89,7 @@ export async function upsert({
     if (lastSuccessTime !== undefined)
       updateFields.last_success_time = lastSuccessTime;
     if (email !== undefined) updateFields.email = email;
+    if (options !== undefined) updateFields.options = options;
     await scheduleRepo.update(recordId, updateFields);
     status = 201;
   }
@@ -107,6 +112,7 @@ export async function upsert({
       lastError,
       lastErrorTime,
       lastSuccessTime,
+      options,
     },
   };
 }

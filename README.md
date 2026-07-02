@@ -6,6 +6,8 @@
     - [Prerequisites](#prerequisites)
     - [First-time API setup](#first-time-api-setup)
     - [Running the app](#running-the-app)
+    - [HTTPS / Self-Signed Certificate](#https--self-signed-certificate)
+    - [PostgreSQL TLS](#postgresql-tls)
     - [Environment variables](#environment-variables)
   - [Tesla Fleet API onboarding](#tesla-fleet-api-onboarding)
     - [Preparation](#preparation)
@@ -26,6 +28,8 @@ You create schedules that combine a cron expression, a set of conditions, and on
 Alongside scheduling, the application provides a real-time dashboard showing battery state of charge, solar generation, home consumption, and grid import/export for every registered site. All scheduling configuration is done through a purpose-built UI — no config files or manual API calls required during day-to-day use.
 
 Built with Bun, Express, TypeORM + PostgreSQL on the backend; React 19, Vite, and Material-UI on the frontend. Docker Compose provides the database. Schedules run via `node-cron`; Pino handles structured logging throughout.
+
+> **Tesla API cadence note:** The `live_status` endpoint (battery SOC, real-time power flows) appears to refresh approximately every 5 minutes on Tesla's side, regardless of how often the application polls it. Consecutive schedule evaluations within that window will therefore see the same SOC reading — this is expected and does not indicate a bug. The solar history endpoint (`calendar_history`) is cached locally for 10 minutes and refreshed in full on each cache miss, including a fresh fetch of today's partial data to keep the weather scaling factor current.
 
 ## Quick Setup
 
@@ -75,6 +79,111 @@ Before running the application for the first time, complete the [Tesla Fleet API
 
 > **Tip:** Set `DRY_RUN=true` in `.env` during initial testing. The scheduler will log every intended API call without actually sending it to Tesla, so you can verify your schedules and conditions behave as expected before going live.
 
+### HTTPS / Self-Signed Certificate
+
+Running the server over HTTPS enables the session cookie's `secure` flag, which prevents it from being sent over plain HTTP. For production or self-hosted deployments this is strongly recommended.
+
+The server reads three environment variables:
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SSL_ENABLED` | `false` | Set to `true` to start the server with HTTPS |
+| `SSL_KEY_PATH` | `ssl/key.pem` | Path to the TLS private key, relative to the project root |
+| `SSL_CERT_PATH` | `ssl/cert.pem` | Path to the TLS certificate, relative to the project root |
+
+#### Generate a self-signed certificate
+
+For local testing or private self-hosting, a self-signed certificate is sufficient. Run the following once from the project root:
+
+```sh
+mkdir -p ssl
+openssl req -x509 -newkey rsa:4096 -keyout ssl/key.pem -out ssl/cert.pem \
+  -days 365 -nodes \
+  -subj "/CN=localhost" \
+  -addext "subjectAltName=IP:127.0.0.1,DNS:localhost"
+```
+
+> **Note:** The `ssl/` directory is gitignored. Never commit private keys to source control.
+
+#### Enable HTTPS in `.env`
+
+```dotenv
+SSL_ENABLED=true
+SSL_KEY_PATH=ssl/key.pem
+SSL_CERT_PATH=ssl/cert.pem
+```
+
+#### Trust the certificate in your browser
+
+Because the certificate is self-signed, browsers will show a security warning on first visit. One-time steps to suppress it:
+
+- **Chrome / Edge:** Navigate to `https://localhost:3001`, click **Advanced**, then **Proceed to localhost**.
+- **Firefox:** Navigate to `https://localhost:3001`, click **Advanced**, then **Accept the Risk and Continue**.
+- **macOS system trust (optional):** Import `ssl/cert.pem` into Keychain Access (System keychain) and mark it as **Always Trust** to remove the warning across all browsers.
+
+  ```sh
+  sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ssl/cert.pem
+  ```
+
+#### Certificate renewal
+
+Self-signed certificates generated with the command above are valid for 365 days. Re-run the `openssl` command to renew and restart the server.
+
+> **Important:** Replacing the certificate does **not** affect session cookies or stored tokens — only the TLS handshake changes.
+
+---
+
+### PostgreSQL TLS
+
+Encrypts the connection between the application and PostgreSQL so that credentials and query results are not sent over plaintext TCP. Recommended for any deployment where the app and database are not on the same machine.
+
+#### What happens to existing data?
+
+**Nothing — your data is safe.** `bun run docker:down` stops and removes the database *container*, but not its *data*. The database lives in a Docker named volume (`db`) that persists independently of containers. Only `docker-compose down -v` (explicitly passing `-v`) removes the volume. A `docker:down` followed by `docker:up` restarts Postgres against the same on-disk data, with or without TLS changes.
+
+#### Step 1 — Generate certificates (one time)
+
+Run this once from the project root:
+
+```sh
+bun run generate-certs
+```
+
+This creates four files in `postgres/certs/`, all gitignored:
+
+| File | Purpose |
+| --- | --- |
+| `ca.key` | CA private key — keep safe, not needed at runtime |
+| `ca.crt` | CA certificate — trusted by the application to verify Postgres |
+| `server.key` | Postgres server private key |
+| `server.crt` | Postgres server certificate, signed by the CA |
+
+#### Step 2 — Enable TLS in `.env`
+
+```dotenv
+DB_SSL=true
+DB_SSL_CA_PATH=./postgres/certs/ca.crt
+```
+
+#### Step 3 — Restart the database
+
+```sh
+bun run docker:down
+bun run docker:up
+```
+
+Postgres now starts with `ssl=on`. The application verifies the server certificate against the CA — connections are both encrypted and authenticated. `rejectUnauthorized: true` is enforced, so a misconfigured or mismatched certificate causes the app to fail at startup rather than silently fall back to an unencrypted connection.
+
+#### Deploying to QNAP Container Station
+
+The steps are identical. Copy the `postgres/certs/` directory alongside `docker-compose.yml` on the NAS, set `DB_SSL=true` and `DB_SSL_CA_PATH=./postgres/certs/ca.crt` in the environment, and restart the containers. Data in the named volume is unaffected.
+
+#### Renewing database certificates
+
+Certificates generated by this script are valid for 10 years. To renew, re-run `bun run generate-certs` and restart with `bun run docker:down && bun run docker:up`.
+
+---
+
 ### Environment variables
 
 The full list of variables is in `env/sample.env`. The essentials:
@@ -91,6 +200,15 @@ The full list of variables is in `env/sample.env`. The essentials:
 | `SCHEDULED_JOBS_DISABLED` | — | Set to `true` to disable all cron jobs (default: `false`) |
 | `DRY_RUN` | — | Set to `true` to log intended API calls without executing them |
 | `SESSION_SECRET` | — | HTTP session secret (defaults to a built-in value if unset) |
+| `ALLOWED_ORIGINS` | — | Comma-separated browser origins the API will accept cross-origin requests from. Default: `http://localhost:5173,https://localhost:5173`. See note below. |
+
+> **`ALLOWED_ORIGINS` and Docker**
+>
+> In a production Docker build the frontend is compiled and served as static files by the same Express process. The browser loads the page and calls the API from the same host and port, so all requests are same-origin — CORS does not apply and `ALLOWED_ORIGINS` has no effect.
+>
+> `ALLOWED_ORIGINS` is only relevant when the Vite dev server is running separately from the API (the default local development setup: `bun run dev` starts Vite on port 5173 while the API runs on port 3001). The default value covers this case.
+>
+> If you run the backend in Docker locally while keeping Vite outside the container, set `ALLOWED_ORIGINS` to the Vite server's URL (e.g. `http://localhost:5173`).
 
 ## Tesla Fleet API onboarding
 

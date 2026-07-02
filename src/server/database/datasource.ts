@@ -1,9 +1,17 @@
+import { readFileSync } from "fs";
+import { checkServerIdentity, type PeerCertificate } from "tls";
 import { DataSource } from "typeorm";
 import { RefreshToken } from "~/server/database/models/refreshToken";
 import { Schedule } from "~/server/database/models/schedule";
 import { TouBackup } from "~/server/database/models/touBackup";
+import { SiteEvent } from "~/server/database/models/siteEvent";
 import { User } from "~/server/database/models/user";
 import { SignupVerification } from "~/server/database/models/signupVerification";
+import { TouScheduleConfig } from "~/server/database/models/touScheduleConfig";
+import { SiteCalibration } from "~/server/database/models/siteCalibration";
+import { SiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
+import { SiteSettings } from "~/server/database/models/siteSettings";
+import { migrateTokenEncryption } from "~/server/database/migrateTokenEncryption";
 
 class AppDataSource {
   private static instance: DataSource | null = null;
@@ -19,6 +27,10 @@ class AppDataSource {
       return AppDataSource.initializing;
     }
     const log = silent ? logger.trace.bind(logger) : logger.info.bind(logger);
+    const dbSsl = process.env.DB_SSL === "true";
+    if (dbSsl && !process.env.DB_SSL_CA_PATH) {
+      throw new Error("DB_SSL_CA_PATH must be set when DB_SSL=true");
+    }
     const dataSource =
       process.env.DB_HOST &&
       process.env.DB_USERNAME &&
@@ -33,15 +45,28 @@ class AppDataSource {
             database: process.env.DB_NAME,
             schema: process.env.DB_SCHEMA || "public",
             synchronize: false,
-            // ssl: {
-            //   rejectUnauthorized: false,
-            // },
+            ssl: dbSsl
+              ? ({
+                  rejectUnauthorized: true,
+                  ca: readFileSync(process.env.DB_SSL_CA_PATH!).toString(),
+                  // pg doesn't pass a valid SNI servername when host is an IP address,
+                  // causing Node.js TLS to fall back to 'localhost' for checkServerIdentity.
+                  // Override to verify against the actual DB host.
+                  checkServerIdentity: (_host: string, cert: PeerCertificate) =>
+                    checkServerIdentity(process.env.DB_HOST!, cert),
+                } as any)
+              : false,
             entities: [
               RefreshToken,
               Schedule,
               TouBackup,
+              TouScheduleConfig,
+              SiteEvent,
               User,
               SignupVerification,
+              SiteCalibration,
+              SiteCalibrationSample,
+              SiteSettings,
             ],
           })
         : (() => {
@@ -53,12 +78,16 @@ class AppDataSource {
       .initialize()
       .then(async () => {
         log("✅ Database connection established successfully.");
-        await dataSource.query(
-          `CREATE SCHEMA IF NOT EXISTS "${process.env.DB_SCHEMA || "public"}";`,
-        );
+        const schema = process.env.DB_SCHEMA || "public";
+        if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(schema)) {
+          throw new Error(`Invalid DB_SCHEMA value: ${schema}`);
+        }
+        await dataSource.query(`CREATE SCHEMA IF NOT EXISTS "${schema}";`);
         log("✅ Database schema ensured successfully.");
         await dataSource.synchronize();
-        log("✅ Database migrations completed successfully.");
+        log("✅ Database schema synchronised successfully.");
+        await migrateTokenEncryption(dataSource);
+        log("✅ Token encryption migration completed.");
         AppDataSource.instance = dataSource;
         AppDataSource.initializing = null;
         return dataSource;

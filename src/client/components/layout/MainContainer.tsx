@@ -1,6 +1,4 @@
 import Box from "@mui/material/Box";
-import HealthCards from "../health/Health";
-
 import { type ReactNode } from "react";
 
 interface MainContainerProps {
@@ -18,6 +16,7 @@ export default function MainContainer({ children }: MainContainerProps) {
         alignItems: "flex-start",
         justifyContent: "center",
         width: "100vw",
+        paddingTop: "64px", // offset for fixed AppBar
       }}
     >
       {children}

@@ -1,52 +1,62 @@
 import express from "express";
+import argon2 from "argon2";
 import { totp, generateKey } from "otp-io";
+import {
+  sendCodeLimiter,
+  verifyCodeLimiter,
+} from "~/server/middleware/rateLimiter";
 import { randomBytes } from "otp-io/crypto";
 import { v4 } from "uuid";
 import AppDataSource from "~/server/database/datasource";
 import { sendEmail } from "~/server/util/mailing";
 import { hmac } from "~/server/util/totp";
 import type { ISignupVerification } from "../database/models/signupVerification";
+import { validateBody } from "~/server/middleware/validateBody";
+import { SendCodeSchema, VerifyCodeSchema } from "~/shared/schemas/auth";
 
 export const router = express.Router();
 
-router.post("/send-code", async (req, res) => {
-  const { email } = req.body;
-  if (!email) {
-    res.status(400).json({ error: "Email required" });
-    return;
-  }
+router.post(
+  "/send-code",
+  sendCodeLimiter,
+  validateBody(SendCodeSchema),
+  async (req, res, next) => {
+    const { email } = req.body;
 
-  const repo = (await AppDataSource.getInstance()).getRepository("User");
-  const existingUser = await repo.findOneBy({ email });
-  if (existingUser) {
-    res.status(409).json({ error: "User already exists" });
-    return;
-  }
+    const repo = (await AppDataSource.getInstance()).getRepository("User");
+    const existingUser = await repo.findOneBy({ email });
+    if (existingUser) {
+      res.json({ message: "Verification code sent" });
+      return;
+    }
 
-  const secret = generateKey(randomBytes, 20);
-  const code = await totp(hmac, { secret });
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes from now
+    const secret = generateKey(randomBytes, 20);
+    const code = await totp(hmac, { secret });
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes from now
 
-  upsert({ email, code, expires_at: expiresAt })
-    .then(() =>
-      sendEmail(
-        "Your Tesla Powerwall Automation verification code",
-        `Your verification code is: ${code}\n\nThis code is valid for 15 minutes.`,
-        email,
+    upsert({ email, code: await argon2.hash(code), expires_at: expiresAt })
+      .then(() =>
+        sendEmail(
+          "Your Tesla Powerwall Automation verification code",
+          `Your verification code is: ${code}\n\nThis code is valid for 15 minutes.`,
+          email,
+        )
+          .then(() => {
+            res.json({ message: "Verification code sent" });
+          })
+          .catch((error) => {
+            logger.error(
+              `❌ Sending verification code failed: ${error.message}`,
+            );
+            next(error);
+          }),
       )
-        .then(() => {
-          res.json({ message: "Verification code sent" });
-        })
-        .catch((error) => {
-          logger.error(`❌ Sending verification code failed: ${error.message}`);
-          res.status(500).json({ error: error.message });
-        }),
-    )
-    .catch((error) => {
-      logger.error(`❌ ${error.message}.`);
-      res.status(500).json({ error: error.message });
-    });
-});
+      .catch((error) => {
+        logger.error(`❌ ${error.message}.`);
+        next(error);
+      });
+  },
+);
 
 async function upsert(record: ISignupVerification) {
   const repo = (await AppDataSource.getInstance()).getRepository(
@@ -81,36 +91,43 @@ async function upsert(record: ISignupVerification) {
   };
 }
 
-router.post("/verify-code", async (req, res) => {
-  const { email, code } = req.body;
-  if (!email || !code) {
-    res.status(400).json({ error: "Email and code are required" });
-    return;
-  }
+router.post(
+  "/verify-code",
+  verifyCodeLimiter,
+  validateBody(VerifyCodeSchema),
+  async (req, res) => {
+    const { email, code } = req.body;
 
-  const repo = (await AppDataSource.getInstance()).getRepository(
-    "SignupVerification",
-  );
-  const existingSignupVerification = await repo.findOneBy({ email });
+    const repo = (await AppDataSource.getInstance()).getRepository(
+      "SignupVerification",
+    );
+    const existingSignupVerification = await repo.findOneBy({ email });
 
-  if (!existingSignupVerification) {
-    res.status(404).json({ error: "Verification record not found" });
-    return;
-  }
+    if (!existingSignupVerification) {
+      res.status(404).json({ error: "Verification record not found" });
+      return;
+    }
 
-  const { code: storedCode, expires_at } = existingSignupVerification;
+    const { code: storedCode, expires_at } = existingSignupVerification;
 
-  if (code !== storedCode) {
-    res.status(400).json({ error: "Invalid verification code" });
-    return;
-  }
+    let isValid: boolean;
+    try {
+      isValid = await argon2.verify(storedCode, code);
+    } catch {
+      isValid = false;
+    }
+    if (!isValid) {
+      res.status(400).json({ error: "Invalid verification code" });
+      return;
+    }
 
-  if (expires_at < new Date()) {
-    res.status(410).json({ error: "Verification code expired" });
-    return;
-  }
+    if (expires_at < new Date()) {
+      res.status(410).json({ error: "Verification code expired" });
+      return;
+    }
 
-  res.json({ message: "Verification code is valid" });
-});
+    res.json({ message: "Verification code is valid" });
+  },
+);
 
 export default router;

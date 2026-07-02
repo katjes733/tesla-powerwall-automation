@@ -1,5 +1,16 @@
 import express from "express";
-import { Fleet } from "~/server/util/fleet";
+import {
+  Fleet,
+  isCalibrating,
+  isDischargeCalibrating,
+} from "~/server/util/fleet";
+
+const MANUAL_ACTIONS = new Set([
+  "setBackupReserve",
+  "setOperationalMode",
+  "setEnergyExports",
+  "setGridCharging",
+]);
 import {
   parseTariffContent,
   hasTouData,
@@ -8,7 +19,7 @@ import {
 
 export const router = express.Router();
 
-router.get("/sites", async (req, res) => {
+router.get("/sites", async (req, res, next) => {
   const email = req.session.user;
   if (!email) {
     res.status(401).json({ success: false, message: "Unauthorized" });
@@ -27,7 +38,7 @@ router.get("/sites", async (req, res) => {
     res.json({
       success: true,
       data: products.map((p, i) => ({
-        id: p.id,
+        id: String(p.energy_site_id),
         site_name: p.site_name,
         is_online:
           statuses[i] !== null && statuses[i]?.island_status === "on_grid",
@@ -36,11 +47,11 @@ router.get("/sites", async (req, res) => {
     });
   } catch (error: any) {
     logger.error(error, "Error fetching powerwall sites");
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 });
 
-router.get("/tariff-info", async (req, res) => {
+router.get("/tariff-info", async (req, res, next) => {
   const email = req.session.user;
   if (!email) {
     res.status(401).json({ success: false, message: "Unauthorized" });
@@ -59,7 +70,7 @@ router.get("/tariff-info", async (req, res) => {
       mailOnError: false,
     });
     const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => p.id === siteId);
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
     if (!product) {
       res.status(404).json({ success: false, message: "Site not found" });
       return;
@@ -71,11 +82,11 @@ router.get("/tariff-info", async (req, res) => {
     res.json({ success: true, data: { hasTou, seasons } });
   } catch (error: any) {
     logger.error(error, "Error fetching tariff info");
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
   }
 });
 
-router.get("/status", async (req, res) => {
+router.get("/status", async (req, res, next) => {
   const email = req.session.user;
   if (!email) {
     res.status(401).json({ success: false, message: "Unauthorized" });
@@ -93,12 +104,116 @@ router.get("/status", async (req, res) => {
           fleet.getLiveStatus(product),
           fleet.getSiteInfo(product),
         ]);
-        return { product, live, info };
+        return {
+          product,
+          live,
+          info,
+          calibrating: live
+            ? isCalibrating(live) ||
+              isDischargeCalibrating(product.energy_site_id)
+            : false,
+        };
       }),
     );
     res.json({ success: true, data });
   } catch (error: any) {
     logger.error(error, "Error fetching powerwall status");
-    res.status(500).json({ success: false, message: error.message });
+    next(error);
+  }
+});
+
+router.post("/apply-settings", async (req, res, next) => {
+  const email = req.session.user;
+  if (!email) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+  const { siteId, action, value } = req.body as {
+    siteId?: string;
+    action?: string;
+    value?: string;
+  };
+  if (!siteId || typeof siteId !== "string") {
+    res.status(400).json({ success: false, message: "siteId is required" });
+    return;
+  }
+  if (!action || !MANUAL_ACTIONS.has(action)) {
+    res.status(400).json({
+      success: false,
+      message: `action must be one of: ${[...MANUAL_ACTIONS].join(", ")}`,
+    });
+    return;
+  }
+  if (value === undefined || value === null) {
+    res.status(400).json({ success: false, message: "value is required" });
+    return;
+  }
+  try {
+    const fleet = Fleet.getInstance(email, {
+      throwOnError: true,
+      mailOnError: false,
+    });
+    const products = await fleet.getEnergyProducts();
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
+    if (!product) {
+      res.status(404).json({ success: false, message: "Site not found" });
+      return;
+    }
+    await fleet.getActionMap()[action](product, String(value));
+    res.json({ success: true });
+  } catch (error: any) {
+    logger.error(error, "Error applying manual settings");
+    next(error);
+  }
+});
+
+router.get("/history", async (req, res, next) => {
+  const email = req.session.user;
+  if (!email) {
+    res.status(401).json({ success: false, message: "Unauthorized" });
+    return;
+  }
+  const siteId = req.query.siteId as string | undefined;
+  const date = req.query.date as string | undefined;
+  const forceRefresh = req.query.refresh === "true";
+
+  if (!siteId) {
+    res
+      .status(400)
+      .json({ success: false, message: "siteId query parameter required" });
+    return;
+  }
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    res.status(400).json({
+      success: false,
+      message: "date query parameter required (YYYY-MM-DD)",
+    });
+    return;
+  }
+
+  try {
+    const fleet = Fleet.getInstance(email, {
+      throwOnError: false,
+      mailOnError: false,
+    });
+    const products = await fleet.getEnergyProducts();
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
+    if (!product) {
+      res.status(404).json({ success: false, message: "Site not found" });
+      return;
+    }
+
+    const siteInfo = await fleet.getSiteInfo(product);
+    const timezone = siteInfo?.installation_time_zone ?? "UTC";
+
+    const [{ points, cached }, { points: socPoints }] = await Promise.all([
+      fleet.getDayHistory(product, timezone, date, forceRefresh),
+      fleet.getDaySoeHistory(product, timezone, date, forceRefresh),
+    ]);
+
+    res.json({ success: true, data: { date, points, socPoints, cached } });
+  } catch (error: any) {
+    logger.error(error, "Error fetching power history");
+    next(error);
   }
 });

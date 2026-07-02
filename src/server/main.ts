@@ -10,6 +10,14 @@ import { router as HealthRouter } from "~/server/routes/health";
 import { router as SessionRouter } from "~/server/routes/session";
 import { router as UserRouter } from "~/server/routes/user";
 import { router as SignupVerificationRouter } from "~/server/routes/signupVerification";
+import { router as TouConfigRouter } from "~/server/routes/touConfig";
+import {
+  router as CalibrationRouter,
+  recoverCurveCalibrations,
+} from "~/server/routes/calibration";
+import { router as SiteSettingsRouter } from "~/server/routes/siteSettings";
+import cors from "cors";
+import helmet from "helmet";
 import http from "http";
 import path from "path";
 
@@ -29,25 +37,73 @@ const app = express();
 
 app.use(httpLogger);
 
-app.use(express.json());
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+logger.info({ allowedOrigins }, "CORS: allowed origins");
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS: origin ${origin} not allowed`));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "DELETE"],
+  }),
+);
+
+app.use(express.json({ limit: "100kb" }));
 app.use(cookieParser());
+const sessionSecret = process.env.SESSION_SECRET;
+if (!sessionSecret) {
+  throw new Error("SESSION_SECRET environment variable is required");
+}
+
+const tokenEncryptionKey = process.env.TOKEN_ENCRYPTION_KEY;
+if (
+  !tokenEncryptionKey ||
+  Buffer.from(tokenEncryptionKey, "hex").length !== 32
+) {
+  throw new Error(
+    "TOKEN_ENCRYPTION_KEY must be a 32-byte hex string (64 chars), e.g. openssl rand -hex 32",
+  );
+}
+
+if (!process.env.TESLA_CLIENT_ID || !process.env.TESLA_CLIENT_SECRET) {
+  throw new Error(
+    "TESLA_CLIENT_ID and TESLA_CLIENT_SECRET environment variables are required",
+  );
+}
+
+const sslEnabled = process.env.SSL_ENABLED === "true";
+if (!sslEnabled && process.env.NODE_ENV !== "development") {
+  logger.warn(
+    "SSL_ENABLED is not set. Session cookies will be transmitted over plain HTTP. " +
+      "Set SSL_ENABLED=true with a valid certificate for production use.",
+  );
+}
+
 app.use(
   session({
-    secret:
-      process.env.SESSION_SECRET ||
-      "8aabb709b741d616652f9f79e76983e93338e4c5a1262946545311880721b6b4",
+    secret: sessionSecret,
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.SSL_ENABLED === "true",
-      sameSite: "lax",
+      secure: sslEnabled,
+      sameSite: "strict",
       maxAge: 24 * 60 * 60 * 1000, // 1 day
     },
   }),
 );
 
-app.disable("x-powered-by");
+app.use(helmet());
 
 app.use("/api/powerwall", PowerwallRouter);
 app.use("/api/health", HealthRouter);
@@ -55,6 +111,9 @@ app.use("/api/schedule", SchedulingRouter);
 app.use("/api/session", SessionRouter);
 app.use("/api/user", UserRouter);
 app.use("/api/auth", SignupVerificationRouter);
+app.use("/api/tou-config", TouConfigRouter);
+app.use("/api/calibration", CalibrationRouter);
+app.use("/api/site-settings", SiteSettingsRouter);
 
 if (process.env.NODE_ENV !== "development") {
   logger.info("Serving static files from 'public' directory");
@@ -66,16 +125,27 @@ if (process.env.NODE_ENV !== "development") {
   logger.info("Not in production mode");
 }
 
+app.use(
+  (
+    err: Error,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction,
+  ) => {
+    logger.error({ err }, "Unhandled request error");
+    const isDev = process.env.NODE_ENV === "development";
+    res
+      .status(500)
+      .json({ error: isDev ? err.message : "Something went wrong" });
+  },
+);
+
 const port = process.env.PORT || 3001;
 
-let server = null;
-if (process.env.SSL_ENABLED) {
+let server;
+if (sslEnabled) {
   const https = require("https");
   const fs = require("fs");
-  logger.info(`Current DIR: ${process.cwd()}`);
-  logger.info(
-    `Path to SSL key: ${path.join(process.cwd(), process.env.SSL_KEY_PATH || "/app/key.pem")}`,
-  );
   const sslOptions = {
     key: fs.readFileSync(
       path.join(process.cwd(), process.env.SSL_KEY_PATH || "/app/key.pem"),
@@ -103,6 +173,10 @@ if (process.env.DRY_RUN === "true") {
     "DRY RUN mode is enabled. No Tesla API write calls will be made.",
   );
 }
+
+recoverCurveCalibrations().catch((err) =>
+  logger.error(err, "Curve calibration recovery failed at startup"),
+);
 
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
   Scheduler.getInstance().initialize();

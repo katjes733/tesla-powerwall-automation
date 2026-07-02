@@ -28,7 +28,12 @@ export default defineConfig([
     plugins: {
       "@typescript-eslint": ts,
     },
-    rules: {},
+    rules: {
+      "no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+    },
     linterOptions: {
       reportUnusedDisableDirectives: true,
     },

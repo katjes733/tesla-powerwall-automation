@@ -1,12 +1,15 @@
 import type { ScheduledTask } from "node-cron";
 import { schedule as scheduleTask } from "node-cron";
 import moment from "moment-timezone";
+import CronExpressionParser from "cron-parser";
 import type {
   ISchedule,
   IScheduleAction,
   IScheduleCondition,
 } from "~/server/database/models/schedule";
+import { resolveScheduleOptions } from "~/server/database/models/schedule";
 import type { LiveStatus } from "~/server/types/common";
+import type { IBasicEntity } from "~/server/types/common";
 import { getAllEmails as getAllEmailsFromDb } from "~/server/util/routes/refreshToken";
 import {
   getAll as getAllSchedulesFromDb,
@@ -14,7 +17,19 @@ import {
   deleteById as deleteScheduleFromDb,
 } from "~/server/util/routes/schedule";
 import { sendEmail } from "./mailing";
-import { Fleet } from "~/server/util/fleet";
+import { Fleet, type SmartChargingLogResult } from "~/server/util/fleet";
+import { maskEmail } from "~/server/util/maskEmail";
+import AppDataSource from "~/server/database/datasource";
+import type { ISiteCalibration } from "~/server/database/models/siteCalibration";
+import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
+import type { ISiteSettings } from "~/server/database/models/siteSettings";
+import { resolveSiteSettings } from "~/server/database/models/siteSettings";
+import {
+  buildChargeCurveBins,
+  blendChargeCurveBins,
+  isValidCandidate,
+  type ChargeCurveCalibrationData,
+} from "~/server/util/curveFit";
 
 async function evaluateConditions(
   conditions: IScheduleCondition[],
@@ -87,11 +102,24 @@ async function evaluateConditions(
   }
 }
 
+function isTickBased(cron: string): boolean {
+  try {
+    const interval = CronExpressionParser.parse(cron);
+    const t1 = interval.next().toDate().getTime();
+    const t2 = interval.next().toDate().getTime();
+    return t2 - t1 <= 60_000;
+  } catch {
+    return false;
+  }
+}
+
 export class Scheduler {
   private static instance: Scheduler;
 
   private enabledScheduledTasks: Map<string, ScheduledTask> = new Map();
-  private validEmails: string[] = [];
+  private calibrationTask: ScheduledTask | null = null;
+  private curveCronTask: ScheduledTask | null = null;
+  private validEmails: { id: string; email: string }[] = [];
   private schedulingEnabled: boolean = true;
 
   private constructor() {}
@@ -104,9 +132,9 @@ export class Scheduler {
   }
 
   private isValidSchedule(schedule: ISchedule): boolean {
-    if (!this.validEmails.includes(schedule.email)) {
+    if (!this.validEmails.some(({ email }) => email === schedule.email)) {
       logger.warn(
-        `Schedule for email ${schedule.email} has no corresponding refresh token.`,
+        `Schedule for email ${maskEmail(schedule.email)} has no corresponding refresh token.`,
       );
       return false; // For now, just skip this schedule. Will re-think later.
     }
@@ -160,11 +188,11 @@ export class Scheduler {
 
     if (process.env.DRY_RUN === "true") {
       logger.info(
-        `[DRY RUN] Evaluating scheduled task for email ${schedule.email} with ID ${schedule.id} — no writes will be made`,
+        `[DRY RUN] Evaluating scheduled task ${schedule.id} for ${maskEmail(schedule.email)} — no writes will be made`,
       );
     } else {
       logger.info(
-        `Executing scheduled task for email ${schedule.email} with ID ${schedule.id}`,
+        `Executing scheduled task ${schedule.id} for ${maskEmail(schedule.email)}`,
       );
     }
 
@@ -172,7 +200,9 @@ export class Scheduler {
       const siteIds = schedule.site_ids;
       const products = await Fleet.getInstance(schedule.email)
         .getEnergyProducts()
-        .then((all) => all.filter((p) => siteIds.includes(p.id)));
+        .then((all) =>
+          all.filter((p) => siteIds.includes(String(p.energy_site_id))),
+        );
 
       const hasConditions =
         schedule.conditions && schedule.conditions.length > 0;
@@ -187,6 +217,7 @@ export class Scheduler {
         (a) => a.action === "setTouHolidayOverride",
       );
       let actionsExecuted = 0;
+      const smartChargingResults: SmartChargingLogResult[] = [];
 
       for (const product of products) {
         if (hasConditions && !isSmartSchedule && !isHolidaySchedule) {
@@ -239,25 +270,46 @@ export class Scheduler {
             continue;
           }
           /* eslint-disable no-unexpected-multiline */
-          await Fleet.getInstance(schedule.email)
+          const result = await Fleet.getInstance(schedule.email)
             .getActionMap()
             [config.action](product, config.value, schedule.conditions ?? []);
           /* eslint-enable no-unexpected-multiline */
+          if (config.action === "setSmartGridCharging" && result != null) {
+            smartChargingResults.push(result as SmartChargingLogResult);
+          }
           actionsExecuted++;
         }
       }
 
+      const smartCharging =
+        smartChargingResults.length === 1
+          ? smartChargingResults[0]
+          : smartChargingResults.length > 1
+            ? smartChargingResults
+            : undefined;
+
       if (process.env.DRY_RUN === "true") {
         logger.info(
-          `[DRY RUN] Evaluation complete for schedule ID ${schedule.id} — no changes sent to Tesla API`,
+          {
+            scheduleId: schedule.id,
+            dryRun: true,
+            ...(smartCharging && { smartCharging }),
+          },
+          `[DRY RUN] Evaluation complete for schedule ${schedule.id}`,
         );
       } else if (actionsExecuted > 0) {
         logger.info(
-          `Executed scheduled task for email ${schedule.email} with ID ${schedule.id} successfully (${actionsExecuted} action(s) applied)`,
+          {
+            scheduleId: schedule.id,
+            email: maskEmail(schedule.email),
+            actionsExecuted,
+            ...(smartCharging && { smartCharging }),
+          },
+          `Executed scheduled task ${schedule.id} for ${maskEmail(schedule.email)} (${actionsExecuted} action(s) applied)`,
         );
       } else {
         logger.warn(
-          `Scheduled task for email ${schedule.email} with ID ${schedule.id} completed but no actions were executed — check action key names`,
+          `Scheduled task ${schedule.id} for ${maskEmail(schedule.email)} completed but no actions were executed — check action key names`,
         );
       }
 
@@ -274,7 +326,7 @@ export class Scheduler {
     } catch (error: any) {
       const lastError = error.message || "Unknown error";
       logger.error(
-        `Error executing scheduled task for email ${schedule.email} with ID ${schedule.id}: ${lastError}`,
+        `Error executing scheduled task ${schedule.id} for ${maskEmail(schedule.email)}: ${lastError}`,
       );
       sendEmail(
         "Powerwall Notification",
@@ -293,6 +345,35 @@ export class Scheduler {
     }
   }
 
+  private async maybeRecoverSchedule(schedule: ISchedule): Promise<void> {
+    const options = resolveScheduleOptions(schedule.options);
+    if (options.recovery !== "on_restart") return;
+    if (isTickBased(schedule.cron)) return;
+
+    try {
+      const interval = CronExpressionParser.parse(schedule.cron, {
+        tz: schedule.timezone,
+        currentDate: new Date(),
+      });
+      const lastExpectedFire = interval.prev().toDate();
+      const lastRun = schedule.last_run_time;
+
+      if (lastRun && new Date(lastRun) >= lastExpectedFire) {
+        logger.info(
+          `Schedule ${schedule.id} already ran after last expected fire — no recovery needed`,
+        );
+        return;
+      }
+
+      logger.info(
+        `Recovering missed run for schedule ${schedule.id} — last expected: ${lastExpectedFire.toISOString()}, last run: ${lastRun ? new Date(lastRun).toISOString() : "never"}`,
+      );
+      await this.runEvaluation(schedule, new Map());
+    } catch (err: any) {
+      logger.error(err, `Recovery check failed for schedule ${schedule.id}`);
+    }
+  }
+
   async initializeOneSchedule(schedule: ISchedule) {
     if (!this.isValidSchedule(schedule)) {
       return;
@@ -307,13 +388,22 @@ export class Scheduler {
       `Registered schedule ID ${schedule.id} | cron: "${schedule.cron}" | timezone: ${schedule.timezone} | next run: ${task.getNextRun()?.toISOString() ?? "unknown"}`,
     );
     this.enabledScheduledTasks.set(schedule.id || "", task);
+    await this.maybeRecoverSchedule(schedule);
   }
 
   async initialize(schedulingEnabled = true) {
     this.schedulingEnabled = schedulingEnabled;
     this.validEmails = await getAllEmailsFromDb();
     logger.info(
-      `Found ${this.validEmails.length} valid email(s) for scheduling${this.validEmails.length ? `: ${this.validEmails.join(", ")}` : ""}`,
+      {
+        event: "scheduler.emails.loaded",
+        count: this.validEmails.length,
+        users: this.validEmails.map(({ id, email }) => ({
+          userId: id,
+          email: maskEmail(email),
+        })),
+      },
+      `Found ${this.validEmails.length} valid email(s) for scheduling`,
     );
     if (!this.schedulingEnabled) {
       logger.info("Scheduling is disabled. No tasks will be initialized.");
@@ -326,6 +416,143 @@ export class Scheduler {
     for (const schedule of schedules) {
       await this.initializeOneSchedule(schedule);
     }
+
+    // Internal task — not user-configurable, tick-rate, no recovery mechanism.
+    this.calibrationTask?.stop();
+    this.calibrationTask = scheduleTask("* * * * *", async () => {
+      for (const { email } of this.validEmails) {
+        try {
+          const fleet = Fleet.getInstance(email, {
+            throwOnError: false,
+            mailOnError: true,
+          });
+          const products = await fleet.getEnergyProducts();
+          for (const product of products) {
+            await fleet.detectCalibration(product);
+          }
+        } catch (err: any) {
+          logger.error(err, `Calibration check failed for ${maskEmail(email)}`);
+        }
+      }
+    });
+    logger.info("Calibration detection task initialized.");
+
+    // Internal task — not user-configurable, idempotent at 6-hour granularity, no recovery mechanism.
+    this.curveCronTask?.stop();
+    this.curveCronTask = scheduleTask("0 */6 * * *", async () => {
+      logger.info("Running charge curve aggregation and sample purge job");
+      try {
+        const db = await AppDataSource.getInstance(true);
+        const sampleRepo = db.getRepository<
+          IBasicEntity & ISiteCalibrationSample
+        >("SiteCalibrationSample");
+        const calibRepo = db.getRepository<ISiteCalibration & IBasicEntity>(
+          "SiteCalibration",
+        );
+
+        const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000);
+        const rawGroups = await sampleRepo
+          .createQueryBuilder("s")
+          .select("s.site_id", "site_id")
+          .where("s.creation_time >= :cutoff", { cutoff })
+          .groupBy("s.site_id")
+          .getRawMany<{ site_id: string }>();
+
+        const settingsRepo = db.getRepository<IBasicEntity & ISiteSettings>(
+          "SiteSettings",
+        );
+
+        for (const { site_id } of rawGroups) {
+          try {
+            const settingsRecord = await settingsRepo.findOne({
+              where: { site_id },
+            });
+            const siteSettings = resolveSiteSettings(
+              settingsRecord?.settings ?? null,
+            );
+            if (!siteSettings.auto_curve_calibration_enabled) {
+              logger.info(
+                { site_id },
+                "Curve aggregation skipped — auto calibration disabled for site",
+              );
+              continue;
+            }
+
+            const existing = await calibRepo.findOne({
+              where: { site_id, calibration_type: "chargeCurve" },
+              order: { creation_time: "DESC" },
+            });
+            const existingData = existing
+              ? (existing.calibration_data as unknown as ChargeCurveCalibrationData)
+              : null;
+
+            // Fetch only samples recorded after the last curve update so each
+            // batch is blended exactly once. Fall back to the full retention
+            // window when no curve exists yet (first-ever build).
+            const since = existing
+              ? new Date(existing.creation_time as unknown as string)
+              : cutoff;
+
+            const samples = (await sampleRepo
+              .createQueryBuilder("s")
+              .where(
+                "s.site_id = :site_id AND s.calibration_type = :type AND s.creation_time > :since",
+                { site_id, type: "chargeCurve", since },
+              )
+              .orderBy("s.creation_time", "ASC")
+              .getMany()) as Array<IBasicEntity & ISiteCalibrationSample>;
+
+            if (samples.length === 0) continue;
+
+            const candidate = buildChargeCurveBins(samples);
+            if (!isValidCandidate(candidate)) continue;
+
+            const updated = existingData
+              ? blendChargeCurveBins(existingData, candidate)
+              : candidate;
+
+            const now = new Date();
+            await calibRepo.save({
+              site_id,
+              calibration_type: "chargeCurve",
+              calibration_data: updated as unknown as Record<string, unknown>,
+              creation_time: now,
+              modified_time: now,
+            });
+            logger.info(
+              {
+                site_id,
+                bins: updated.bins.length,
+                blended: existingData !== null,
+              },
+              "Curve aggregation: charge_curve updated",
+            );
+          } catch (err: any) {
+            logger.error(err, `Curve aggregation failed for site ${site_id}`);
+          }
+        }
+
+        const { affected } = await sampleRepo
+          .createQueryBuilder()
+          .delete()
+          .where("creation_time < :cutoff", { cutoff })
+          .execute();
+        if (affected && affected > 0) {
+          logger.info(
+            { affected },
+            "Curve aggregation: purged expired calibration samples",
+          );
+        }
+      } catch (err: any) {
+        logger.error(
+          err,
+          "Charge curve aggregation and sample purge job failed",
+        );
+      }
+    });
+    logger.info(
+      "Charge curve aggregation and sample purge task initialized (every 6 hours).",
+    );
   }
 
   async stopAll() {
@@ -334,6 +561,10 @@ export class Scheduler {
       task.stop();
       this.enabledScheduledTasks.delete(id);
     }
+    this.calibrationTask?.stop();
+    this.calibrationTask = null;
+    this.curveCronTask?.stop();
+    this.curveCronTask = null;
     logger.info("All scheduled tasks stopped.");
   }
 
@@ -346,9 +577,9 @@ export class Scheduler {
   }
 
   async upsert(schedule: ISchedule) {
-    if (!this.validEmails.includes(schedule.email)) {
+    if (!this.validEmails.some(({ email }) => email === schedule.email)) {
       logger.warn(
-        `Schedule for email ${schedule.email} has no corresponding refresh token.`,
+        `Schedule for email ${maskEmail(schedule.email)} has no corresponding refresh token.`,
       );
       return;
     }
@@ -368,6 +599,7 @@ export class Scheduler {
       expiresAt: schedule.expires_at,
       conditions: schedule.conditions,
       actions: schedule.actions,
+      options: schedule.options,
     });
     schedule.id = result?.data?.id ?? schedule.id;
     if (this.schedulingEnabled && this.isValidSchedule(schedule)) {

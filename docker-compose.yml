@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:latest
+    image: postgres:16
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -9,8 +9,25 @@ services:
       - "${DB_PORT}:5432"
     volumes:
       - db:/var/lib/postgresql/data
+      - ./postgres/certs:/certs:ro
+    entrypoint:
+      - bash
+      - -c
+      - |
+        cp /certs/server.key /tmp/server.key &&
+        chown 999:999 /tmp/server.key &&
+        chmod 600 /tmp/server.key &&
+        exec docker-entrypoint.sh postgres \
+          -c ssl=on \
+          -c ssl_cert_file=/certs/server.crt \
+          -c ssl_key_file=/tmp/server.key \
+          -c ssl_ca_file=/certs/ca.crt
   redis:
-    image: redis:latest
+    image: redis:8.8.0
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: >
+      sh -c "redis-server $${REDIS_PASSWORD:+--requirepass $$REDIS_PASSWORD}"
     ports:
       - "6379:6379"
 volumes:
