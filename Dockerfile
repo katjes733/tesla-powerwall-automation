@@ -16,9 +16,6 @@ RUN bun run build-client
 FROM oven/bun:1.3.14 AS production
 WORKDIR /app
 
-RUN addgroup --system --gid 1001 appgroup && \
-    adduser --system --uid 1001 --ingroup appgroup appuser
-
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile --production
 
@@ -38,7 +35,7 @@ COPY --from=builder /app/public ./public
 #   -v /share/Container/container-data/tesla-powerwall-automation/certs:/app/ssl:ro
 #   -v /share/Container/container-data/postgres-certs:/app/db-certs:ro
 
-USER appuser
+USER bun
 EXPOSE 3001
 ENV NODE_ENV=production
 
