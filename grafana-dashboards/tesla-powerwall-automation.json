@@ -9,7 +9,9 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "query": {
-          "datasource": { "name": "-- Grafana --" },
+          "datasource": {
+            "name": "-- Grafana --"
+          },
           "group": "grafana",
           "kind": "DataQuery",
           "spec": {},
@@ -33,7 +35,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -60,7 +64,9 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "palette-classic" },
+                "color": {
+                  "mode": "palette-classic"
+                },
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -81,65 +87,108 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 2,
                   "pointSize": 5,
-                  "scaleDistribution": { "type": "linear" },
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
                   "showPoints": "auto",
                   "showValues": false,
                   "spanNulls": false,
-                  "stacking": { "group": "A", "mode": "none" },
-                  "thresholdsStyle": { "mode": "off" }
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "green", "value": 0 },
-                    { "color": "red", "value": 80 }
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
                   ]
                 },
                 "unit": "short"
               },
               "overrides": [
                 {
-                  "matcher": { "id": "byName", "options": "info" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "info"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#73BF69", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#73BF69",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "warn" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "warn"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#F2CC0C", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#F2CC0C",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "error" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "error"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#F2495C", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#F2495C",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "debug" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "debug"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#8B949E", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#8B949E",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 }
               ]
             },
             "options": {
-              "annotations": { "clustering": -1, "multiLane": false },
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
               "legend": {
-                "calcs": ["sum", "max"],
+                "calcs": [
+                  "sum",
+                  "max"
+                ],
                 "displayMode": "list",
                 "enableFacetedFilter": false,
                 "overflow": "ellipsis",
@@ -157,7 +206,6 @@
         }
       }
     },
-
     "panel-error-rate": {
       "kind": "Panel",
       "spec": {
@@ -170,7 +218,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -187,7 +237,7 @@
             "transformations": []
           }
         },
-        "description": "Error counts by service layer — no site filter so startup/db errors surface even before site context is available",
+        "description": "Error counts by service layer \u2014 no site filter so startup/db errors surface even before site context is available",
         "id": 2,
         "links": [],
         "title": "Error Rate by Service",
@@ -197,7 +247,9 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "palette-classic" },
+                "color": {
+                  "mode": "palette-classic"
+                },
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -218,18 +270,31 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 1,
                   "pointSize": 5,
-                  "scaleDistribution": { "type": "linear" },
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
                   "showPoints": "never",
                   "showValues": false,
                   "spanNulls": false,
-                  "stacking": { "group": "A", "mode": "normal" },
-                  "thresholdsStyle": { "mode": "off" }
+                  "stacking": {
+                    "group": "A",
+                    "mode": "normal"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "green", "value": 0 },
-                    { "color": "red", "value": 80 }
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "red",
+                      "value": 80
+                    }
                   ]
                 },
                 "unit": "short"
@@ -237,23 +302,31 @@
               "overrides": []
             },
             "options": {
-              "annotations": { "clustering": -1, "multiLane": false },
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
               "legend": {
-                "calcs": ["sum"],
+                "calcs": [
+                  "sum"
+                ],
                 "displayMode": "list",
                 "enableFacetedFilter": false,
                 "overflow": "ellipsis",
                 "placement": "bottom",
                 "showLegend": true
               },
-              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" }
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
             }
           },
           "version": "13.1.0"
         }
       }
     },
-
     "panel-schedule-stats": {
       "kind": "Panel",
       "spec": {
@@ -266,7 +339,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -292,10 +367,17 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "thresholds" },
+                "color": {
+                  "mode": "thresholds"
+                },
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [{ "color": "green", "value": 0 }]
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
                 },
                 "unit": "short"
               },
@@ -307,7 +389,9 @@
               "justifyMode": "auto",
               "orientation": "auto",
               "reduceOptions": {
-                "calcs": ["lastNotNull"],
+                "calcs": [
+                  "lastNotNull"
+                ],
                 "fields": "",
                 "values": false
               },
@@ -321,7 +405,6 @@
         }
       }
     },
-
     "panel-retry-stats": {
       "kind": "Panel",
       "spec": {
@@ -334,7 +417,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -350,7 +435,7 @@
             "transformations": []
           }
         },
-        "description": "Tesla API retry count — high values indicate connectivity issues",
+        "description": "Tesla API retry count \u2014 high values indicate connectivity issues",
         "id": 4,
         "links": [],
         "title": "Tesla API Retries",
@@ -360,13 +445,24 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "thresholds" },
+                "color": {
+                  "mode": "thresholds"
+                },
                 "thresholds": {
                   "mode": "absolute",
                   "steps": [
-                    { "color": "green", "value": 0 },
-                    { "color": "#F2CC0C", "value": 3 },
-                    { "color": "red", "value": 10 }
+                    {
+                      "color": "green",
+                      "value": 0
+                    },
+                    {
+                      "color": "#F2CC0C",
+                      "value": 3
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
                   ]
                 },
                 "unit": "short"
@@ -379,7 +475,9 @@
               "justifyMode": "auto",
               "orientation": "auto",
               "reduceOptions": {
-                "calcs": ["lastNotNull"],
+                "calcs": [
+                  "lastNotNull"
+                ],
                 "fields": "",
                 "values": false
               },
@@ -393,13 +491,16 @@
         }
       }
     },
-
     "row-schedule-header": {
       "kind": "Panel",
       "spec": {
         "data": {
           "kind": "QueryGroup",
-          "spec": { "queries": [], "queryOptions": {}, "transformations": [] }
+          "spec": {
+            "queries": [],
+            "queryOptions": {},
+            "transformations": []
+          }
         },
         "description": "",
         "id": 5,
@@ -409,7 +510,10 @@
           "group": "text",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "code": {
                 "language": "plaintext",
@@ -424,7 +528,6 @@
         }
       }
     },
-
     "panel-schedule-actions": {
       "kind": "Panel",
       "spec": {
@@ -437,7 +540,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -454,7 +559,7 @@
             "transformations": []
           }
         },
-        "description": "One data point per action execution — stacked to show overall schedule activity",
+        "description": "One data point per action execution \u2014 stacked to show overall schedule activity",
         "id": 6,
         "links": [],
         "title": "Actions Executed Over Time",
@@ -464,7 +569,9 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "palette-classic" },
+                "color": {
+                  "mode": "palette-classic"
+                },
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -485,39 +592,59 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 1,
                   "pointSize": 5,
-                  "scaleDistribution": { "type": "linear" },
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
                   "showPoints": "never",
                   "showValues": false,
                   "spanNulls": false,
-                  "stacking": { "group": "A", "mode": "normal" },
-                  "thresholdsStyle": { "mode": "off" }
+                  "stacking": {
+                    "group": "A",
+                    "mode": "normal"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [{ "color": "green", "value": 0 }]
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
                 },
                 "unit": "short"
               },
               "overrides": []
             },
             "options": {
-              "annotations": { "clustering": -1, "multiLane": false },
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
               "legend": {
-                "calcs": ["sum"],
+                "calcs": [
+                  "sum"
+                ],
                 "displayMode": "list",
                 "enableFacetedFilter": false,
                 "overflow": "ellipsis",
                 "placement": "bottom",
                 "showLegend": true
               },
-              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" }
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "desc"
+              }
             }
           },
           "version": "13.1.0"
         }
       }
     },
-
     "panel-schedule-failures": {
       "kind": "Panel",
       "spec": {
@@ -530,7 +657,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -554,7 +683,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -574,7 +706,6 @@
         }
       }
     },
-
     "panel-recent-executions": {
       "kind": "Panel",
       "spec": {
@@ -587,7 +718,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -603,7 +736,7 @@
             "transformations": []
           }
         },
-        "description": "Summary log emitted once per schedule run — use scheduleId to correlate with individual action logs",
+        "description": "Summary log emitted once per schedule run \u2014 use scheduleId to correlate with individual action logs",
         "id": 8,
         "links": [],
         "title": "Recent Schedule Executions",
@@ -611,7 +744,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -631,13 +767,16 @@
         }
       }
     },
-
     "row-smart-charging-header": {
       "kind": "Panel",
       "spec": {
         "data": {
           "kind": "QueryGroup",
-          "spec": { "queries": [], "queryOptions": {}, "transformations": [] }
+          "spec": {
+            "queries": [],
+            "queryOptions": {},
+            "transformations": []
+          }
         },
         "description": "",
         "id": 9,
@@ -647,7 +786,10 @@
           "group": "text",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "code": {
                 "language": "plaintext",
@@ -662,7 +804,6 @@
         }
       }
     },
-
     "panel-charging-decisions": {
       "kind": "Panel",
       "spec": {
@@ -675,7 +816,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -692,7 +835,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -709,7 +854,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -720,13 +867,32 @@
                   },
                   "refId": "C"
                 }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "loki"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | noOnPeakInTariff=\"true\" | siteName=~\"$site\" [$__interval])",
+                      "legendFormat": "holiday_skip"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "D"
+                }
               }
             ],
             "queryOptions": {},
             "transformations": []
           }
         },
-        "description": "Count of smart charging decisions per interval — enabled/disabled trigger a Tesla API call; no_change means conditions evaluated but no state change was needed",
+        "description": "Count of smart charging decisions per interval \u2014 enabled/disabled trigger a Tesla API call; no_change means conditions evaluated but no state change was needed; holiday_skip means the tariff had no on-peak periods (weekend or holiday schedule active)",
         "id": 10,
         "links": [],
         "title": "Grid Charging Decisions",
@@ -736,7 +902,9 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "palette-classic" },
+                "color": {
+                  "mode": "palette-classic"
+                },
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -757,67 +925,120 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 1,
                   "pointSize": 5,
-                  "scaleDistribution": { "type": "linear" },
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
                   "showPoints": "never",
                   "showValues": false,
                   "spanNulls": false,
-                  "stacking": { "group": "A", "mode": "none" },
-                  "thresholdsStyle": { "mode": "off" }
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [{ "color": "green", "value": 0 }]
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
                 },
                 "unit": "short"
               },
               "overrides": [
                 {
-                  "matcher": { "id": "byName", "options": "enabled" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "enabled"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#73BF69", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#73BF69",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "disabled" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "disabled"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#F2495C", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#F2495C",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "no_change" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "no_change"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#8B949E", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#8B949E",
+                        "mode": "fixed"
+                      }
+                    }
+                  ]
+                },
+                {
+                  "matcher": {
+                    "id": "byName",
+                    "options": "holiday_skip"
+                  },
+                  "properties": [
+                    {
+                      "id": "color",
+                      "value": {
+                        "fixedColor": "#B877D9",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 }
               ]
             },
             "options": {
-              "annotations": { "clustering": -1, "multiLane": false },
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
               "legend": {
-                "calcs": ["sum"],
+                "calcs": [
+                  "sum"
+                ],
                 "displayMode": "list",
                 "enableFacetedFilter": false,
                 "overflow": "ellipsis",
                 "placement": "bottom",
                 "showLegend": true
               },
-              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
             }
           },
           "version": "13.1.0"
         }
       }
     },
-
     "panel-soc-at-decision": {
       "kind": "Panel",
       "spec": {
@@ -830,7 +1051,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -847,7 +1070,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -874,7 +1099,9 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "palette-classic" },
+                "color": {
+                  "mode": "palette-classic"
+                },
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -895,41 +1122,62 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 2,
                   "pointSize": 5,
-                  "scaleDistribution": { "type": "linear" },
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
                   "showPoints": "auto",
                   "showValues": false,
                   "spanNulls": false,
-                  "stacking": { "group": "A", "mode": "none" },
-                  "thresholdsStyle": { "mode": "off" }
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "max": 100,
                 "min": 0,
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [{ "color": "green", "value": 0 }]
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
                 },
                 "unit": "percent"
               },
               "overrides": []
             },
             "options": {
-              "annotations": { "clustering": -1, "multiLane": false },
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
               "legend": {
-                "calcs": ["mean", "min"],
+                "calcs": [
+                  "mean",
+                  "min"
+                ],
                 "displayMode": "list",
                 "enableFacetedFilter": false,
                 "overflow": "ellipsis",
                 "placement": "bottom",
                 "showLegend": true
               },
-              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
             }
           },
           "version": "13.1.0"
         }
       }
     },
-
     "panel-solar-forecast": {
       "kind": "Panel",
       "spec": {
@@ -942,7 +1190,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -969,7 +1219,10 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "fixed", "fixedColor": "#F2CC0C" },
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "#F2CC0C"
+                },
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -990,26 +1243,44 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 2,
                   "pointSize": 5,
-                  "scaleDistribution": { "type": "linear" },
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
                   "showPoints": "auto",
                   "showValues": false,
                   "spanNulls": false,
-                  "stacking": { "group": "A", "mode": "none" },
-                  "thresholdsStyle": { "mode": "off" }
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "min": 0,
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [{ "color": "green", "value": 0 }]
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
                 },
                 "unit": "kwatth"
               },
               "overrides": []
             },
             "options": {
-              "annotations": { "clustering": -1, "multiLane": false },
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
               "legend": {
-                "calcs": ["mean", "max"],
+                "calcs": [
+                  "mean",
+                  "max"
+                ],
                 "displayMode": "list",
                 "enableFacetedFilter": false,
                 "overflow": "ellipsis",
@@ -1027,7 +1298,6 @@
         }
       }
     },
-
     "panel-forecast-method": {
       "kind": "Panel",
       "spec": {
@@ -1040,7 +1310,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1057,7 +1329,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1083,30 +1357,48 @@
           "kind": "VizConfig",
           "spec": {
             "fieldConfig": {
-              "defaults": { "color": { "mode": "palette-classic" } },
+              "defaults": {
+                "color": {
+                  "mode": "palette-classic"
+                }
+              },
               "overrides": [
                 {
-                  "matcher": { "id": "byName", "options": "Historical" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Historical"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#73BF69", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#73BF69",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "Linear Fallback" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "Linear Fallback"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#F2CC0C", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#F2CC0C",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 }
               ]
             },
             "options": {
-              "displayLabels": ["percent"],
+              "displayLabels": [
+                "percent"
+              ],
               "legend": {
                 "displayMode": "list",
                 "placement": "bottom",
@@ -1124,7 +1416,6 @@
         }
       }
     },
-
     "panel-charging-log": {
       "kind": "Panel",
       "spec": {
@@ -1137,7 +1428,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1147,13 +1440,31 @@
                   },
                   "refId": "A"
                 }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "loki"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | noOnPeakInTariff=\"true\" | siteName=~\"$site\" | line_format \"[holiday_skip] {{.msg}}\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
               }
             ],
             "queryOptions": {},
             "transformations": []
           }
         },
-        "description": "Full smart charging decision log with SOC, forecast, and reason",
+        "description": "Full smart charging decision log with SOC, forecast, and reason; holiday_skip lines indicate the tariff had no on-peak periods (weekend or holiday schedule active)",
         "id": 14,
         "links": [],
         "title": "Smart Charging Decision Log",
@@ -1161,7 +1472,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -1181,13 +1495,16 @@
         }
       }
     },
-
     "row-auth-header": {
       "kind": "Panel",
       "spec": {
         "data": {
           "kind": "QueryGroup",
-          "spec": { "queries": [], "queryOptions": {}, "transformations": [] }
+          "spec": {
+            "queries": [],
+            "queryOptions": {},
+            "transformations": []
+          }
         },
         "description": "",
         "id": 15,
@@ -1197,7 +1514,10 @@
           "group": "text",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "code": {
                 "language": "plaintext",
@@ -1212,7 +1532,6 @@
         }
       }
     },
-
     "panel-login-activity": {
       "kind": "Panel",
       "spec": {
@@ -1225,7 +1544,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1242,7 +1563,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1259,7 +1582,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1286,7 +1611,9 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "palette-classic" },
+                "color": {
+                  "mode": "palette-classic"
+                },
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -1307,67 +1634,105 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 1,
                   "pointSize": 5,
-                  "scaleDistribution": { "type": "linear" },
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
                   "showPoints": "never",
                   "showValues": false,
                   "spanNulls": false,
-                  "stacking": { "group": "A", "mode": "none" },
-                  "thresholdsStyle": { "mode": "off" }
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [{ "color": "green", "value": 0 }]
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
                 },
                 "unit": "short"
               },
               "overrides": [
                 {
-                  "matcher": { "id": "byName", "options": "success" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "success"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#73BF69", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#73BF69",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "failure" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "failure"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#F2495C", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#F2495C",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 },
                 {
-                  "matcher": { "id": "byName", "options": "locked" },
+                  "matcher": {
+                    "id": "byName",
+                    "options": "locked"
+                  },
                   "properties": [
                     {
                       "id": "color",
-                      "value": { "fixedColor": "#F2CC0C", "mode": "fixed" }
+                      "value": {
+                        "fixedColor": "#F2CC0C",
+                        "mode": "fixed"
+                      }
                     }
                   ]
                 }
               ]
             },
             "options": {
-              "annotations": { "clustering": -1, "multiLane": false },
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
               "legend": {
-                "calcs": ["sum"],
+                "calcs": [
+                  "sum"
+                ],
                 "displayMode": "list",
                 "enableFacetedFilter": false,
                 "overflow": "ellipsis",
                 "placement": "bottom",
                 "showLegend": true
               },
-              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
             }
           },
           "version": "13.1.0"
         }
       }
     },
-
     "panel-auth-log": {
       "kind": "Panel",
       "spec": {
@@ -1380,7 +1745,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1404,7 +1771,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -1424,13 +1794,16 @@
         }
       }
     },
-
     "row-calibration-header": {
       "kind": "Panel",
       "spec": {
         "data": {
           "kind": "QueryGroup",
-          "spec": { "queries": [], "queryOptions": {}, "transformations": [] }
+          "spec": {
+            "queries": [],
+            "queryOptions": {},
+            "transformations": []
+          }
         },
         "description": "",
         "id": 18,
@@ -1440,7 +1813,10 @@
           "group": "text",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "code": {
                 "language": "plaintext",
@@ -1455,7 +1831,6 @@
         }
       }
     },
-
     "panel-calibration-timeline": {
       "kind": "Panel",
       "spec": {
@@ -1468,7 +1843,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1495,7 +1872,9 @@
           "spec": {
             "fieldConfig": {
               "defaults": {
-                "color": { "mode": "palette-classic" },
+                "color": {
+                  "mode": "palette-classic"
+                },
                 "custom": {
                   "axisBorderShow": false,
                   "axisCenteredZero": false,
@@ -1516,39 +1895,59 @@
                   "lineInterpolation": "linear",
                   "lineWidth": 1,
                   "pointSize": 5,
-                  "scaleDistribution": { "type": "linear" },
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
                   "showPoints": "never",
                   "showValues": false,
                   "spanNulls": false,
-                  "stacking": { "group": "A", "mode": "none" },
-                  "thresholdsStyle": { "mode": "off" }
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
                 },
                 "thresholds": {
                   "mode": "absolute",
-                  "steps": [{ "color": "green", "value": 0 }]
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
                 },
                 "unit": "short"
               },
               "overrides": []
             },
             "options": {
-              "annotations": { "clustering": -1, "multiLane": false },
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
               "legend": {
-                "calcs": ["sum"],
+                "calcs": [
+                  "sum"
+                ],
                 "displayMode": "list",
                 "enableFacetedFilter": false,
                 "overflow": "ellipsis",
                 "placement": "bottom",
                 "showLegend": true
               },
-              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "multi",
+                "sort": "none"
+              }
             }
           },
           "version": "13.1.0"
         }
       }
     },
-
     "panel-calibration-log": {
       "kind": "Panel",
       "spec": {
@@ -1561,7 +1960,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1585,7 +1986,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -1605,13 +2009,16 @@
         }
       }
     },
-
     "row-system-health-header": {
       "kind": "Panel",
       "spec": {
         "data": {
           "kind": "QueryGroup",
-          "spec": { "queries": [], "queryOptions": {}, "transformations": [] }
+          "spec": {
+            "queries": [],
+            "queryOptions": {},
+            "transformations": []
+          }
         },
         "description": "",
         "id": 21,
@@ -1621,7 +2028,10 @@
           "group": "text",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "code": {
                 "language": "plaintext",
@@ -1636,7 +2046,6 @@
         }
       }
     },
-
     "panel-all-logs": {
       "kind": "Panel",
       "spec": {
@@ -1649,7 +2058,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1673,7 +2084,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -1693,7 +2107,6 @@
         }
       }
     },
-
     "panel-error-logs": {
       "kind": "Panel",
       "spec": {
@@ -1706,7 +2119,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1722,7 +2137,7 @@
             "transformations": []
           }
         },
-        "description": "All error-level logs across all services — no site filter",
+        "description": "All error-level logs across all services \u2014 no site filter",
         "id": 23,
         "links": [],
         "title": "Error Logs",
@@ -1730,7 +2145,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -1750,7 +2168,6 @@
         }
       }
     },
-
     "panel-db-errors": {
       "kind": "Panel",
       "spec": {
@@ -1763,7 +2180,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1787,7 +2206,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -1807,7 +2229,6 @@
         }
       }
     },
-
     "panel-mail-events": {
       "kind": "Panel",
       "spec": {
@@ -1820,7 +2241,9 @@
                 "spec": {
                   "hidden": false,
                   "query": {
-                    "datasource": { "name": "loki" },
+                    "datasource": {
+                      "name": "loki"
+                    },
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
@@ -1844,7 +2267,10 @@
           "group": "logs",
           "kind": "VizConfig",
           "spec": {
-            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "fieldConfig": {
+              "defaults": {},
+              "overrides": []
+            },
             "options": {
               "dedupStrategy": "none",
               "enableInfiniteScrolling": false,
@@ -1865,7 +2291,6 @@
       }
     }
   },
-
   "layout": {
     "kind": "GridLayout",
     "spec": {
@@ -1922,7 +2347,6 @@
             "y": 3
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -1936,7 +2360,6 @@
             "y": 7
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -1976,7 +2399,6 @@
             "y": 16
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -1990,7 +2412,6 @@
             "y": 22
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -2056,7 +2477,6 @@
             "y": 31
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -2070,7 +2490,6 @@
             "y": 39
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -2087,14 +2506,16 @@
         {
           "kind": "GridLayoutItem",
           "spec": {
-            "element": { "kind": "ElementReference", "name": "panel-auth-log" },
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-auth-log"
+            },
             "height": 7,
             "width": 12,
             "x": 12,
             "y": 40
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -2108,7 +2529,6 @@
             "y": 47
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -2135,7 +2555,6 @@
             "y": 48
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
@@ -2149,11 +2568,13 @@
             "y": 55
           }
         },
-
         {
           "kind": "GridLayoutItem",
           "spec": {
-            "element": { "kind": "ElementReference", "name": "panel-all-logs" },
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-all-logs"
+            },
             "height": 10,
             "width": 24,
             "x": 0,
@@ -2202,11 +2623,14 @@
       ]
     }
   },
-
   "links": [],
   "liveNow": false,
   "preload": false,
-  "tags": ["powerwall", "tesla", "loki"],
+  "tags": [
+    "powerwall",
+    "tesla",
+    "loki"
+  ],
   "timeSettings": {
     "autoRefresh": "1m",
     "autoRefreshIntervals": [

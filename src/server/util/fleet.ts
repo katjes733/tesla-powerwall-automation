@@ -1224,9 +1224,19 @@ export class Fleet {
 
     if (isTouMode) {
       const tariff = parseTariffContent(siteInfo.tariff_content);
-      if (!hasTouData(tariff)) {
+      if (!tariff) {
         siteLog.warn(
           "Smart charging: no TOU data — configure a TOU tariff in the Tesla app",
+        );
+        return null;
+      }
+      if (!hasTouData(tariff)) {
+        // Tariff is present but has no on-peak periods — expected during a weekend
+        // or holiday schedule override. Not a misconfiguration; smart charging is
+        // simply not applicable when there is no peak to avoid.
+        siteLog.info(
+          { noOnPeakInTariff: true },
+          "Smart charging: skipped — no on-peak periods in current tariff (weekend or holiday schedule active)",
         );
         return null;
       }
@@ -1511,20 +1521,27 @@ export class Fleet {
           const periods: any[] = Array.isArray(labelData)
             ? labelData
             : (labelData?.periods ?? []);
-          // Keep only periods that reach weekend days (Sat=6 or Sun=0)
+          // Keep only periods that reach weekend days (Sat=5 or Sun=6)
           const weekendPeriods = periods.filter(
             (p: any) => (p.toDayOfWeek ?? 6) >= 5,
           );
           if (weekendPeriods.length === 0) continue;
-          // Expand each kept period to all days
-          const expandedPeriods = weekendPeriods.map((p: any) => ({
+          // Apply weekend schedule to both weekday (0–4) and weekend (5–6) as
+          // separate blocks so the Tesla App and our UI can display them correctly.
+          const weekdayVersions = weekendPeriods.map((p: any) => ({
             ...p,
             fromDayOfWeek: 0,
+            toDayOfWeek: 4,
+          }));
+          const weekendVersions = weekendPeriods.map((p: any) => ({
+            ...p,
+            fromDayOfWeek: 5,
             toDayOfWeek: 6,
           }));
+          const combined = [...weekdayVersions, ...weekendVersions];
           newPeriods[label] = Array.isArray(labelData)
-            ? expandedPeriods
-            : { ...labelData, periods: expandedPeriods };
+            ? combined
+            : { ...labelData, periods: combined };
         }
         result[seasonName] = { ...(season as any), tou_periods: newPeriods };
       }
