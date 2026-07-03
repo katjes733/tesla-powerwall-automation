@@ -1,3 +1,5 @@
+const retryLog = logger.child({ service: "retry" });
+
 export async function retry<T>(
   fn: () => Promise<T>,
   retries = 3,
@@ -11,7 +13,10 @@ export async function retry<T>(
       return await fn();
     } catch (error) {
       lastError = error;
-      logger.warn(`Retry attempt ${i + 1} failed with error: ${error}`);
+      retryLog.warn(
+        { attempt: i + 1, maxRetries: retries, err: error },
+        "Retry attempt failed",
+      );
       await new Promise((res) => setTimeout(res, currentDelay));
       currentDelay *= backoffFactor;
     }

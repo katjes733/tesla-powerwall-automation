@@ -53,6 +53,8 @@ declare module "express-session" {
   }
 }
 
+const authLog = logger.child({ service: "auth" });
+
 export const router: Router = express.Router();
 
 router.post(
@@ -62,13 +64,13 @@ router.post(
   async (req, res) => {
     const { email, password } = req.body;
     const ip = req.ip;
-    logger.info(
+    authLog.info(
       { event: "auth.login.attempt", email: maskEmail(email), ip },
       "Login attempt",
     );
 
     if (await isLockedOut(email)) {
-      logger.warn(
+      authLog.warn(
         { event: "auth.login.locked", email: maskEmail(email), ip },
         "Login blocked: account temporarily locked",
       );
@@ -84,7 +86,7 @@ router.post(
       const user = await userRepo.findOneBy({ email });
       if (!user) {
         await recordFailure(email);
-        logger.warn(
+        authLog.warn(
           {
             event: "auth.login.failure",
             email: maskEmail(email),
@@ -100,7 +102,7 @@ router.post(
       const isValid = await argon2.verify(user.password_hash, password);
       if (!isValid) {
         await recordFailure(email);
-        logger.warn(
+        authLog.warn(
           {
             event: "auth.login.failure",
             userId: user.id,
@@ -118,7 +120,7 @@ router.post(
         user.user_permissions?.type &&
         !["user", "admin"].includes(user.user_permissions?.type)
       ) {
-        logger.warn(
+        authLog.warn(
           {
             event: "auth.login.failure",
             userId: user.id,
@@ -138,7 +140,7 @@ router.post(
         req.session.expiry =
           Date.now() + (req.session.cookie.maxAge || 3600000);
       }
-      logger.info(
+      authLog.info(
         {
           event: "auth.login.success",
           userId: user.id,
@@ -154,7 +156,7 @@ router.post(
       });
       return;
     } catch (error: any) {
-      logger.error(
+      authLog.error(
         { event: "auth.login.error", email: maskEmail(email), ip, err: error },
         "Login error",
       );
@@ -171,7 +173,7 @@ router.get("/me", (req, res) => {
     });
     return;
   }
-  logger.debug(`❌ Identification failed. No authenticated user.`);
+  authLog.debug("Identification failed — no authenticated user");
   res.status(401).json({ message: "Not authenticated." });
 });
 
@@ -184,7 +186,7 @@ router.get("/me", (req, res) => {
 //     res.json({ message: "Session extended", sessionExpiry: newExpiry });
 //     return;
 //   }
-//   logger.error(`❌ Extend session failed. No authenticated user.`);
+//   authLog.error(`❌ Extend session failed. No authenticated user.`);
 //   res.status(401).json({ message: "Not authenticated." });
 // });
 
@@ -193,7 +195,7 @@ router.post("/logout", (req, res) => {
   const ip = req.ip;
   req.session.destroy((err) => {
     if (err) return res.status(500).json({ message: "Failed to logout." });
-    logger.info(
+    authLog.info(
       { event: "auth.logout", email: maskEmail(email as string), ip },
       "User logged out",
     );

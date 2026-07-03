@@ -1,4 +1,7 @@
 import nodemailer, { type Transporter } from "nodemailer";
+import { maskEmail } from "~/server/util/maskEmail";
+
+const mailLog = logger.child({ service: "mail" });
 
 let mailTransporter: Transporter | null = null;
 
@@ -44,9 +47,15 @@ export async function sendEmail(
         subject: subject,
         text: text,
       });
-      logger.info(`Email sent: ${info.messageId}`);
+      mailLog.info(
+        { messageId: info.messageId, recipient: maskEmail(recipient) },
+        "Email sent",
+      );
     } catch (error) {
-      logger.error("Email sending error:", error);
+      mailLog.error(
+        { err: error, recipient: maskEmail(recipient) },
+        "Email sending failed",
+      );
     }
   }
 }

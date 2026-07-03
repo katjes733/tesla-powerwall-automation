@@ -26,7 +26,8 @@ class AppDataSource {
     if (AppDataSource.initializing) {
       return AppDataSource.initializing;
     }
-    const log = silent ? logger.trace.bind(logger) : logger.info.bind(logger);
+    const dbLog = logger.child({ service: "db" });
+    const log = silent ? dbLog.trace.bind(dbLog) : dbLog.info.bind(dbLog);
     const dbSsl = process.env.DB_SSL === "true";
     if (dbSsl && !process.env.DB_SSL_CA_PATH) {
       throw new Error("DB_SSL_CA_PATH must be set when DB_SSL=true");
@@ -93,7 +94,7 @@ class AppDataSource {
         return dataSource;
       })
       .catch((error) => {
-        logger.error(error, "❌ Error during Data Source initialization:");
+        dbLog.error({ err: error }, "Database initialization failed");
         process.exit(1);
       });
     return AppDataSource.initializing;

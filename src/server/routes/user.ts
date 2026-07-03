@@ -8,6 +8,8 @@ import { maskEmail } from "~/server/util/maskEmail";
 import { validateBody } from "~/server/middleware/validateBody";
 import { UserUpsertSchema, ChangePasswordSchema } from "~/shared/schemas/user";
 
+const authLog = logger.child({ service: "auth" });
+
 export const router = express.Router();
 
 router.post(
@@ -51,7 +53,7 @@ router.post(
           user_permissions: user_permissions ?? {},
         });
         status = 200;
-        logger.info(
+        authLog.info(
           {
             event: "auth.account.created",
             userId: id,
@@ -80,7 +82,7 @@ router.post(
         .status(status)
         .json({ email, action: status === 200 ? "create" : "update" });
     } catch (error: any) {
-      logger.error(
+      authLog.error(
         {
           event: "auth.account.upsert.error",
           email: maskEmail(email),
@@ -101,7 +103,7 @@ router.post("/remove", requireAuth, async (req, res, next) => {
     const userRepo = (await AppDataSource.getInstance()).getRepository("User");
     const userToDelete = await userRepo.findOneBy({ email });
     await userRepo.delete({ email });
-    logger.warn(
+    authLog.warn(
       {
         event: "auth.account.deleted",
         userId: userToDelete?.id,
@@ -112,7 +114,7 @@ router.post("/remove", requireAuth, async (req, res, next) => {
     );
     res.status(200).json({ email, action: "delete" });
   } catch (error: any) {
-    logger.error(
+    authLog.error(
       {
         event: "auth.account.delete.error",
         email: maskEmail(email),
@@ -145,7 +147,7 @@ router.post(
       currentPassword,
     );
     if (!isMatch) {
-      logger.warn(
+      authLog.warn(
         {
           event: "auth.password.change.failure",
           userId: existingUser.id,
@@ -164,7 +166,7 @@ router.post(
         modified_time: new Date(),
         password_hash: await argon2.hash(newPassword),
       });
-      logger.info(
+      authLog.info(
         {
           event: "auth.password.changed",
           userId: existingUser.id,
@@ -175,7 +177,7 @@ router.post(
       );
       res.status(200).json({ email, action: "update" });
     } catch (error: any) {
-      logger.error(
+      authLog.error(
         {
           event: "auth.password.change.error",
           userId: existingUser.id,

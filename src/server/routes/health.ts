@@ -1,6 +1,8 @@
 import express from "express";
 import AppDataSource from "~/server/database/datasource";
 
+const apiLog = logger.child({ service: "api" });
+
 export const router = express.Router();
 
 router.get("/status-server", (req, res) => {
@@ -13,7 +15,7 @@ router.get("/status-db", async (req, res) => {
     await ds.query("SELECT 1");
     res.status(200).send({ status: "ok", message: "Database is healthy" });
   } catch (error) {
-    logger.error(error, "❌ Error checking database health:");
+    apiLog.error({ err: error }, "Error checking database health");
     res
       .status(500)
       .send({ status: "error", message: "Database is not healthy" });

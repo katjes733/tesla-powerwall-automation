@@ -14,6 +14,8 @@ import type { ISignupVerification } from "../database/models/signupVerification"
 import { validateBody } from "~/server/middleware/validateBody";
 import { SendCodeSchema, VerifyCodeSchema } from "~/shared/schemas/auth";
 
+const authLog = logger.child({ service: "auth" });
+
 export const router = express.Router();
 
 router.post(
@@ -45,14 +47,18 @@ router.post(
             res.json({ message: "Verification code sent" });
           })
           .catch((error) => {
-            logger.error(
-              `❌ Sending verification code failed: ${error.message}`,
+            authLog.error(
+              { err: error, email: email },
+              "Sending verification code failed",
             );
             next(error);
           }),
       )
       .catch((error) => {
-        logger.error(`❌ ${error.message}.`);
+        authLog.error(
+          { err: error, email: email },
+          "Verification code upsert failed",
+        );
         next(error);
       });
   },

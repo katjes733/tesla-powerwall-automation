@@ -49,6 +49,8 @@ const httpLogger = pinoHttp({
   },
 });
 
+const startupLog = logger.child({ service: "startup" });
+
 const app = express();
 
 app.use(httpLogger);
@@ -58,7 +60,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
   .map((o) => o.trim())
   .filter(Boolean);
 
-logger.info({ allowedOrigins }, "CORS: allowed origins");
+startupLog.info({ allowedOrigins }, "CORS: allowed origins");
 
 app.use(
   cors({
@@ -99,7 +101,7 @@ if (!process.env.TESLA_CLIENT_ID || !process.env.TESLA_CLIENT_SECRET) {
 
 const sslEnabled = process.env.SSL_ENABLED === "true";
 if (!sslEnabled && process.env.NODE_ENV !== "development") {
-  logger.warn(
+  startupLog.warn(
     "SSL_ENABLED is not set. Session cookies will be transmitted over plain HTTP. " +
       "Set SSL_ENABLED=true with a valid certificate for production use.",
   );
@@ -146,13 +148,13 @@ app.use("/api/calibration", CalibrationRouter);
 app.use("/api/site-settings", SiteSettingsRouter);
 
 if (process.env.NODE_ENV !== "development") {
-  logger.info("Serving static files from 'public' directory");
+  startupLog.info("Serving static files from 'public' directory");
   app.use(express.static(path.join(process.cwd(), "public")));
   app.use((_req, res) => {
     res.sendFile(path.join(process.cwd(), "public", "index.html"));
   });
 } else {
-  logger.info("Not in production mode");
+  startupLog.info("Not in production mode");
 }
 
 app.use(
@@ -162,7 +164,7 @@ app.use(
     res: express.Response,
     _next: express.NextFunction,
   ) => {
-    logger.error({ err }, "Unhandled request error");
+    startupLog.error({ err }, "Unhandled request error");
     const isDev = process.env.NODE_ENV === "development";
     res
       .status(500)
@@ -186,26 +188,34 @@ if (sslEnabled) {
   };
 
   server = https.createServer(sslOptions, app);
-  logger.info("SSL is enabled. Running server with HTTPS.");
+  startupLog.info("SSL is enabled. Running server with HTTPS.");
 } else {
   server = http.createServer(app);
-  logger.info("SSL is not enabled. Running server with HTTP.");
+  startupLog.info("SSL is not enabled. Running server with HTTP.");
 }
 
 server.listen(port, () => {
-  logger.info(`Tesla Powerwall Automation is running on port ${port}`);
+  startupLog.info(
+    {
+      port,
+      ssl: sslEnabled,
+      dryRun: process.env.DRY_RUN === "true",
+      env: process.env.NODE_ENV,
+    },
+    "Tesla Powerwall Automation started",
+  );
 });
 
 await AppDataSource.getInstance(false);
 
 if (process.env.DRY_RUN === "true") {
-  logger.warn(
+  startupLog.warn(
     "DRY RUN mode is enabled. No Tesla API write calls will be made.",
   );
 }
 
 recoverCurveCalibrations().catch((err) =>
-  logger.error(err, "Curve calibration recovery failed at startup"),
+  startupLog.error({ err }, "Curve calibration recovery failed at startup"),
 );
 
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
@@ -220,8 +230,8 @@ if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
 
   // Fleet.getInstance(email, { mailOnError: true, throwOnError: false });
 
-  // // logger.info(await getAllSiteInfo(email));
-  // logger.info(await getAllLiveStatus(email));
+  // // startupLog.info(await getAllSiteInfo(email));
+  // startupLog.info(await getAllLiveStatus(email));
   // // await setBackupReserveAll(5);
   // // await setBackupReserveAllWhenFullyCharged(5);
 }
