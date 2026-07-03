@@ -322,7 +322,7 @@ export default function TouConfigs() {
   ];
 
   return (
-    <Box p={3} display="flex" flexDirection="column" gap={2}>
+    <Box px={3} pb={3} display="flex" flexDirection="column" gap={2}>
       <Typography variant="h5">TOU Schedule Configs</Typography>
 
       {/* Toolbar */}

@@ -21,6 +21,7 @@ interface SiteStatus {
   live: LiveStatus | null;
   info: SiteInfo | null;
   calibrating: boolean;
+  activeHoliday: string | null;
 }
 
 const INTERVAL_OPTIONS = [
@@ -88,7 +89,7 @@ export default function PowerwallStatus() {
   }, []);
 
   return (
-    <Box sx={{ width: "100%", maxWidth: 1200, mx: "auto", px: 2, mt: 4 }}>
+    <Box sx={{ width: "100%", maxWidth: 1200, mx: "auto", px: 2 }}>
       {/* Header row */}
       <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
         <Typography variant="h5" fontWeight={600} sx={{ flex: 1 }}>
@@ -185,13 +186,14 @@ export default function PowerwallStatus() {
                 !hideOffGrid ||
                 (live !== null && live.island_status === "on_grid"),
             )
-            .map(({ product, live, info, calibrating }) => (
+            .map(({ product, live, info, calibrating, activeHoliday }) => (
               <SiteCard
                 key={product.energy_site_id}
                 product={product}
                 live={live}
                 info={info}
                 calibrating={calibrating}
+                activeHoliday={activeHoliday}
               />
             ))}
         </Box>

@@ -109,6 +109,27 @@ export function isObservedHolidayOnDate(
 }
 
 /**
+ * Returns the name of the first enabled holiday whose observed date matches dateStr,
+ * or null if no holiday falls on that date.
+ * dateStr is expected to be in YYYY-MM-DD format.
+ */
+export function getActiveHolidayName(
+  entries: HolidayEntry[],
+  dateStr: string,
+): string | null {
+  const year = parseInt(dateStr.slice(0, 4), 10);
+  for (const e of entries) {
+    if (!e.enabled) continue;
+    try {
+      if (computeObservedDate(e, year) === dateStr) return e.name;
+    } catch {
+      // ignore malformed entries
+    }
+  }
+  return null;
+}
+
+/**
  * Returns pre-built holiday templates for a given source key.
  * Pure function — no server call needed.
  */

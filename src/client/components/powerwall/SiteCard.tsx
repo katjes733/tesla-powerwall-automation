@@ -15,6 +15,7 @@ interface Props {
   live: LiveStatus | null;
   info: SiteInfo | null;
   calibrating?: boolean;
+  activeHoliday?: string | null;
 }
 
 function batteryColor(pct: number): "success" | "warning" | "error" {
@@ -45,6 +46,7 @@ export default function SiteCard({
   live,
   info,
   calibrating = false,
+  activeHoliday = null,
 }: Props) {
   const theme = useTheme();
 
@@ -81,12 +83,25 @@ export default function SiteCard({
         titleTypographyProps={{ variant: "h6", fontWeight: 600 }}
         subheader={`ID: ${product.energy_site_id}`}
         action={
-          <Chip
-            label={gridChipLabel}
-            color={gridChipColor}
-            size="small"
-            sx={{ mt: 1, mr: 1 }}
-          />
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-end",
+              gap: 0.5,
+              mt: 1,
+              mr: 1,
+            }}
+          >
+            <Chip label={gridChipLabel} color={gridChipColor} size="small" />
+            {activeHoliday && (
+              <Chip
+                label={`Holiday: ${activeHoliday}`}
+                color="warning"
+                size="small"
+              />
+            )}
+          </Box>
         }
       />
 

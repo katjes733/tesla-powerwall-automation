@@ -531,7 +531,7 @@ export default function Calibration() {
         : null;
 
   return (
-    <Box sx={{ display: "flex", mt: 1, width: "100%" }}>
+    <Box sx={{ display: "flex", width: "100%" }}>
       {/* left spacer — yields space to content when viewport is narrow */}
       <Box sx={{ flex: "1 1 20%", minWidth: 0 }} />
 
