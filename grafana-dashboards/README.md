@@ -38,18 +38,18 @@ The Grafana Scenes JSON schema does not support query-type variables in the impo
 1. Open the dashboard → **Dashboard settings** (gear icon) → **Variables** → **+ Add variable**
 2. Fill in:
 
-   | Field | Value |
-   | --- | --- |
-   | Type | Query |
-   | Name | `site` |
-   | Label | `Site` |
-   | Data source | loki |
-   | Query type | Label values |
-   | Label | `siteName` |
-   | Stream selector | `{container_name="tesla-powerwall-automation"} \| json` |
-   | Refresh | On dashboard load |
-   | Include All option | ✓ |
-   | Custom all value | `.*` |
+   | Field                           | Value                                           |
+   | ------------------------------- | ----------------------------------------------- |
+   | Type                            | Query                                           |
+   | Name                            | `site`                                          |
+   | Label                           | `Site`                                          |
+   | Query options → Data source     | loki                                            |
+   | Query options → Query type      | Label values                                    |
+   | Query options → Label           | `siteName`                                      |
+   | Query options → Stream selector | `{container_name="tesla-powerwall-automation"}` |
+   | Query options → Refresh         | On dashboard load                               |
+   | Include All option              | ✓                                               |
+   | Custom all value                | `.*`                                            |
 
 3. Click **Preview** — your site name(s) should appear
 4. **Apply** → **Save dashboard**
@@ -60,14 +60,14 @@ The Grafana Scenes JSON schema does not support query-type variables in the impo
 
 ## Panel overview
 
-| Section | Panels | Notes |
-| --- | --- | --- |
-| **Overview** | Log volume by level, Error rate by service, Schedule runs/hr, Tesla API retries | Error rate has no site filter — surfaces startup/db errors before site context is available |
-| **Schedule Execution** | Actions over time, Schedule failures, Recent executions | Use `scheduleId` from Recent Executions to drill into a specific run in Grafana Explore |
-| **Smart Charging** | Grid charging decisions, SOC at decision, Solar forecast, Forecast method, Decision log | Decision log line: `[action] soc= target= \| solar=kWh (method) \| rate=kW \| reason` |
-| **Auth Events** | Login activity (success/failure/locked), Auth event log | No site filter — auth is user-scoped, not site-scoped |
-| **Calibration** | Calibration events over time, Calibration event log | Requires `eventType=~"calibration_.*"` logs from `service=fleet` |
-| **System Health** | All logs, Error logs, DB errors, Mail events | All logs and Error logs respect the site filter; DB/mail panels do not |
+| Section                | Panels                                                                                  | Notes                                                                                       |
+| ---------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Overview**           | Log volume by level, Error rate by service, Schedule runs/hr, Tesla API retries         | Error rate has no site filter — surfaces startup/db errors before site context is available |
+| **Schedule Execution** | Actions over time, Schedule failures, Recent executions                                 | Use `scheduleId` from Recent Executions to drill into a specific run in Grafana Explore     |
+| **Smart Charging**     | Grid charging decisions, SOC at decision, Solar forecast, Forecast method, Decision log | Decision log line: `[action] soc= target= \| solar=kWh (method) \| rate=kW \| reason`       |
+| **Auth Events**        | Login activity (success/failure/locked), Auth event log                                 | No site filter — auth is user-scoped, not site-scoped                                       |
+| **Calibration**        | Calibration events over time, Calibration event log                                     | Requires `eventType=~"calibration_.*"` logs from `service=fleet`                            |
+| **System Health**      | All logs, Error logs, DB errors, Mail events                                            | All logs and Error logs respect the site filter; DB/mail panels do not                      |
 
 ---
 
