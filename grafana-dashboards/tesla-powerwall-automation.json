@@ -270,7 +270,7 @@
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
-                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"scheduler\" | msg=\"Schedule executed\" | siteName=~\"$site\" [$__range])"
+                      "expr": "sum(count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"scheduler\" | msg=\"Schedule executed\" | siteName=~\"$site\" [$__range]))"
                     },
                     "version": "v0"
                   },
@@ -338,7 +338,7 @@
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
-                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"retry\" [$__range])"
+                      "expr": "sum(count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"retry\" [$__range]))"
                     },
                     "version": "v0"
                   },
