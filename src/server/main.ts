@@ -117,7 +117,7 @@ app.use(
       httpOnly: true,
       secure: sslEnabled,
       sameSite: "strict",
-      maxAge: 24 * 60 * 60 * 1000, // 1 day
+      maxAge: 4 * 60 * 60 * 1000, // 4 hours
     },
   }),
 );

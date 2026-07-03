@@ -6,7 +6,7 @@ import {
   useEffect,
   useContext,
   useCallback,
-  useMemo,
+  useRef,
 } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from "react-router-dom";
@@ -45,10 +45,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [authPending, setAuthPending] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
 
-  const bc = useMemo(() => {
-    console.log("Creating BroadcastChannel");
-    return new BroadcastChannel("auth_channel");
-  }, []);
+  const bcRef = useRef<BroadcastChannel | null>(null);
 
   const logoutActions = () => {
     setUser(null);
@@ -59,7 +56,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   useEffect(() => {
-    bc.onmessage = (event) => {
+    const channel = new BroadcastChannel("auth_channel");
+    bcRef.current = channel;
+
+    channel.onmessage = (event) => {
       if (event.data) {
         const { type, sessionExpiry: newExpiry } = event.data;
         if (type === "logout") {
@@ -88,10 +88,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     };
 
     return () => {
-      console.log("Closing BroadcastChannel");
-      bc.close();
+      channel.close();
+      bcRef.current = null;
     };
-  }, [bc, history]);
+  }, [navigate]);
 
   useEffect(() => {
     const interceptor = axiosInstance.interceptors.response.use(
@@ -130,6 +130,29 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    if (!user) return;
+    const interval = setInterval(
+      () => {
+        axiosInstance
+          .get("/api/session/me", { withCredentials: true })
+          .then((response) => {
+            if (response.data.sessionExpiry) {
+              setSessionExpiry(response.data.sessionExpiry);
+            }
+          })
+          .catch((error) => {
+            if (error.response?.status === 401) {
+              logoutActions();
+              if (window.location.pathname !== "/login") navigate("/login");
+            }
+          });
+      },
+      2 * 60 * 1000,
+    );
+    return () => clearInterval(interval);
+  }, [user, navigate]);
+
+  useEffect(() => {
     if (!sessionExpiry) return;
     const msUntilExpiry = sessionExpiry - Date.now();
     if (msUntilExpiry <= 0) {
@@ -139,11 +162,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     const timer = setTimeout(() => {
       logoutActions();
-      bc.postMessage({ type: "logout" });
+      bcRef.current?.postMessage({ type: "logout" });
       if (window.location.pathname !== "/login") navigate("/login");
     }, msUntilExpiry);
     return () => clearTimeout(timer);
-  }, [sessionExpiry, navigate, bc]);
+  }, [sessionExpiry, navigate]);
 
   useEffect(() => {
     if (!loading) {
@@ -161,36 +184,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [loading, user]);
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      setAuthPending(true);
-      try {
-        const response = await axiosInstance.post(
-          "/api/session/login",
-          { email, password },
-          { withCredentials: true },
-        );
-        setUser(response.data.user);
-        setSessionExpiry(response.data.sessionExpiry);
-        const newSessionId = uuidv4();
-        sessionStorage.setItem("tabSessionId", newSessionId);
-        setSessionId(newSessionId);
-        bc.postMessage({
-          type: "login",
-          sessionExpiry: response.data.sessionExpiry,
-        });
-      } catch (error: any) {
-        console.error(
-          "Login error:",
-          error.response?.data?.message || error.message,
-        );
-        throw error;
-      } finally {
-        setAuthPending(false);
-      }
-    },
-    [bc],
-  );
+  const login = useCallback(async (email: string, password: string) => {
+    setAuthPending(true);
+    try {
+      const response = await axiosInstance.post(
+        "/api/session/login",
+        { email, password },
+        { withCredentials: true },
+      );
+      setUser(response.data.user);
+      setSessionExpiry(response.data.sessionExpiry);
+      const newSessionId = uuidv4();
+      sessionStorage.setItem("tabSessionId", newSessionId);
+      setSessionId(newSessionId);
+      bcRef.current?.postMessage({
+        type: "login",
+        sessionExpiry: response.data.sessionExpiry,
+      });
+    } catch (error: any) {
+      console.error(
+        "Login error:",
+        error.response?.data?.message || error.message,
+      );
+      throw error;
+    } finally {
+      setAuthPending(false);
+    }
+  }, []);
 
   const extendSession = useCallback(async () => {
     setAuthPending(true);
@@ -201,7 +221,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         { withCredentials: true },
       );
       setSessionExpiry(response.data.sessionExpiry);
-      bc.postMessage({
+      bcRef.current?.postMessage({
         type: "extend-session",
         sessionExpiry: response.data.sessionExpiry,
       });
@@ -214,7 +234,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } finally {
       setAuthPending(false);
     }
-  }, [bc]);
+  }, []);
 
   const logout = useCallback(async () => {
     setAuthPending(true);
@@ -225,19 +245,59 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         { withCredentials: true },
       );
       logoutActions();
-      bc.postMessage({ type: "logout" });
+      bcRef.current?.postMessage({ type: "logout" });
     } catch (error: any) {
       if (error.code === "ECONNABORTED") {
         console.error("Logout timeout exceeded");
         logoutActions();
-        bc.postMessage({ type: "logout" });
+        bcRef.current?.postMessage({ type: "logout" });
       } else {
         console.error("Logout error:", error.message);
       }
     } finally {
       setAuthPending(false);
     }
-  }, [bc]);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const IDLE_MS = 60 * 60 * 1000;
+    const THROTTLE_MS = 60_000;
+    const EVENTS = [
+      "mousemove",
+      "mousedown",
+      "keydown",
+      "touchstart",
+      "scroll",
+      "click",
+    ] as const;
+
+    let timer: ReturnType<typeof setTimeout>;
+    let lastActivity = performance.now();
+
+    const resetTimer = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => logout(), IDLE_MS);
+    };
+
+    const onActivity = () => {
+      const now = performance.now();
+      if (now - lastActivity > THROTTLE_MS) {
+        lastActivity = now;
+        resetTimer();
+      }
+    };
+
+    EVENTS.forEach((e) =>
+      document.addEventListener(e, onActivity, { passive: true }),
+    );
+    resetTimer();
+
+    return () => {
+      clearTimeout(timer);
+      EVENTS.forEach((e) => document.removeEventListener(e, onActivity));
+    };
+  }, [user, logout]);
 
   const newSessionId = useCallback(() => {
     if (user) {
