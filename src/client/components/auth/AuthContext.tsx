@@ -130,6 +130,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   useEffect(() => {
+    if (!sessionExpiry) return;
+    const msUntilExpiry = sessionExpiry - Date.now();
+    if (msUntilExpiry <= 0) {
+      logoutActions();
+      if (window.location.pathname !== "/login") navigate("/login");
+      return;
+    }
+    const timer = setTimeout(() => {
+      logoutActions();
+      bc.postMessage({ type: "logout" });
+      if (window.location.pathname !== "/login") navigate("/login");
+    }, msUntilExpiry);
+    return () => clearTimeout(timer);
+  }, [sessionExpiry, navigate, bc]);
+
+  useEffect(() => {
     if (!loading) {
       if (user) {
         let storedSessionId = sessionStorage.getItem("tabSessionId");
