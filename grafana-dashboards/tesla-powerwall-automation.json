@@ -1,0 +1,1664 @@
+{
+  "annotations": [
+    {
+      "kind": "AnnotationQuery",
+      "spec": {
+        "builtIn": true,
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "query": {
+          "datasource": { "name": "-- Grafana --" },
+          "group": "grafana",
+          "kind": "DataQuery",
+          "spec": {},
+          "version": "v0"
+        }
+      }
+    }
+  ],
+  "cursorSync": "Off",
+  "editable": true,
+  "elements": {
+
+    "panel-log-volume": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "sum by (level) (count_over_time({container_name=\"tesla-powerwall-automation\"} | json | siteName=~\"$site\" [$__interval]))",
+                      "legendFormat": "{{level}}"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 1,
+        "links": [],
+        "title": "Log Volume by Level",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "palette-classic" },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 10,
+                  "gradientMode": "none",
+                  "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": { "type": "linear" },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": { "group": "A", "mode": "none" },
+                  "thresholdsStyle": { "mode": "off" }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 80 }]
+                },
+                "unit": "short"
+              },
+              "overrides": [
+                { "matcher": { "id": "byName", "options": "info" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+                { "matcher": { "id": "byName", "options": "warn" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2CC0C", "mode": "fixed" } }] },
+                { "matcher": { "id": "byName", "options": "error" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2495C", "mode": "fixed" } }] },
+                { "matcher": { "id": "byName", "options": "debug" }, "properties": [{ "id": "color", "value": { "fixedColor": "#8B949E", "mode": "fixed" } }] }
+              ]
+            },
+            "options": {
+              "annotations": { "clustering": -1, "multiLane": false },
+              "legend": { "calcs": ["sum", "max"], "displayMode": "list", "enableFacetedFilter": false, "overflow": "ellipsis", "placement": "bottom", "showLegend": true },
+              "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-error-rate": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "sum by (service) (count_over_time({container_name=\"tesla-powerwall-automation\"} | json | level=\"error\" [$__interval]))",
+                      "legendFormat": "{{service}}"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Error counts by service layer — no site filter so startup/db errors surface even before site context is available",
+        "id": 2,
+        "links": [],
+        "title": "Error Rate by Service",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "palette-classic" },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": { "type": "linear" },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": { "group": "A", "mode": "normal" },
+                  "thresholdsStyle": { "mode": "off" }
+                },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [{ "color": "green", "value": 0 }, { "color": "red", "value": 80 }]
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": { "clustering": -1, "multiLane": false },
+              "legend": { "calcs": ["sum"], "displayMode": "list", "enableFacetedFilter": false, "overflow": "ellipsis", "placement": "bottom", "showLegend": true },
+              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-schedule-stats": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"scheduler\" | msg=\"Schedule executed\" | siteName=~\"$site\" [1h])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Total schedule executions in the last hour",
+        "id": 3,
+        "links": [],
+        "title": "Schedule Runs / 1h",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "thresholds" },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [{ "color": "green", "value": 0 }]
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "background",
+              "graphMode": "none",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+              "showPercentChange": false,
+              "text": {},
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-retry-stats": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"retry\" [$__range])"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Tesla API retry count — high values indicate connectivity issues",
+        "id": 4,
+        "links": [],
+        "title": "Tesla API Retries",
+        "vizConfig": {
+          "group": "stat",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "thresholds" },
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": 0 },
+                    { "color": "#F2CC0C", "value": 3 },
+                    { "color": "red", "value": 10 }
+                  ]
+                },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "colorMode": "background",
+              "graphMode": "none",
+              "justifyMode": "auto",
+              "orientation": "auto",
+              "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+              "showPercentChange": false,
+              "text": {},
+              "textMode": "auto",
+              "wideLayout": true
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "row-schedule-header": {
+      "kind": "Panel",
+      "spec": {
+        "data": { "kind": "QueryGroup", "spec": { "queries": [], "queryOptions": {}, "transformations": [] } },
+        "description": "",
+        "id": 5,
+        "links": [],
+        "title": "Schedule Execution",
+        "vizConfig": {
+          "group": "text",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
+              "content": "",
+              "mode": "markdown"
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-schedule-actions": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "sum by (scheduleAction) (count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"scheduler\" | msg=\"Action result\" | siteName=~\"$site\" [$__interval]))",
+                      "legendFormat": "{{scheduleAction}}"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "One data point per action execution — stacked to show overall schedule activity",
+        "id": 6,
+        "links": [],
+        "title": "Actions Executed Over Time",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "palette-classic" },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": { "type": "linear" },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": { "group": "A", "mode": "normal" },
+                  "thresholdsStyle": { "mode": "off" }
+                },
+                "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": { "clustering": -1, "multiLane": false },
+              "legend": { "calcs": ["sum"], "displayMode": "list", "enableFacetedFilter": false, "overflow": "ellipsis", "placement": "bottom", "showLegend": true },
+              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "desc" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-schedule-failures": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | service=\"scheduler\" | level=\"error\" | siteName=~\"$site\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 7,
+        "links": [],
+        "title": "Schedule Failures",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": true,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": true,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": true
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-recent-executions": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | service=\"scheduler\" | msg=\"Schedule executed\" | siteName=~\"$site\" | line_format \"site={{.siteName}}  scheduleId={{.scheduleId}}  actions={{.actionsExecuted}}\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Summary log emitted once per schedule run — use scheduleId to correlate with individual action logs",
+        "id": 8,
+        "links": [],
+        "title": "Recent Schedule Executions",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": false,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": false,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": false
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "row-smart-charging-header": {
+      "kind": "Panel",
+      "spec": {
+        "data": { "kind": "QueryGroup", "spec": { "queries": [], "queryOptions": {}, "transformations": [] } },
+        "description": "",
+        "id": 9,
+        "links": [],
+        "title": "Smart Charging",
+        "vizConfig": {
+          "group": "text",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
+              "content": "",
+              "mode": "markdown"
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-charging-decisions": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | data_action=\"enabled\" | siteName=~\"$site\" [$__interval])",
+                      "legendFormat": "enabled"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | data_action=\"disabled\" | siteName=~\"$site\" [$__interval])",
+                      "legendFormat": "disabled"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | data_action=\"no_change\" | siteName=~\"$site\" [$__interval])",
+                      "legendFormat": "no_change"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "C"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Count of smart charging decisions per interval — enabled/disabled trigger a Tesla API call; no_change means conditions evaluated but no state change was needed",
+        "id": 10,
+        "links": [],
+        "title": "Grid Charging Decisions",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "palette-classic" },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": { "type": "linear" },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": { "group": "A", "mode": "none" },
+                  "thresholdsStyle": { "mode": "off" }
+                },
+                "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] },
+                "unit": "short"
+              },
+              "overrides": [
+                { "matcher": { "id": "byName", "options": "enabled" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+                { "matcher": { "id": "byName", "options": "disabled" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2495C", "mode": "fixed" } }] },
+                { "matcher": { "id": "byName", "options": "no_change" }, "properties": [{ "id": "color", "value": { "fixedColor": "#8B949E", "mode": "fixed" } }] }
+              ]
+            },
+            "options": {
+              "annotations": { "clustering": -1, "multiLane": false },
+              "legend": { "calcs": ["sum"], "displayMode": "list", "enableFacetedFilter": false, "overflow": "ellipsis", "placement": "bottom", "showLegend": true },
+              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-soc-at-decision": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "avg_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | siteName=~\"$site\" | unwrap data_soc [$__interval]) by (siteName)",
+                      "legendFormat": "{{siteName}} SOC"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "avg_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | siteName=~\"$site\" | unwrap data_targetSoc [$__interval]) by (siteName)",
+                      "legendFormat": "{{siteName}} Target"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Battery SOC and target SOC sampled at each smart charging decision point",
+        "id": 11,
+        "links": [],
+        "title": "Battery SOC at Decision",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "palette-classic" },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 10,
+                  "gradientMode": "none",
+                  "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": { "type": "linear" },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": { "group": "A", "mode": "none" },
+                  "thresholdsStyle": { "mode": "off" }
+                },
+                "max": 100,
+                "min": 0,
+                "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] },
+                "unit": "percent"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": { "clustering": -1, "multiLane": false },
+              "legend": { "calcs": ["mean", "min"], "displayMode": "list", "enableFacetedFilter": false, "overflow": "ellipsis", "placement": "bottom", "showLegend": true },
+              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-solar-forecast": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "avg_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | siteName=~\"$site\" | unwrap data_estimatedSolarKwh [$__interval]) by (siteName)",
+                      "legendFormat": "{{siteName}}"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Estimated solar generation logged at each smart charging decision",
+        "id": 12,
+        "links": [],
+        "title": "Solar Forecast at Decision (kWh)",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "fixed", "fixedColor": "#F2CC0C" },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 15,
+                  "gradientMode": "none",
+                  "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": { "type": "linear" },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": { "group": "A", "mode": "none" },
+                  "thresholdsStyle": { "mode": "off" }
+                },
+                "min": 0,
+                "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] },
+                "unit": "kwatth"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": { "clustering": -1, "multiLane": false },
+              "legend": { "calcs": ["mean", "max"], "displayMode": "list", "enableFacetedFilter": false, "overflow": "ellipsis", "placement": "bottom", "showLegend": true },
+              "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-forecast-method": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "sum(count_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | data_forecastMethod=\"historical\" | siteName=~\"$site\" [$__range]))",
+                      "legendFormat": "Historical"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "sum(count_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | data_forecastMethod=\"linear-fallback\" | siteName=~\"$site\" [$__range]))",
+                      "legendFormat": "Linear Fallback"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "High linear-fallback share means insufficient historical solar data for accurate forecasting",
+        "id": 13,
+        "links": [],
+        "title": "Forecast Method",
+        "vizConfig": {
+          "group": "piechart",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": { "color": { "mode": "palette-classic" } },
+              "overrides": [
+                { "matcher": { "id": "byName", "options": "Historical" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+                { "matcher": { "id": "byName", "options": "Linear Fallback" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2CC0C", "mode": "fixed" } }] }
+              ]
+            },
+            "options": {
+              "displayLabels": ["percent"],
+              "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+              "pieType": "donut",
+              "tooltip": { "hideZeros": false, "mode": "single", "sort": "none" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-charging-log": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | siteName=~\"$site\" | line_format \"[{{.data_action}}] soc={{.data_soc}} target={{.data_targetSoc}} | solar={{.data_estimatedSolarKwh}}kWh ({{.data_forecastMethod}}) | rate={{.data_chargeRateKw}}kW | {{.data_reason}}\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Full smart charging decision log with SOC, forecast, and reason",
+        "id": 14,
+        "links": [],
+        "title": "Smart Charging Decision Log",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": false,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": true,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": false
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "row-auth-header": {
+      "kind": "Panel",
+      "spec": {
+        "data": { "kind": "QueryGroup", "spec": { "queries": [], "queryOptions": {}, "transformations": [] } },
+        "description": "",
+        "id": 15,
+        "links": [],
+        "title": "Auth Events",
+        "vizConfig": {
+          "group": "text",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
+              "content": "",
+              "mode": "markdown"
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-login-activity": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"auth\" | event=\"auth.login.success\" [$__interval])",
+                      "legendFormat": "success"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"auth\" | event=\"auth.login.failure\" [$__interval])",
+                      "legendFormat": "failure"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "B"
+                }
+              },
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"auth\" | event=\"auth.login.locked\" [$__interval])",
+                      "legendFormat": "locked"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "C"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 16,
+        "links": [],
+        "title": "Login Activity",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "palette-classic" },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": { "type": "linear" },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": { "group": "A", "mode": "none" },
+                  "thresholdsStyle": { "mode": "off" }
+                },
+                "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] },
+                "unit": "short"
+              },
+              "overrides": [
+                { "matcher": { "id": "byName", "options": "success" }, "properties": [{ "id": "color", "value": { "fixedColor": "#73BF69", "mode": "fixed" } }] },
+                { "matcher": { "id": "byName", "options": "failure" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2495C", "mode": "fixed" } }] },
+                { "matcher": { "id": "byName", "options": "locked" }, "properties": [{ "id": "color", "value": { "fixedColor": "#F2CC0C", "mode": "fixed" } }] }
+              ]
+            },
+            "options": {
+              "annotations": { "clustering": -1, "multiLane": false },
+              "legend": { "calcs": ["sum"], "displayMode": "list", "enableFacetedFilter": false, "overflow": "ellipsis", "placement": "bottom", "showLegend": true },
+              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-auth-log": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | service=\"auth\" | line_format \"{{.event}}  {{.email}}  ip={{.ip}}  reason={{.reason}}\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 17,
+        "links": [],
+        "title": "Auth Event Log",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": false,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": true,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": false
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "row-calibration-header": {
+      "kind": "Panel",
+      "spec": {
+        "data": { "kind": "QueryGroup", "spec": { "queries": [], "queryOptions": {}, "transformations": [] } },
+        "description": "",
+        "id": 18,
+        "links": [],
+        "title": "Calibration",
+        "vizConfig": {
+          "group": "text",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
+              "content": "",
+              "mode": "markdown"
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-calibration-timeline": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "sum by (eventType) (count_over_time({container_name=\"tesla-powerwall-automation\"} | json | service=\"fleet\" | eventType=~\"calibration_.*\" | siteName=~\"$site\" [$__interval]))",
+                      "legendFormat": "{{eventType}}"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 19,
+        "links": [],
+        "title": "Calibration Events Over Time",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": { "mode": "palette-classic" },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "bars",
+                  "fillOpacity": 80,
+                  "gradientMode": "none",
+                  "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 1,
+                  "pointSize": 5,
+                  "scaleDistribution": { "type": "linear" },
+                  "showPoints": "never",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": { "group": "A", "mode": "none" },
+                  "thresholdsStyle": { "mode": "off" }
+                },
+                "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": 0 }] },
+                "unit": "short"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": { "clustering": -1, "multiLane": false },
+              "legend": { "calcs": ["sum"], "displayMode": "list", "enableFacetedFilter": false, "overflow": "ellipsis", "placement": "bottom", "showLegend": true },
+              "tooltip": { "hideZeros": false, "mode": "multi", "sort": "none" }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-calibration-log": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | service=\"fleet\" | eventType=~\"calibration_.*\" | siteName=~\"$site\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 20,
+        "links": [],
+        "title": "Calibration Event Log",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": true,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": true,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": true
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "row-system-health-header": {
+      "kind": "Panel",
+      "spec": {
+        "data": { "kind": "QueryGroup", "spec": { "queries": [], "queryOptions": {}, "transformations": [] } },
+        "description": "",
+        "id": 21,
+        "links": [],
+        "title": "System Health",
+        "vizConfig": {
+          "group": "text",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "code": { "language": "plaintext", "showLineNumbers": false, "showMiniMap": false },
+              "content": "",
+              "mode": "markdown"
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-all-logs": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | siteName=~\"$site\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 22,
+        "links": [],
+        "title": "All Logs",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": true,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": true,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": true
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-error-logs": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | level=\"error\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "All error-level logs across all services — no site filter",
+        "id": 23,
+        "links": [],
+        "title": "Error Logs",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": true,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": true,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": true
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-db-errors": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | service=\"db\" | level=\"error\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 24,
+        "links": [],
+        "title": "DB Errors",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": true,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": true,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": true
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
+
+    "panel-mail-events": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": { "name": "loki" },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | service=\"mail\" | line_format \"{{.msg}}  recipient={{.recipient}}  messageId={{.messageId}}\""
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "",
+        "id": 25,
+        "links": [],
+        "title": "Mail Events",
+        "vizConfig": {
+          "group": "logs",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": { "defaults": {}, "overrides": [] },
+            "options": {
+              "dedupStrategy": "none",
+              "enableInfiniteScrolling": false,
+              "enableLogDetails": true,
+              "prettifyLogMessage": false,
+              "showControls": false,
+              "showFieldSelector": false,
+              "showLevel": true,
+              "showTime": true,
+              "sortOrder": "Descending",
+              "timestampResolution": "ms",
+              "unwrappedColumns": false,
+              "wrapLogMessage": false
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    }
+
+  },
+
+  "layout": {
+    "kind": "GridLayout",
+    "spec": {
+      "items": [
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-log-volume" }, "height": 7, "width": 12, "x": 0, "y": 0 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-error-rate" }, "height": 7, "width": 8, "x": 12, "y": 0 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-schedule-stats" }, "height": 3, "width": 4, "x": 20, "y": 0 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-retry-stats" }, "height": 4, "width": 4, "x": 20, "y": 3 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "row-schedule-header" }, "height": 1, "width": 24, "x": 0, "y": 7 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-schedule-actions" }, "height": 8, "width": 12, "x": 0, "y": 8 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-schedule-failures" }, "height": 8, "width": 12, "x": 12, "y": 8 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-recent-executions" }, "height": 6, "width": 24, "x": 0, "y": 16 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "row-smart-charging-header" }, "height": 1, "width": 24, "x": 0, "y": 22 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-charging-decisions" }, "height": 8, "width": 12, "x": 0, "y": 23 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-soc-at-decision" }, "height": 8, "width": 12, "x": 12, "y": 23 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-solar-forecast" }, "height": 8, "width": 8, "x": 0, "y": 31 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-forecast-method" }, "height": 8, "width": 4, "x": 8, "y": 31 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-charging-log" }, "height": 8, "width": 12, "x": 12, "y": 31 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "row-auth-header" }, "height": 1, "width": 24, "x": 0, "y": 39 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-login-activity" }, "height": 7, "width": 12, "x": 0, "y": 40 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-auth-log" }, "height": 7, "width": 12, "x": 12, "y": 40 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "row-calibration-header" }, "height": 1, "width": 24, "x": 0, "y": 47 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-calibration-timeline" }, "height": 7, "width": 12, "x": 0, "y": 48 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-calibration-log" }, "height": 7, "width": 12, "x": 12, "y": 48 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "row-system-health-header" }, "height": 1, "width": 24, "x": 0, "y": 55 } },
+
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-all-logs" }, "height": 10, "width": 24, "x": 0, "y": 56 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-error-logs" }, "height": 7, "width": 12, "x": 0, "y": 66 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-db-errors" }, "height": 7, "width": 6, "x": 12, "y": 66 } },
+        { "kind": "GridLayoutItem", "spec": { "element": { "kind": "ElementReference", "name": "panel-mail-events" }, "height": 7, "width": 6, "x": 18, "y": 66 } }
+
+      ]
+    }
+  },
+
+  "links": [],
+  "liveNow": false,
+  "preload": false,
+  "tags": ["powerwall", "tesla", "loki"],
+  "timeSettings": {
+    "autoRefresh": "1m",
+    "autoRefreshIntervals": ["5s", "10s", "30s", "1m", "5m", "15m", "30m", "1h", "2h", "1d"],
+    "fiscalYearStartMonth": 0,
+    "from": "now-3h",
+    "hideTimepicker": false,
+    "timezone": "America/Phoenix",
+    "to": "now"
+  },
+  "title": "Tesla Powerwall Automation",
+  "variables": []
+}
