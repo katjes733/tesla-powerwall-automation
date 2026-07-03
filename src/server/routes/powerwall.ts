@@ -17,6 +17,8 @@ import {
   getSeasonNames,
 } from "~/server/util/tariff";
 
+const apiLog = logger.child({ service: "api" });
+
 export const router = express.Router();
 
 router.get("/sites", async (req, res, next) => {
@@ -46,7 +48,7 @@ router.get("/sites", async (req, res, next) => {
       })),
     });
   } catch (error: any) {
-    logger.error(error, "Error fetching powerwall sites");
+    apiLog.error({ err: error }, "Error fetching powerwall sites");
     next(error);
   }
 });
@@ -81,7 +83,7 @@ router.get("/tariff-info", async (req, res, next) => {
     const seasons = tariff ? getSeasonNames(tariff) : [];
     res.json({ success: true, data: { hasTou, seasons } });
   } catch (error: any) {
-    logger.error(error, "Error fetching tariff info");
+    apiLog.error({ err: error }, "Error fetching tariff info");
     next(error);
   }
 });
@@ -117,7 +119,7 @@ router.get("/status", async (req, res, next) => {
     );
     res.json({ success: true, data });
   } catch (error: any) {
-    logger.error(error, "Error fetching powerwall status");
+    apiLog.error({ err: error }, "Error fetching powerwall status");
     next(error);
   }
 });
@@ -162,7 +164,7 @@ router.post("/apply-settings", async (req, res, next) => {
     await fleet.getActionMap()[action](product, String(value));
     res.json({ success: true });
   } catch (error: any) {
-    logger.error(error, "Error applying manual settings");
+    apiLog.error({ err: error }, "Error applying manual settings");
     next(error);
   }
 });
@@ -213,7 +215,7 @@ router.get("/history", async (req, res, next) => {
 
     res.json({ success: true, data: { date, points, socPoints, cached } });
   } catch (error: any) {
-    logger.error(error, "Error fetching power history");
+    apiLog.error({ err: error }, "Error fetching power history");
     next(error);
   }
 });

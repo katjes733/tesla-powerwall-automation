@@ -1,6 +1,7 @@
 import { sendEmail } from "~/server/util/mailing";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
 import { Fleet } from "~/server/util/fleet";
+import { maskEmail } from "~/server/util/maskEmail";
 
 export async function getAllSiteInfo(email: string): Promise<SiteInfo[]> {
   return Fleet.getInstance(email)
@@ -65,11 +66,19 @@ export async function setBackupReserveWhenFullyCharged(
 ): Promise<void> {
   const current_charge = await getBatteryCharge(product, email);
   if (current_charge >= 100) {
-    const infoMsg = `Battery at Energy Site ${product.energy_site_id} is fully charged (${current_charge}%). Setting Backup Reserve to ${percent}%.`;
-    logger.info(infoMsg);
+    logger
+      .child({
+        service: "fleet",
+        siteId: String(product.energy_site_id),
+        email: maskEmail(email),
+      })
+      .info(
+        { soc: current_charge, targetPercent: percent },
+        "Battery fully charged — setting backup reserve",
+      );
     await sendEmail(
       "Powerwall Notification",
-      `[${new Date().toLocaleString()}] ${infoMsg}`,
+      `[${new Date().toLocaleString()}] Battery at Energy Site ${product.energy_site_id} is fully charged (${current_charge}%). Setting Backup Reserve to ${percent}%.`,
     );
     await Fleet.getInstance(email).setBackupReserve(product, percent);
   }

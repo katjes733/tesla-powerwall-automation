@@ -15,6 +15,8 @@ const SiteSettingsUpdateSchema = z.object({
   }),
 });
 
+const apiLog = logger.child({ service: "api" });
+
 export const router = express.Router();
 router.use(requireAuth);
 
@@ -54,7 +56,7 @@ router.get("/", async (req, res, next) => {
       data: resolveSiteSettings(record?.settings ?? null),
     });
   } catch (error: any) {
-    logger.error(error, "Error fetching site settings");
+    apiLog.error({ err: error, siteId }, "Error fetching site settings");
     next(error);
   }
 });
@@ -96,7 +98,7 @@ router.patch(
         data: resolveSiteSettings(updated?.settings ?? null),
       });
     } catch (error: any) {
-      logger.error(error, "Error updating site settings");
+      apiLog.error({ err: error, siteId }, "Error updating site settings");
       next(error);
     }
   },

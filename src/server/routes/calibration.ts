@@ -96,6 +96,8 @@ function mean(values: number[]): number {
   return values.reduce((a, b) => a + b, 0) / values.length;
 }
 
+const calibLog = logger.child({ service: "calibration" });
+
 export const router = express.Router();
 
 router.use(requireAuth);
@@ -171,7 +173,7 @@ router.get("/", async (req, res, next) => {
       data: { calibration, curveCalibration, safeguards },
     });
   } catch (error: any) {
-    logger.error(error, "Error fetching calibration data");
+    calibLog.error({ err: error }, "Error fetching calibration data");
     next(error);
   }
 });
@@ -249,10 +251,13 @@ router.post(
       res.json({ success: true, data: { jobId } });
 
       runCalibration(fleet, product, job, previousGridState).catch((err) => {
-        logger.error(err, "Unexpected error in calibration background job");
+        calibLog.error(
+          { err },
+          "Unexpected error in calibration background job",
+        );
       });
     } catch (error: any) {
-      logger.error(error, "Error starting calibration");
+      calibLog.error({ err: error }, "Error starting calibration");
       next(error);
     }
   },
@@ -337,7 +342,7 @@ async function runCalibration(
     job.status = "complete";
     job.phase = "done";
     job.result = saved;
-    logger.info(
+    calibLog.info(
       {
         siteId: product.energy_site_id,
         kw: avgRateKw,
@@ -349,13 +354,13 @@ async function runCalibration(
     job.status = "failed";
     job.phase = "done";
     job.error = err?.message ?? "Unknown error";
-    logger.error(err, "Calibration job failed");
+    calibLog.error({ err }, "Calibration job failed");
   } finally {
     await fleet
       .setGridCharging(product, previousGridState)
       .catch((err: any) => {
-        logger.error(
-          err,
+        calibLog.error(
+          { err },
           "Failed to restore grid charging state after calibration",
         );
       });
@@ -422,7 +427,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (error: any) {
-      logger.error(error, "Error clearing calibration data");
+      calibLog.error({ err: error }, "Error clearing calibration data");
       next(error);
     }
   },
@@ -515,7 +520,7 @@ router.delete(
 
       res.json({ success: true });
     } catch (error: any) {
-      logger.error(error, "Error clearing curve calibration data");
+      calibLog.error({ err: error }, "Error clearing curve calibration data");
       next(error);
     }
   },
@@ -559,7 +564,7 @@ async function finalizeCurveCalibration(energySiteId: string): Promise<void> {
       creation_time: now,
       modified_time: now,
     });
-    logger.info(
+    calibLog.info(
       {
         energySiteId,
         bins: candidate.bins.length,
@@ -568,7 +573,7 @@ async function finalizeCurveCalibration(energySiteId: string): Promise<void> {
       "Curve calibration written to site_calibrations",
     );
   } else {
-    logger.info(
+    calibLog.info(
       { energySiteId },
       "Pooled curve calibration did not meet quality threshold — not written",
     );
@@ -628,7 +633,7 @@ async function runCurveCalibration(
   } catch (err: any) {
     job.status = "failed";
     job.error = err?.message ?? "Unknown error";
-    logger.error(err, "Curve calibration job failed");
+    calibLog.error({ err }, "Curve calibration job failed");
   } finally {
     job.phase = "done";
     curveJobBySite.delete(String(product.energy_site_id));
@@ -636,8 +641,8 @@ async function runCurveCalibration(
     await fleet
       .setGridCharging(product, previousGridState)
       .catch((err: any) =>
-        logger.error(
-          err,
+        calibLog.error(
+          { err },
           "Failed to restore grid charging after curve calibration",
         ),
       );
@@ -649,7 +654,7 @@ async function runCurveCalibration(
     }
 
     await finalizeCurveCalibration(energySiteId).catch((err: any) =>
-      logger.error(err, "Failed to finalize curve calibration"),
+      calibLog.error({ err }, "Failed to finalize curve calibration"),
     );
   }
 }
@@ -764,13 +769,13 @@ router.post(
 
       runCurveCalibration(fleet, product, jobId, previousGridState).catch(
         (err) =>
-          logger.error(
-            err,
+          calibLog.error(
+            { err },
             "Unexpected error in curve calibration background job",
           ),
       );
     } catch (error: any) {
-      logger.error(error, "Error starting curve calibration");
+      calibLog.error({ err: error }, "Error starting curve calibration");
       next(error);
     }
   },
@@ -917,7 +922,7 @@ router.get("/curve-status", async (req, res, next) => {
       },
     });
   } catch (error: any) {
-    logger.error(error, "Error fetching curve status");
+    calibLog.error({ err: error }, "Error fetching curve status");
     next(error);
   }
 });
@@ -937,7 +942,7 @@ export async function recoverCurveCalibrations(): Promise<void> {
         const ageMs = Date.now() - payload.startedAtMs;
         if (ageMs > CURVE_JOB_TTL_MS) {
           await redis.del(key);
-          logger.warn(
+          calibLog.warn(
             { key },
             "Curve calibration Redis key expired — deleted without recovery",
           );
@@ -954,7 +959,7 @@ export async function recoverCurveCalibrations(): Promise<void> {
         );
         if (!product) {
           await redis.del(key);
-          logger.warn(
+          calibLog.warn(
             { energySiteId: payload.energySiteId },
             "Curve calibration recovery: site not found — restoring grid charging defensively",
           );
@@ -983,12 +988,12 @@ export async function recoverCurveCalibrations(): Promise<void> {
             .catch(() => {});
           await redis.del(key);
           await finalizeCurveCalibration(payload.energySiteId).catch(() => {});
-          logger.info(
+          calibLog.info(
             { energySiteId: payload.energySiteId },
             "Curve calibration recovered: SOC already complete, finalized",
           );
         } else {
-          logger.info(
+          calibLog.info(
             { energySiteId: payload.energySiteId, jobId: payload.jobId },
             "Curve calibration recovered: resuming background job",
           );
@@ -998,11 +1003,11 @@ export async function recoverCurveCalibrations(): Promise<void> {
             payload.jobId,
             payload.previousGridState,
           ).catch((err) =>
-            logger.error(err, "Error in recovered curve calibration job"),
+            calibLog.error({ err }, "Error in recovered curve calibration job"),
           );
         }
       } catch (err: any) {
-        logger.error(err, `Curve calibration recovery failed for key ${key}`);
+        calibLog.error({ err, key }, "Curve calibration recovery failed");
       }
     }
   } catch {

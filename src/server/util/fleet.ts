@@ -62,10 +62,9 @@ import {
   SOLAR_FORECAST_DISCOUNT,
   type SolarForecastResult,
 } from "~/server/util/solarForecast";
+import { maskEmail } from "~/server/util/maskEmail";
 
-export interface SmartChargingLogResult {
-  site: string;
-  energySiteId: number;
+export interface SmartChargingData {
   desired: "enabled" | "disabled";
   current: "enabled" | "disabled";
   action: "enabled" | "disabled" | "no_change";
@@ -80,6 +79,26 @@ export interface SmartChargingLogResult {
   chargeRateSource: "calibrated" | "formula";
   chargeRateCurveSource: "lookup" | "defaults";
   reason: string;
+}
+
+interface BackupReserveData {
+  percent: number;
+}
+interface EnergyExportsData {
+  rule: string;
+  apiRule: string;
+}
+interface GridChargingData {
+  setting: string;
+  disallow: boolean;
+}
+interface TouHolidayData {
+  today: string;
+  holidayAction: "override" | "restore" | "none";
+}
+interface OperationalModeData {
+  mode: string;
+  apiMode: string;
 }
 
 const SITE_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -171,12 +190,14 @@ export class Fleet {
   private refreshToken: string = "";
   private options: FleetOptions;
   private tokenRefreshPromise: Promise<string> | null = null;
+  private readonly log: ReturnType<typeof logger.child>;
 
   private energyProducts: Product[] = [];
   private _actionMap: Record<string, Function>;
 
   private constructor(email: string, options?: FleetOptionsInput) {
     this.email = email;
+    this.log = logger.child({ service: "fleet", email: maskEmail(email) });
     this.options = {
       mailOnError: options?.mailOnError ?? false,
       throwOnError: options?.throwOnError ?? true,
@@ -229,7 +250,7 @@ export class Fleet {
     const tokenResponse = await getNewTokenWithRefreshToken(this.refreshToken);
     if (!tokenResponse.ok) {
       const errorMsg = `Failed to obtain new token with refresh token: ${tokenResponse.status} ${tokenResponse.statusText}`;
-      logger.error(errorMsg);
+      this.log.error({ status: tokenResponse.status }, "Token refresh failed");
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Tesla API token refresh failed. Please check the server logs and re-authenticate if necessary.`,
@@ -254,7 +275,7 @@ export class Fleet {
       expiresAt: new Date(this.tokenExpiresAt),
     });
 
-    logger.info("New token obtained and stored successfully.");
+    this.log.info("Token refreshed successfully");
 
     return this.token;
   }
@@ -306,7 +327,10 @@ export class Fleet {
       return this.energyProducts;
     } catch (error: any) {
       const errorMsg = `Error getting Energy Products after retries: ${error.message}`;
-      logger.error(errorMsg);
+      this.log.error(
+        { err: error },
+        "Error getting energy products after retries",
+      );
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to retrieve energy products from the Tesla API. Please check the server logs.`,
@@ -325,6 +349,10 @@ export class Fleet {
     if (cached && performance.now() - cached.at < SITE_INFO_CACHE_TTL_MS) {
       return cached.info;
     }
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/site_info`,
       baseApiUrl,
@@ -353,7 +381,7 @@ export class Fleet {
       return siteInfo;
     } catch (error: any) {
       const errorMsg = `Error getting Site Info for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
-      logger.error(errorMsg);
+      siteLog.error({ err: error }, "Error getting site info after retries");
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to retrieve site info for Energy Site ${product.energy_site_id}. Please check the server logs.`,
@@ -372,6 +400,10 @@ export class Fleet {
     if (cached && performance.now() - cached.at < LIVE_STATUS_CACHE_TTL_MS) {
       return cached.status;
     }
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/live_status`,
       baseApiUrl,
@@ -400,7 +432,7 @@ export class Fleet {
       return liveStatus;
     } catch (error: any) {
       const errorMsg = `Error getting Live Status for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
-      logger.error(errorMsg);
+      siteLog.error({ err: error }, "Error getting live status after retries");
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to retrieve live status for Energy Site ${product.energy_site_id}. Please check the server logs.`,
@@ -465,9 +497,12 @@ export class Fleet {
         },
       );
     } catch (error: any) {
-      logger.warn(
-        `[solar history] fetch for ${dateStr} failed: ${error.message}`,
-      );
+      this.log
+        .child({
+          siteId: String(product.energy_site_id),
+          siteName: product.site_name,
+        })
+        .warn({ err: error, date: dateStr }, "Solar history day fetch failed");
       return [];
     }
   }
@@ -693,23 +728,22 @@ export class Fleet {
     );
 
     // Log per-day summary for verification against the Tesla app.
+    const solarHistLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     if (allPoints.length > 0) {
       const byDay = new Map<string, number>();
       for (const p of allPoints) {
         const day = moment.tz(p.timestamp, timezone).format("YYYY-MM-DD");
         byDay.set(day, (byDay.get(day) ?? 0) + p.solar_power / 1000 / 12); // 5-min intervals → kWh
       }
-      const summary = [...byDay.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([d, kwh]) => `${d}: ${kwh.toFixed(2)}kWh`)
-        .join(", ");
-      logger.info(
-        `[solar history] ${allPoints.length} points across ${byDay.size} days — ${summary}`,
+      solarHistLog.info(
+        { daysLoaded: byDay.size, pointCount: allPoints.length },
+        "Solar history loaded",
       );
     } else {
-      logger.warn(
-        `Smart charging: solar history unavailable for site "${product.site_name}"; using linear fallback`,
-      );
+      solarHistLog.warn("Solar history unavailable — using linear fallback");
     }
 
     // Persist with a long TTL. refreshAfter is set to 10 minutes so today's partial
@@ -740,6 +774,10 @@ export class Fleet {
     if (percent < 0 && percent > 100) {
       throw new Error("Percent must be between 0 and 100.");
     }
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/backup`,
       baseApiUrl,
@@ -749,11 +787,9 @@ export class Fleet {
       backup_reserve_percent: percent,
     });
     if (process.env.DRY_RUN === "true") {
-      logger.info(
+      siteLog.info(
         {
           dryRun: true,
-          site: product.site_name,
-          energySiteId: product.energy_site_id,
           intent: `Set backup reserve to ${percent}%`,
           apiCall: {
             method: "POST",
@@ -761,7 +797,7 @@ export class Fleet {
             body: { backup_reserve_percent: percent },
           },
         },
-        `[DRY RUN] Would set backup reserve to ${percent}% for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+        "[DRY RUN] Would set backup reserve",
       );
       return;
     }
@@ -782,18 +818,23 @@ export class Fleet {
       );
 
       if (response.ok) {
-        logger.info(
-          `Backup reserve set to ${percent}% successfully for Energy Site ${product.energy_site_id}.`,
+        siteLog.info(
+          {
+            scheduleAction: "setBackupReserve",
+            data: { percent } satisfies BackupReserveData,
+          },
+          "Backup reserve set",
         );
       } else {
         const errorText = await response.text();
-        logger.error(
-          `Failed to set backup reserve for Energy Site ${product.energy_site_id}: ${errorText}`,
-        );
+        siteLog.error({ errorText }, "Failed to set backup reserve");
       }
     } catch (error: any) {
       const errorMsg = `Error setting backup reserve after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
-      logger.error(errorMsg);
+      siteLog.error(
+        { err: error },
+        "Error setting backup reserve after retries",
+      );
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to set backup reserve for Energy Site ${product.energy_site_id}. Please check the server logs.`,
@@ -817,9 +858,21 @@ export class Fleet {
         `Live status not available for Energy Site ${product.energy_site_id}.`,
       );
     }
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     if (liveStatus.percentage_charged >= percent) {
-      logger.info(
-        `Battery level is ${liveStatus.percentage_charged}%, which is already above the soft backup reserve of ${percent}%. Not setting soft backup reserve.`,
+      siteLog.info(
+        {
+          scheduleAction: "setSoftBackupReserve",
+          data: {
+            percent,
+            currentSoc: liveStatus.percentage_charged,
+            skipped: true,
+          },
+        },
+        "Battery above soft reserve threshold — skipping",
       );
       return;
     }
@@ -828,12 +881,10 @@ export class Fleet {
         `/api/1/energy_sites/${product.energy_site_id}/backup`,
         baseApiUrl,
       );
-      logger.info(
+      siteLog.info(
         {
           dryRun: true,
-          site: product.site_name,
-          energySiteId: product.energy_site_id,
-          currentChargePercent: liveStatus.percentage_charged,
+          currentSoc: liveStatus.percentage_charged,
           intent: `Set soft backup reserve to ${percent}% (battery at ${liveStatus.percentage_charged}%, below threshold)`,
           apiCall: {
             method: "POST",
@@ -841,7 +892,7 @@ export class Fleet {
             body: { backup_reserve_percent: percent },
           },
         },
-        `[DRY RUN] Would set backup reserve to ${percent}% for site "${product.site_name}" — battery is at ${liveStatus.percentage_charged}% (below ${percent}% threshold)`,
+        "[DRY RUN] Would set soft backup reserve",
       );
       return;
     }
@@ -857,6 +908,10 @@ export class Fleet {
     if (!apiRule) {
       throw new Error(`Unknown energy export rule: ${rule}`);
     }
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/grid_import_export`,
       baseApiUrl,
@@ -864,11 +919,9 @@ export class Fleet {
     const options = await this.getDefaultPostOptions();
     const body = JSON.stringify({ customer_preferred_export_rule: apiRule });
     if (process.env.DRY_RUN === "true") {
-      logger.info(
+      siteLog.info(
         {
           dryRun: true,
-          site: product.site_name,
-          energySiteId: product.energy_site_id,
           intent: `Set energy exports to ${rule} (${apiRule})`,
           apiCall: {
             method: "POST",
@@ -876,7 +929,7 @@ export class Fleet {
             body: { customer_preferred_export_rule: apiRule },
           },
         },
-        `[DRY RUN] Would set energy exports to "${rule}" (${apiRule}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+        "[DRY RUN] Would set energy exports",
       );
       return;
     }
@@ -896,18 +949,23 @@ export class Fleet {
         2,
       );
       if (response.ok) {
-        logger.info(
-          `Energy exports set to "${rule}" (${apiRule}) successfully for Energy Site ${product.energy_site_id}.`,
+        siteLog.info(
+          {
+            scheduleAction: "setEnergyExports",
+            data: { rule, apiRule } satisfies EnergyExportsData,
+          },
+          "Energy exports set",
         );
       } else {
         const errorText = await response.text();
-        logger.error(
-          `Failed to set energy exports for Energy Site ${product.energy_site_id}: ${errorText}`,
-        );
+        siteLog.error({ errorText }, "Failed to set energy exports");
       }
     } catch (error: any) {
       const errorMsg = `Error setting energy exports after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
-      logger.error(errorMsg);
+      siteLog.error(
+        { err: error },
+        "Error setting energy exports after retries",
+      );
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to set energy exports for Energy Site ${product.energy_site_id}. Please check the server logs.`,
@@ -997,6 +1055,10 @@ export class Fleet {
     if (setting !== "enabled" && setting !== "disabled") {
       throw new Error(`Unknown grid charging setting: ${setting}`);
     }
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/grid_import_export`,
       baseApiUrl,
@@ -1006,11 +1068,9 @@ export class Fleet {
       disallow_charge_from_grid_with_solar_installed: disallow,
     });
     if (process.env.DRY_RUN === "true") {
-      logger.info(
+      siteLog.info(
         {
           dryRun: true,
-          site: product.site_name,
-          energySiteId: product.energy_site_id,
           intent: `Set grid charging to ${setting} (disallow=${disallow})`,
           apiCall: {
             method: "POST",
@@ -1018,7 +1078,7 @@ export class Fleet {
             body: { disallow_charge_from_grid_with_solar_installed: disallow },
           },
         },
-        `[DRY RUN] Would set grid charging to "${setting}" (disallow=${disallow}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+        "[DRY RUN] Would set grid charging",
       );
       return;
     }
@@ -1039,18 +1099,23 @@ export class Fleet {
       );
       if (response.ok) {
         siteInfoCache.delete(product.energy_site_id);
-        logger.info(
-          `Grid charging set to "${setting}" (disallow=${disallow}) successfully for Energy Site ${product.energy_site_id}.`,
+        siteLog.info(
+          {
+            scheduleAction: "setGridCharging",
+            data: { setting, disallow } satisfies GridChargingData,
+          },
+          "Grid charging set",
         );
       } else {
         const errorText = await response.text();
-        logger.error(
-          `Failed to set grid charging for Energy Site ${product.energy_site_id}: ${errorText}`,
-        );
+        siteLog.error({ errorText }, "Failed to set grid charging");
       }
     } catch (error: any) {
       const errorMsg = `Error setting grid charging after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
-      logger.error(errorMsg);
+      siteLog.error(
+        { err: error },
+        "Error setting grid charging after retries",
+      );
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to set grid charging for Energy Site ${product.energy_site_id}. Please check the server logs.`,
@@ -1067,14 +1132,16 @@ export class Fleet {
     product: Product,
     value: string,
     conditions: IScheduleCondition[] = [],
-  ): Promise<SmartChargingLogResult | null> {
+  ): Promise<SmartChargingData | null> {
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     let config: SmartChargingActionConfig;
     try {
       config = JSON.parse(value) as SmartChargingActionConfig;
     } catch {
-      logger.error(
-        `Smart charging: invalid config JSON for site "${product.site_name}": ${value}`,
-      );
+      siteLog.error({ value }, "Smart charging: invalid config JSON");
       return null;
     }
     const solarEfficiencyFactor = config.solarEfficiencyFactor ?? 0.5;
@@ -1083,9 +1150,7 @@ export class Fleet {
     // after the first tick. timezone is needed for getSolarHistory.
     const siteInfo = await this.getSiteInfo(product);
     if (!siteInfo) {
-      logger.warn(
-        `Smart charging: cannot run — site info unavailable for site "${product.site_name}"`,
-      );
+      siteLog.warn("Smart charging: cannot run — site info unavailable");
       return null;
     }
 
@@ -1096,9 +1161,7 @@ export class Fleet {
     ]);
 
     if (!liveStatus) {
-      logger.warn(
-        `Smart charging: cannot run — live status unavailable for site "${product.site_name}"`,
-      );
+      siteLog.warn("Smart charging: cannot run — live status unavailable");
       return null;
     }
     const now = moment().tz(timezone);
@@ -1111,8 +1174,8 @@ export class Fleet {
     // PW2 reports it via nameplate_energy on each battery pod.
     const totalEnergyKwh = calculateTotalCapacityKwh(siteInfo.components);
     if (totalEnergyKwh <= 0) {
-      logger.warn(
-        `Smart charging: battery capacity not available for site "${product.site_name}" — skipping tick`,
+      siteLog.warn(
+        "Smart charging: battery capacity not available — skipping tick",
       );
       return null;
     }
@@ -1162,8 +1225,8 @@ export class Fleet {
     if (isTouMode) {
       const tariff = parseTariffContent(siteInfo.tariff_content);
       if (!hasTouData(tariff)) {
-        logger.warn(
-          `Smart charging: no TOU data for site "${product.site_name}" — configure a TOU tariff in the Tesla app`,
+        siteLog.warn(
+          "Smart charging: no TOU data — configure a TOU tariff in the Tesla app",
         );
         return null;
       }
@@ -1349,9 +1412,7 @@ export class Fleet {
         }
       }
     } else {
-      logger.warn(
-        `Smart charging: no recognised condition for site "${product.site_name}" — skipping`,
-      );
+      siteLog.warn("Smart charging: no recognised condition — skipping");
       return null;
     }
 
@@ -1363,6 +1424,18 @@ export class Fleet {
     const weatherFactor = solarForecast
       ? Math.round(solarForecast.scalingFactor * 100) / 100
       : null;
+    siteLog.debug(
+      {
+        forecastMethod,
+        data: {
+          estimatedSolarKwh,
+          weatherFactor,
+          daysUsed: solarForecast?.daysUsed ?? null,
+          scalingFactor: solarForecast?.scalingFactor ?? null,
+        },
+      },
+      "Solar forecast computed",
+    );
     const current: "enabled" | "disabled" = currentlyAllowed
       ? "enabled"
       : "disabled";
@@ -1381,8 +1454,6 @@ export class Fleet {
     }
 
     return {
-      site: product.site_name,
-      energySiteId: product.energy_site_id,
       desired,
       current,
       action,
@@ -1480,6 +1551,10 @@ export class Fleet {
     product: Product,
     tariffV2: Record<string, any>,
   ): Promise<void> {
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const now = new Date();
     const db = await AppDataSource.getInstance();
     const repo = db.getRepository("TouBackup");
@@ -1496,12 +1571,14 @@ export class Fleet {
 
     const modified = this.buildWeekendTariff(tariffV2);
     await this.postTouSettings(product, modified);
-    logger.info(
-      `Holiday TOU override applied for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
-    );
+    siteLog.info("Holiday TOU override applied");
   }
 
   private async restoreTou(product: Product): Promise<void> {
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const db = await AppDataSource.getInstance();
     const repo = db.getRepository("TouBackup");
     const backup = await repo.findOne({
@@ -1513,9 +1590,7 @@ export class Fleet {
     });
 
     if (!backup) {
-      logger.warn(
-        `No TOU backup found for site "${product.site_name}" (energy_site_id: ${product.energy_site_id}) — skipping restore`,
-      );
+      siteLog.warn("No TOU backup found — skipping restore");
       return;
     }
 
@@ -1523,9 +1598,7 @@ export class Fleet {
       product,
       (backup as ITouBackup).tariff_content_v2,
     );
-    logger.info(
-      `TOU restored from backup for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
-    );
+    siteLog.info("TOU restored from backup");
 
     // Delete the used backup row
     await repo.delete({ id: (backup as any).id });
@@ -1546,6 +1619,10 @@ export class Fleet {
     product: Product,
     tariffV2: Record<string, any>,
   ): Promise<void> {
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/time_of_use_settings`,
       baseApiUrl,
@@ -1558,19 +1635,11 @@ export class Fleet {
       },
     });
     if (process.env.DRY_RUN === "true") {
-      logger.info(
-        {
-          dryRun: true,
-          site: product.site_name,
-          energySiteId: product.energy_site_id,
-          intent: "POST time_of_use_settings",
-        },
-        `[DRY RUN] Would POST TOU settings for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+      siteLog.info(
+        { dryRun: true, intent: "POST time_of_use_settings" },
+        "[DRY RUN] Would POST TOU settings",
       );
-      logger.debug(
-        { tariff_content_v2: tariffV2 },
-        `[DRY RUN] TOU payload for site "${product.site_name}"`,
-      );
+      siteLog.debug({ tariff_content_v2: tariffV2 }, "[DRY RUN] TOU payload");
       return;
     }
     await retry(
@@ -1593,7 +1662,11 @@ export class Fleet {
     product: Product,
     _value: string,
     conditions: IScheduleCondition[],
-  ): Promise<void> {
+  ): Promise<TouHolidayData> {
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const holidayCond = conditions.find((c) => c.condition === "holidayList");
     const entries = (holidayCond?.value as HolidayEntry[] | undefined) ?? [];
 
@@ -1607,25 +1680,40 @@ export class Fleet {
       siteInfo?.tariff_content_v2;
 
     if (isObservedHolidayOnDate(entries, today)) {
-      logger.info(
-        `Holiday on ${today} for site "${product.site_name}" — overriding TOU to weekend schedule`,
+      siteLog.info(
+        {
+          scheduleAction: "setTouHolidayOverride",
+          data: { today, holidayAction: "override" } satisfies TouHolidayData,
+        },
+        "Holiday TOU override triggered",
       );
       if (!tariffV2) {
-        logger.warn(
-          `No tariff_content_v2 available for site "${product.site_name}" — cannot apply holiday TOU override`,
+        siteLog.warn(
+          "No tariff_content_v2 available — cannot apply holiday TOU override",
         );
-        return;
+        return { today, holidayAction: "none" };
       }
       await this.applyHolidayTou(product, tariffV2);
+      return { today, holidayAction: "override" };
     } else if (isObservedHolidayOnDate(entries, yesterday)) {
-      logger.info(
-        `Day after holiday (${yesterday}) for site "${product.site_name}" — restoring original TOU`,
+      siteLog.info(
+        {
+          scheduleAction: "setTouHolidayOverride",
+          data: { today, holidayAction: "restore" } satisfies TouHolidayData,
+        },
+        "Day after holiday — restoring TOU",
       );
       await this.restoreTou(product);
+      return { today, holidayAction: "restore" };
     } else {
-      logger.debug(
-        `No holiday action needed for ${today} on site "${product.site_name}"`,
+      siteLog.debug(
+        {
+          scheduleAction: "setTouHolidayOverride",
+          data: { today, holidayAction: "none" } satisfies TouHolidayData,
+        },
+        "No holiday action needed",
       );
+      return { today, holidayAction: "none" };
     }
   }
 
@@ -1638,6 +1726,10 @@ export class Fleet {
     if (!apiMode) {
       throw new Error(`Unknown operational mode: ${mode}`);
     }
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     const url = new URL(
       `/api/1/energy_sites/${product.energy_site_id}/operation`,
       baseApiUrl,
@@ -1645,11 +1737,9 @@ export class Fleet {
     const options = await this.getDefaultPostOptions();
     const body = JSON.stringify({ default_real_mode: apiMode });
     if (process.env.DRY_RUN === "true") {
-      logger.info(
+      siteLog.info(
         {
           dryRun: true,
-          site: product.site_name,
-          energySiteId: product.energy_site_id,
           intent: `Set operational mode to ${mode} (${apiMode})`,
           apiCall: {
             method: "POST",
@@ -1657,7 +1747,7 @@ export class Fleet {
             body: { default_real_mode: apiMode },
           },
         },
-        `[DRY RUN] Would set operational mode to "${mode}" (${apiMode}) for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
+        "[DRY RUN] Would set operational mode",
       );
       return;
     }
@@ -1677,18 +1767,23 @@ export class Fleet {
         2,
       );
       if (response.ok) {
-        logger.info(
-          `Operational mode set to "${mode}" (${apiMode}) successfully for Energy Site ${product.energy_site_id}.`,
+        siteLog.info(
+          {
+            scheduleAction: "setOperationalMode",
+            data: { mode, apiMode } satisfies OperationalModeData,
+          },
+          "Operational mode set",
         );
       } else {
         const errorText = await response.text();
-        logger.error(
-          `Failed to set operational mode for Energy Site ${product.energy_site_id}: ${errorText}`,
-        );
+        siteLog.error({ errorText }, "Failed to set operational mode");
       }
     } catch (error: any) {
       const errorMsg = `Error setting operational mode after retries for Energy Site ${product.energy_site_id}: ${error.message}`;
-      logger.error(errorMsg);
+      siteLog.error(
+        { err: error },
+        "Error setting operational mode after retries",
+      );
       await sendEmail(
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to set operational mode for Energy Site ${product.energy_site_id}. Please check the server logs.`,
@@ -1705,11 +1800,13 @@ export class Fleet {
     product: Product,
     tariffV2: Record<string, any>,
   ): Promise<void> {
+    const siteLog = this.log.child({
+      siteId: String(product.energy_site_id),
+      siteName: product.site_name,
+    });
     await this.postTouSettings(product, tariffV2);
     siteInfoCache.delete(product.energy_site_id);
-    logger.info(
-      `TOU schedule applied for site "${product.site_name}" (energy_site_id: ${product.energy_site_id})`,
-    );
+    siteLog.info("TOU schedule applied");
   }
 
   async detectCalibration(product: Product): Promise<void> {
@@ -1719,6 +1816,7 @@ export class Fleet {
     const bmsCalibrating = isCalibrating(live);
     const siteId = String(product.energy_site_id);
     const siteName = product.site_name ?? `Site ${product.energy_site_id}`;
+    const siteLog = this.log.child({ siteId, siteName });
 
     // Update discharge ring buffer with the latest battery_power reading.
     const buf = dischargeBuffer.get(product.energy_site_id) ?? [];
@@ -1734,13 +1832,20 @@ export class Fleet {
 
     if (process.env.DRY_RUN === "true") {
       if (bmsCalibrating) {
-        logger.info(
-          `[DRY RUN] BMS calibration detected for site "${siteName}" — no DB write or email`,
+        siteLog.info(
+          { dryRun: true, eventType: "calibration_bms_lock" },
+          "[DRY RUN] BMS calibration detected — no DB write or email",
         );
       }
       if (dischargeCalibrating) {
-        logger.info(
-          `[DRY RUN] Discharge calibration detected for site "${siteName}" (${DISCHARGE_BUFFER_SIZE} consecutive readings >${DISCHARGE_MIN_POWER_W}W) — no DB write or email`,
+        siteLog.info(
+          {
+            dryRun: true,
+            eventType: "calibration_discharge",
+            bufferSize: DISCHARGE_BUFFER_SIZE,
+            minPowerW: DISCHARGE_MIN_POWER_W,
+          },
+          "[DRY RUN] Discharge calibration detected — no DB write or email",
         );
       }
       return;
@@ -1764,8 +1869,9 @@ export class Fleet {
     // Skip discharge detection until the buffer has enough readings (e.g. after
     // a server restart) to avoid prematurely closing a stale open event.
     if (!bufferFull) {
-      logger.debug(
-        `Discharge buffer filling for site "${siteName}" (${buf.length}/${DISCHARGE_BUFFER_SIZE})`,
+      siteLog.debug(
+        { bufferLength: buf.length, bufferSize: DISCHARGE_BUFFER_SIZE },
+        "Discharge buffer filling",
       );
       return;
     }
@@ -1801,6 +1907,7 @@ export class Fleet {
     endSubject: string,
     endBody: string,
   ): Promise<void> {
+    const siteLog = this.log.child({ siteId, siteName });
     const openEvent = await repo.findOne({
       where: {
         site_id: siteId,
@@ -1820,7 +1927,7 @@ export class Fleet {
         event_type: eventType,
         event_payload: null,
       } satisfies ISiteEvent);
-      logger.info(`${eventType} event started for site "${siteName}"`);
+      siteLog.info({ eventType }, "Site event started");
       await sendEmail(
         startSubject,
         startBody,
@@ -1833,7 +1940,7 @@ export class Fleet {
         modified_time: now,
         event_payload: { ended_at: now.toISOString() },
       });
-      logger.info(`${eventType} event completed for site "${siteName}"`);
+      siteLog.info({ eventType }, "Site event completed");
       await sendEmail(
         endSubject,
         endBody,
