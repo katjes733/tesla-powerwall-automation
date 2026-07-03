@@ -9,6 +9,7 @@
     - [HTTPS / Self-Signed Certificate](#https--self-signed-certificate)
     - [PostgreSQL TLS](#postgresql-tls)
     - [Environment variables](#environment-variables)
+    - [Sessions](#sessions)
   - [Tesla Fleet API onboarding](#tesla-fleet-api-onboarding)
     - [Preparation](#preparation)
       - [Project Site](#project-site)
@@ -209,6 +210,10 @@ The full list of variables is in `env/sample.env`. The essentials:
 > `ALLOWED_ORIGINS` is only relevant when the Vite dev server is running separately from the API (the default local development setup: `bun run dev` starts Vite on port 5173 while the API runs on port 3001). The default value covers this case.
 >
 > If you run the backend in Docker locally while keeping Vite outside the container, set `ALLOWED_ORIGINS` to the Vite server's URL (e.g. `http://localhost:5173`).
+
+### Sessions
+
+The app uses server-side sessions backed by Redis with a maximum lifetime of 4 hours. Independently of that, the browser client tracks user activity (mouse movement, clicks, keyboard, scroll) and automatically logs out after **1 hour of inactivity**, redirecting to the login page. The client also polls the session endpoint every 2 minutes so that an invalidated session (e.g. after a server restart or Redis flush) is detected promptly even on pages that make no other API calls.
 
 ## Tesla Fleet API onboarding
 
