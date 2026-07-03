@@ -4,6 +4,9 @@ import {
   isCalibrating,
   isDischargeCalibrating,
 } from "~/server/util/fleet";
+import { getByEmail } from "~/server/util/routes/schedule";
+import { getActiveHolidayName } from "~/server/util/holidays";
+import type { HolidayEntry } from "~/server/database/models/schedule";
 
 const MANUAL_ACTIONS = new Set([
   "setBackupReserve",
@@ -99,13 +102,32 @@ router.get("/status", async (req, res, next) => {
       throwOnError: false,
       mailOnError: false,
     });
-    const products = await fleet.getEnergyProducts();
+    const [products, schedules] = await Promise.all([
+      fleet.getEnergyProducts(),
+      getByEmail(email),
+    ]);
+    const holidaySchedules = schedules.filter((s) =>
+      (s.actions ?? []).some((a) => a.action === "setTouHolidayOverride"),
+    );
     const data = await Promise.all(
       products.map(async (product) => {
         const [live, info] = await Promise.all([
           fleet.getLiveStatus(product),
           fleet.getSiteInfo(product),
         ]);
+        const tz = info?.installation_time_zone ?? "UTC";
+        const today = new Intl.DateTimeFormat("en-CA", {
+          timeZone: tz,
+        }).format(new Date());
+        const siteIdStr = String(product.energy_site_id);
+        const holidaySchedule = holidaySchedules.find((s) =>
+          s.site_ids.includes(siteIdStr),
+        );
+        const holidayEntries =
+          ((holidaySchedule?.conditions ?? []).find(
+            (c) => c.condition === "holidayList",
+          )?.value as HolidayEntry[] | undefined) ?? [];
+        const activeHoliday = getActiveHolidayName(holidayEntries, today);
         return {
           product,
           live,
@@ -114,6 +136,7 @@ router.get("/status", async (req, res, next) => {
             ? isCalibrating(live) ||
               isDischargeCalibrating(product.energy_site_id)
             : false,
+          activeHoliday,
         };
       }),
     );

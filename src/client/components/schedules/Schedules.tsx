@@ -2168,10 +2168,16 @@ function HolidaysSettings({
 
   return (
     <Box sx={{ mt: 2 }}>
-      <Alert severity="info" sx={{ mb: 2 }}>
+      <Alert severity="info" sx={{ mb: 1 }}>
         Fires at midnight local time every night. On observed holidays the TOU
         schedule is switched to weekend mode; the original schedule is restored
         the following midnight.
+      </Alert>
+      <Alert severity="warning" sx={{ mb: 2 }}>
+        The Tesla app cannot display a schedule that has no on-peak periods. On
+        holidays the TOU override uses weekend-style (all off-peak) periods, so
+        the Tesla app will show a blank schedule for that day. This is a Tesla
+        app display limitation and does not affect automation behaviour.
       </Alert>
 
       <Box
