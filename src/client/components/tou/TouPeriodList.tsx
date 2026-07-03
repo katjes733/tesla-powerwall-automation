@@ -204,52 +204,7 @@ export default function TouPeriodList({
                       <MenuItem value="weekends" sx={{ fontSize: 13 }}>
                         Weekend (Sa–Su)
                       </MenuItem>
-                      <MenuItem value="all" sx={{ fontSize: 13 }}>
-                        All Days
-                      </MenuItem>
-                      <MenuItem value="custom" sx={{ fontSize: 13 }}>
-                        Custom
-                      </MenuItem>
                     </Select>
-                    {preset === "custom" && (
-                      <>
-                        <Select
-                          size="small"
-                          value={block.fromDayOfWeek}
-                          onChange={(e) =>
-                            update(block.id, {
-                              fromDayOfWeek: Number(e.target.value),
-                            })
-                          }
-                          sx={{ fontSize: 13, minWidth: 70 }}
-                          error={daysError}
-                        >
-                          {DAY_LABELS.map((d, i) => (
-                            <MenuItem key={i} value={i} sx={{ fontSize: 13 }}>
-                              {d}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                        <span>–</span>
-                        <Select
-                          size="small"
-                          value={block.toDayOfWeek}
-                          onChange={(e) =>
-                            update(block.id, {
-                              toDayOfWeek: Number(e.target.value),
-                            })
-                          }
-                          sx={{ fontSize: 13, minWidth: 70 }}
-                          error={daysError}
-                        >
-                          {DAY_LABELS.map((d, i) => (
-                            <MenuItem key={i} value={i} sx={{ fontSize: 13 }}>
-                              {d}
-                            </MenuItem>
-                          ))}
-                        </Select>
-                      </>
-                    )}
                   </Box>
                 </TableCell>
                 <TableCell sx={{ py: 0.5 }}>
