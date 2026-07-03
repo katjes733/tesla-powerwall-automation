@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - [Fleet singleton map](#fleet-singleton-map)
     - [Scheduler singleton](#scheduler-singleton)
     - [Schedule execution](#schedule-execution)
+  - [Grafana dashboard](#grafana-dashboard)
   - [Key conventions](#key-conventions)
     - [Request validation](#request-validation)
     - [Security conventions for new routes](#security-conventions-for-new-routes)
@@ -102,6 +103,40 @@ Each cron tick:
 1. Fetches energy products from Tesla API for the schedule's `device_id` (or all if `"ALL"`)
 2. Iterates `schedule.configuration` items, resolving each `action` string through `Fleet._actionMap`
 3. Writes `last_run_time`, `next_run_time`, and success/error fields back to the DB
+
+## Grafana dashboard
+
+`grafana-dashboards/tesla-powerwall-automation.json` is a Grafana Scenes dashboard (importable via Grafana → Dashboards → Import). It covers schedule execution, smart charging decisions, auth events, calibration, and system health — all sourced from Loki via the structured Pino logs.
+
+**When adding new structured logging, consider whether the dashboard should be extended.** Common triggers:
+
+- **New `service` value** — add a panel in the System Health section (or a dedicated section if the service is complex enough). The Error Rate by Service panel already picks it up automatically via `sum by (service)`.
+- **New `scheduleAction` value** — the Actions Executed Over Time panel picks it up automatically. If the action has rich `data_*` fields (like `setSmartGridCharging` does), consider adding dedicated panels in a new or existing section.
+- **New `data_*` fields on an existing action** — update the Decision Log `line_format` expression for that action so the new fields appear in the formatted log line.
+- **New `eventType` pattern** — if it follows the `calibration_.*` convention it appears automatically; otherwise add a new filter.
+- **New `msg` sentinel** — if a new summary-level message is emitted (like `"Schedule executed"`), it may be worth a dedicated log or stat panel.
+
+**Dashboard queries depend on specific log field names and `msg` values.** Renaming any of the following in the application code will silently break the corresponding panels — update `grafana-dashboards/tesla-powerwall-automation.json` in the same PR.
+
+| Field / value | Used by panels |
+| --- | --- |
+| `msg="Schedule executed"` | Schedule Runs stat, Recent Schedule Executions |
+| `msg="Action result"` | Actions Executed Over Time |
+| `service="scheduler"` | all Schedule Execution panels |
+| `service="auth"` | Login Activity, Auth Event Log |
+| `service="fleet"` | Calibration panels |
+| `service="retry"` | Tesla API Retries stat |
+| `service="db"` | DB Errors |
+| `service="mail"` | Mail Events |
+| `scheduleAction="setSmartGridCharging"` | all Smart Charging panels |
+| `data_action` (`enabled` / `disabled` / `no_change`) | Grid Charging Decisions |
+| `data_soc`, `data_targetSoc` | Battery SOC at Decision |
+| `data_estimatedSolarKwh` | Solar Forecast at Decision |
+| `data_forecastMethod` (`historical` / `linear-fallback`) | Forecast Method donut |
+| `data_chargeRateKw`, `data_reason` | Smart Charging Decision Log |
+| `eventType=~"calibration_.*"` | Calibration Events, Calibration Timeline |
+| `event` (`auth.login.success` / `.failure` / `.locked`) | Login Activity |
+| `siteName` | site variable + every site-filtered panel |
 
 ## Accepted security findings
 
