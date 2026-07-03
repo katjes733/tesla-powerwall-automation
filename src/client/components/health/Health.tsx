@@ -44,7 +44,7 @@ export default function HealthCards() {
         gap: 4,
         justifyContent: "center",
         mx: "auto",
-        margin: "32px auto 0px auto",
+        margin: "0 auto",
       }}
     >
       <Card

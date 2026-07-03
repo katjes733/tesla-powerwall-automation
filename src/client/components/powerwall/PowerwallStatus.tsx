@@ -89,7 +89,7 @@ export default function PowerwallStatus() {
   }, []);
 
   return (
-    <Box sx={{ width: "100%", maxWidth: 1200, mx: "auto", px: 2, mt: 4 }}>
+    <Box sx={{ width: "100%", maxWidth: 1200, mx: "auto", px: 2 }}>
       {/* Header row */}
       <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
         <Typography variant="h5" fontWeight={600} sx={{ flex: 1 }}>

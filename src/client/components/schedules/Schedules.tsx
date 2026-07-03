@@ -3195,7 +3195,7 @@ export default function Schedules() {
   }, [smartSeasonalWindows, dialogTab, smartMode]);
 
   return (
-    <Box sx={{ p: 3, width: "60%", mx: "auto" }}>
+    <Box sx={{ px: 3, pb: 3, width: "60%", mx: "auto" }}>
       <Typography variant="h4" gutterBottom>
         Schedules
       </Typography>
