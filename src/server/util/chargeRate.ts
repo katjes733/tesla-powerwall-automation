@@ -98,6 +98,15 @@ function cvEffectiveRateKw(
  * When a non-parametric charge curve is provided, numerical integration over the SOC
  * range replaces the hardcoded CC/CV model. Existing callers that omit `curve` are unaffected.
  */
+export interface GridChargeHoursResult {
+  hours: number;
+  effectiveRateKw: number;
+  /** Lowest SOC step where solar alone covers the battery — set only when a
+   *  calibrated charge curve is used. Undefined means grid is needed all the
+   *  way to targetSoc (or no curve was available). */
+  solarCoversAboveSocPct?: number;
+}
+
 export function calculateGridChargeHours(
   energyNeededKwh: number,
   estimatedSolarKwh: number,
@@ -105,7 +114,7 @@ export function calculateGridChargeHours(
   targetSocPercent: number,
   chargeRateKw: number,
   curve?: ChargeCurveCalibrationData,
-): { hours: number; effectiveRateKw: number } {
+): GridChargeHoursResult {
   const gridEnergyKwh = Math.max(0, energyNeededKwh - estimatedSolarKwh);
   const startupBufferHours = GRID_CHARGE_STARTUP_BUFFER_MINUTES / 60;
 
@@ -171,7 +180,7 @@ function calculateGridChargeHoursCurve(
   curve: ChargeCurveCalibrationData,
   gridEnergyKwh: number,
   startupBufferHours: number,
-): { hours: number; effectiveRateKw: number } {
+): GridChargeHoursResult {
   const totalSocDelta = Math.max(0, targetSocPercent - currentSocPercent);
   if (totalSocDelta <= 0) {
     return { hours: startupBufferHours, effectiveRateKw: chargeRateKw };
@@ -189,18 +198,25 @@ function calculateGridChargeHoursCurve(
   const solarRateKw = seedHours > 0 ? estimatedSolarKwh / seedHours : 0;
 
   let totalChargeHours = 0;
+  let solarCoversAboveSocPct: number | undefined;
   const steps = Math.ceil(totalSocDelta / CURVE_STEP_SOC);
+  const stepEnergyKwh = capacityKwh * (CURVE_STEP_SOC / 100);
 
   for (let i = 0; i < steps; i++) {
     const soc = currentSocPercent + i * CURVE_STEP_SOC;
     const batteryCapKw = lookupBatteryRateKw(soc, curve.bins);
-    const gridRateKw = Math.max(
-      0,
-      Math.min(chargeRateKw, batteryCapKw - solarRateKw),
-    );
-    const stepEnergyKwh = capacityKwh * (CURVE_STEP_SOC / 100);
-    const stepHours = stepEnergyKwh / Math.max(0.1, gridRateKw);
-    totalChargeHours += stepHours;
+
+    if (batteryCapKw <= solarRateKw) {
+      // Solar covers this SOC step entirely — grid not needed here.
+      if (solarCoversAboveSocPct === undefined) {
+        solarCoversAboveSocPct = soc;
+      }
+      continue;
+    }
+
+    // Grid is ON for this step. Wall-clock time = step energy / total charge rate.
+    // Total rate = solar + grid contribution, capped at battery acceptance = batteryCapKw.
+    totalChargeHours += stepEnergyKwh / Math.max(0.1, batteryCapKw);
   }
 
   const totalHours = totalChargeHours + startupBufferHours;
@@ -209,5 +225,5 @@ function calculateGridChargeHoursCurve(
       ? Math.round((gridEnergyKwh / totalChargeHours) * 100) / 100
       : chargeRateKw;
 
-  return { hours: totalHours, effectiveRateKw };
+  return { hours: totalHours, effectiveRateKw, solarCoversAboveSocPct };
 }

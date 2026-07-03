@@ -1290,19 +1290,26 @@ export class Fleet {
               0,
               energyNeededKwh - estimatedSolarKwh,
             );
-            const { hours: gridChargeHours, effectiveRateKw } =
-              calculateGridChargeHours(
-                energyNeededKwh,
-                estimatedSolarKwh,
-                liveStatus.percentage_charged,
-                config.targetSoc,
-                effectiveChargeRateKw,
-                chargeCurve ?? undefined,
-              );
+            const {
+              hours: gridChargeHours,
+              effectiveRateKw,
+              solarCoversAboveSocPct,
+            } = calculateGridChargeHours(
+              energyNeededKwh,
+              estimatedSolarKwh,
+              liveStatus.percentage_charged,
+              config.targetSoc,
+              effectiveChargeRateKw,
+              chargeCurve ?? undefined,
+            );
             const latestGridStart = effectivePeakStart
               .clone()
               .subtract(gridChargeHours, "hours");
             const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
+            const taperNote =
+              solarCoversAboveSocPct !== undefined
+                ? `; solar covers SOC ${solarCoversAboveSocPct.toFixed(1)}–100%`
+                : "";
 
             let withinWindow = true;
             const windowCond = conditions.find(
@@ -1325,10 +1332,10 @@ export class Fleet {
 
             if (nowIsAtOrAfterLatestStart && withinWindow) {
               desired = "enabled";
-              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
+              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW${taperNote} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
             } else if (!nowIsAtOrAfterLatestStart) {
               desired = "disabled";
-              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
+              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)}${taperNote} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
             } else {
               desired = "disabled";
               reason = `outside allowed window — grid start due at ${formatScheduledTime(latestGridStart, now)} but window is closed`;
@@ -1394,27 +1401,34 @@ export class Fleet {
             0,
             energyNeededKwh - estimatedSolarKwh,
           );
-          const { hours: gridChargeHours, effectiveRateKw } =
-            calculateGridChargeHours(
-              energyNeededKwh,
-              estimatedSolarKwh,
-              liveStatus.percentage_charged,
-              config.targetSoc,
-              effectiveChargeRateKw,
-              chargeCurve ?? undefined,
-            );
+          const {
+            hours: gridChargeHours,
+            effectiveRateKw,
+            solarCoversAboveSocPct,
+          } = calculateGridChargeHours(
+            energyNeededKwh,
+            estimatedSolarKwh,
+            liveStatus.percentage_charged,
+            config.targetSoc,
+            effectiveChargeRateKw,
+            chargeCurve ?? undefined,
+          );
           const latestGridStart = effectiveDeadline
             .clone()
             .subtract(gridChargeHours, "hours");
           const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
           const withinWindow = isWithinWindow(window.from, window.to, now);
+          const taperNote =
+            solarCoversAboveSocPct !== undefined
+              ? `; solar covers SOC ${solarCoversAboveSocPct.toFixed(1)}–100%`
+              : "";
 
           if (nowIsAtOrAfterLatestStart && withinWindow) {
             desired = "enabled";
-            reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW (${solarLabel}, deadline ${window.to})`;
+            reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW${taperNote} (${solarLabel}, deadline ${window.to})`;
           } else if (!nowIsAtOrAfterLatestStart) {
             desired = "disabled";
-            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)} (${solarLabel}, deadline ${window.to})`;
+            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)}${taperNote} (${solarLabel}, deadline ${window.to})`;
           } else {
             desired = "disabled";
             reason = `outside allowed window — grid start due at ${formatScheduledTime(latestGridStart, now)} but window is closed`;
