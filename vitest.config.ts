@@ -5,7 +5,10 @@ export default defineConfig({
   plugins: [tsconfigPaths()],
   test: {
     environment: "node",
-    setupFiles: ["./src/server/bootstrap/logger-global.ts"],
+    setupFiles: [
+      "./src/server/bootstrap/logger-global.ts",
+      "./tests/setup.ts",
+    ],
     coverage: {
       provider: "v8",
       include: ["src/**/*.ts"],

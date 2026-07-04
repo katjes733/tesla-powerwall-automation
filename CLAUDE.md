@@ -11,9 +11,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - [Scheduler singleton](#scheduler-singleton)
     - [Schedule execution](#schedule-execution)
   - [Grafana dashboard](#grafana-dashboard)
+  - [Testing](#testing)
+    - [Test runner](#test-runner)
+    - [Module mocking](#module-mocking)
+    - [Logger silencing](#logger-silencing)
+    - [Environment variables in tests](#environment-variables-in-tests)
   - [Key conventions](#key-conventions)
     - [Request validation](#request-validation)
     - [Security conventions for new routes](#security-conventions-for-new-routes)
+    - [Email notification routing](#email-notification-routing)
+    - [Notification deduplication](#notification-deduplication)
 
 ## Commands
 
@@ -32,9 +39,10 @@ bun run lint
 bun run verify
 
 # Tests
-bun test
-bun test --watch
-bun test path/to/file.test.ts   # run a single test file
+bun run test                              # vitest run (all tests, single pass)
+bun run test:coverage                     # with coverage report
+npx vitest path/to/file.test.ts           # run a single test file
+npx vitest --watch                        # watch mode
 
 # Generate a new Tesla refresh token (OAuth browser flow)
 bun run new-refresh-token
@@ -138,6 +146,75 @@ Each cron tick:
 | `event` (`auth.login.success` / `.failure` / `.locked`) | Login Activity |
 | `siteName` | site variable + every site-filtered panel |
 
+## Testing
+
+### Test runner
+
+This project uses **Vitest** (not `bun test`). Configuration is in `vitest.config.ts`. The `verify` script runs `vitest run` automatically.
+
+```sh
+bun run test                    # single pass
+bun run test:coverage           # with v8 coverage
+npx vitest path/to/file.test.ts # single file
+npx vitest --watch              # watch mode
+```
+
+### Module mocking
+
+Use `vi.mock()` for module-level mocks. Critically, any mock state (functions, maps, objects) referenced inside a `vi.mock()` factory **must** be declared with `vi.hoisted()` — otherwise the factory runs before the variable is initialised (temporal dead zone error).
+
+```typescript
+const { mockSendEmail, cronCallbacks } = vi.hoisted(() => ({
+  mockSendEmail: vi.fn(),
+  cronCallbacks: {} as Record<string, () => Promise<void>>,
+}));
+
+vi.mock("~/server/util/mailing", () => ({ sendEmail: mockSendEmail }));
+```
+
+**`cronCallbacks` pattern for cron tests:** mock `node-cron` to capture callbacks keyed by cron expression, then invoke them directly in tests rather than waiting for real time:
+
+```typescript
+vi.mock("node-cron", () => ({
+  schedule: vi.fn((expr: string, cb: () => Promise<void>) => {
+    cronCallbacks[expr] = cb;
+    return { stop: vi.fn(), destroy: vi.fn() };
+  }),
+}));
+
+// In test:
+await cronCallbacks["0 9 * * *"]();
+```
+
+**Singleton reset between tests:** the `Scheduler` singleton must be reset so each test gets a clean instance:
+
+```typescript
+(Scheduler as unknown as { instance: unknown }).instance = undefined;
+```
+
+### Logger silencing
+
+`tests/setup.ts` globally silences the Pino logger in every test via `vi.spyOn` on all log levels. This runs automatically through `vitest.config.ts` `setupFiles`. No import needed.
+
+To **assert on log calls** in a specific test, import `logSpy` from the setup file:
+
+```typescript
+import { logSpy } from "../setup";
+
+expect(logSpy("error")).toHaveBeenCalledWith(
+  expect.objectContaining({ err: expect.anything() }),
+  "Error executing schedule",
+);
+```
+
+`vi.restoreAllMocks()` in the global `afterEach` restores `vi.spyOn` spies between tests — it does **not** affect `vi.mock()` module mocks or `vi.fn()` instances (those persist for the test file lifetime as intended).
+
+### Environment variables in tests
+
+Use `process.env` — not `Bun.env` — in any code that runs under both Bun (production) and Node.js (Vitest workers). `Bun.env` is Bun-specific and throws `ReferenceError: Bun is not defined` inside Vitest workers.
+
+`pino-pretty` must be referenced by **package name** (`"pino-pretty"`), not a resolved directory path (`path.resolve("node_modules/pino-pretty")`). The latter fails in Node.js ESM because `pino-pretty` uses a package exports field.
+
 ## Accepted security findings
 
 Security issues that were consciously assessed and accepted rather than fixed. Do not re-raise these in future audits unless the threat model changes.
@@ -184,3 +261,33 @@ router.post("/example", validateBody(ExampleSchema), async (req, res) => { … }
 - **PII in logs** — never log a raw email address. Use `maskEmail(email)` from `~/server/util/maskEmail`. Log the user's UUID (`userId`) alongside the masked email wherever the DB record is in scope.
 - **Error propagation** — catch blocks must call `next(error)` rather than formatting a `res.status(500).json(...)` response directly. The centralized error handler in `main.ts` returns a generic message in production and the real message only in `NODE_ENV=development`.
 - **No `error.message` in responses** — do not put `error.message` (or any internal exception detail) into a JSON response body. Route-level `logger.error` calls with structured context are fine; the HTTP response must be generic.
+
+### Email notification routing
+
+`sendEmail(subject, body, recipient?)` from `src/server/util/mailing.ts` accepts an optional third argument:
+
+- **Site-specific failures** (schedule errors, expiry, calibration failures, stale tokens) — always pass the **site owner's email** as the third argument. The email comes from the schedule/token record, not from `process.env`.
+- **System-level failures** (startup errors, unrecoverable background job crashes with no site context) — omit the third argument. `sendEmail` falls back to `RECIPIENT_EMAIL` from `process.env`.
+
+Never route site-specific errors to `RECIPIENT_EMAIL`. Never route system-level errors to a hardcoded address.
+
+### Notification deduplication
+
+Use `notifyOnce` / `clearNotification` from `src/server/util/notificationDedup.ts` to avoid flooding inboxes when a recurring job fails repeatedly.
+
+```typescript
+// Send at most once per error streak — cleared on recovery
+await notifyOnce(`sched_error_notified:${schedule.id}`, () =>
+  sendEmail("Powerwall Notification", body, schedule.email),
+  redis,
+);
+
+// Clear on success so the next failure sends a fresh email
+await clearNotification(`sched_error_notified:${schedule.id}`, redis);
+```
+
+Key properties:
+
+- **Fail-open**: if `redis.exists` throws, `notifyOnce` sends the email (better to over-notify than to silently swallow failures).
+- **No schedule ID**: if the record has no `id`, skip deduplication and send unconditionally.
+- **TTL**: use `redis.set(key, "1", "EX", seconds)` inside the callback for time-bounded dedup windows (e.g. stale-token warnings capped at 24 h). For permanent state (schedule expiry), omit TTL.
