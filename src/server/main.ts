@@ -18,6 +18,7 @@ import {
 import { router as SiteSettingsRouter } from "~/server/routes/siteSettings";
 import { RedisStore } from "connect-redis";
 import { redis } from "~/server/util/redis";
+import { sendEmail } from "~/server/util/mailing";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -214,12 +215,24 @@ if (process.env.DRY_RUN === "true") {
   );
 }
 
-recoverCurveCalibrations().catch((err) =>
-  startupLog.error({ err }, "Curve calibration recovery failed at startup"),
-);
+recoverCurveCalibrations().catch((err) => {
+  startupLog.error({ err }, "Curve calibration recovery failed at startup");
+  sendEmail(
+    "Powerwall Notification",
+    `[${new Date().toLocaleString()}] Curve calibration recovery failed at startup: ${err?.message ?? "Unknown error"}. In-progress calibrations may not have been resumed. Please check the server logs.`,
+  );
+});
 
 if (process.env.SCHEDULED_JOBS_DISABLED !== "true") {
-  Scheduler.getInstance().initialize();
+  Scheduler.getInstance()
+    .initialize()
+    .catch((err) => {
+      startupLog.error({ err }, "Scheduler initialization failed");
+      sendEmail(
+        "Powerwall Notification",
+        `[${new Date().toLocaleString()}] Scheduler failed to initialize: ${err?.message ?? "Unknown error"}. Scheduled tasks are not running. Please check the server logs.`,
+      );
+    });
 } else {
   // const email =
   //   process.env.TESLA_ACCOUNT_EMAIL ||

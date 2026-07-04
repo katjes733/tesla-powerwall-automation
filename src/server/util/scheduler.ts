@@ -662,6 +662,10 @@ export class Scheduler {
         }
       } catch (err: any) {
         schedulerLog.error({ err }, "Token staleness check failed");
+        sendEmail(
+          "Powerwall Notification",
+          `[${new Date().toLocaleString()}] Token staleness check job failed: ${err?.message ?? "Unknown error"}. Stale token warnings may not have been sent. Please check the server logs.`,
+        );
       }
     });
     schedulerLog.info(

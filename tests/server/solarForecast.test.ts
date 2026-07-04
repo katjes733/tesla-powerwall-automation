@@ -1,4 +1,4 @@
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 import moment from "moment-timezone";
 import { estimateSolarKwhFromHistory } from "~/server/util/solarForecast";
 import type { SolarPowerDataPoint } from "~/server/types/common";
