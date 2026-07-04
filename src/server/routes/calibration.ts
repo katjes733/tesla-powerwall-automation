@@ -23,6 +23,7 @@ import {
   isCurrentlyInPeak,
 } from "~/server/util/tariff";
 import { redis } from "~/server/util/redis";
+import { sendEmail } from "~/server/util/mailing";
 import {
   buildChargeCurveBins,
   isValidCandidate,
@@ -250,7 +251,13 @@ router.post(
 
       res.json({ success: true, data: { jobId } });
 
-      runCalibration(fleet, product, job, previousGridState).catch((err) => {
+      runCalibration(
+        fleet,
+        product,
+        job,
+        previousGridState,
+        req.session.user!,
+      ).catch((err) => {
         calibLog.error(
           { err },
           "Unexpected error in calibration background job",
@@ -268,6 +275,7 @@ async function runCalibration(
   product: Product,
   job: CalibrationJob,
   previousGridState: "enabled" | "disabled",
+  email: string,
 ): Promise<void> {
   try {
     // Phase 1: stability detection — wait for charge rate to stabilize
@@ -355,6 +363,11 @@ async function runCalibration(
     job.phase = "done";
     job.error = err?.message ?? "Unknown error";
     calibLog.error({ err }, "Calibration job failed");
+    sendEmail(
+      "Powerwall Notification",
+      `[${new Date().toLocaleString()}] Grid charge rate calibration failed for site ${String(product.energy_site_id)}: ${job.error}`,
+      email,
+    );
   } finally {
     await fleet
       .setGridCharging(product, previousGridState)
@@ -362,6 +375,11 @@ async function runCalibration(
         calibLog.error(
           { err },
           "Failed to restore grid charging state after calibration",
+        );
+        sendEmail(
+          "Powerwall Notification",
+          `[${new Date().toLocaleString()}] Failed to restore grid charging for site ${String(product.energy_site_id)} after calibration: ${err?.message ?? "Unknown error"}. Please check the site manually.`,
+          email,
         );
       });
   }
@@ -585,6 +603,7 @@ async function runCurveCalibration(
   product: Product,
   jobId: string,
   previousGridState: "enabled" | "disabled",
+  email: string,
 ): Promise<void> {
   const job = curveJobs.get(jobId);
   if (!job) return;
@@ -634,18 +653,28 @@ async function runCurveCalibration(
     job.status = "failed";
     job.error = err?.message ?? "Unknown error";
     calibLog.error({ err }, "Curve calibration job failed");
+    sendEmail(
+      "Powerwall Notification",
+      `[${new Date().toLocaleString()}] Curve calibration failed for site ${String(product.energy_site_id)}: ${job.error}`,
+      email,
+    );
   } finally {
     job.phase = "done";
     curveJobBySite.delete(String(product.energy_site_id));
 
     await fleet
       .setGridCharging(product, previousGridState)
-      .catch((err: any) =>
+      .catch((err: any) => {
         calibLog.error(
           { err },
           "Failed to restore grid charging after curve calibration",
-        ),
-      );
+        );
+        sendEmail(
+          "Powerwall Notification",
+          `[${new Date().toLocaleString()}] Failed to restore grid charging for site ${String(product.energy_site_id)} after curve calibration: ${err?.message ?? "Unknown error"}. Please check the site manually.`,
+          email,
+        );
+      });
 
     try {
       await redis.del(curveRedisKey(energySiteId));
@@ -767,12 +796,17 @@ router.post(
 
       res.json({ success: true, data: { jobId } });
 
-      runCurveCalibration(fleet, product, jobId, previousGridState).catch(
-        (err) =>
-          calibLog.error(
-            { err },
-            "Unexpected error in curve calibration background job",
-          ),
+      runCurveCalibration(
+        fleet,
+        product,
+        jobId,
+        previousGridState,
+        email,
+      ).catch((err) =>
+        calibLog.error(
+          { err },
+          "Unexpected error in curve calibration background job",
+        ),
       );
     } catch (error: any) {
       calibLog.error({ err: error }, "Error starting curve calibration");
@@ -946,6 +980,11 @@ export async function recoverCurveCalibrations(): Promise<void> {
             { key },
             "Curve calibration Redis key expired — deleted without recovery",
           );
+          sendEmail(
+            "Powerwall Notification",
+            `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (session too old). Please start a new calibration.`,
+            payload.email,
+          );
           continue;
         }
 
@@ -962,6 +1001,11 @@ export async function recoverCurveCalibrations(): Promise<void> {
           calibLog.warn(
             { energySiteId: payload.energySiteId },
             "Curve calibration recovery: site not found — restoring grid charging defensively",
+          );
+          sendEmail(
+            "Powerwall Notification",
+            `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (site not found). Please start a new calibration.`,
+            payload.email,
           );
           continue;
         }
@@ -1002,6 +1046,7 @@ export async function recoverCurveCalibrations(): Promise<void> {
             product,
             payload.jobId,
             payload.previousGridState,
+            payload.email,
           ).catch((err) =>
             calibLog.error({ err }, "Error in recovered curve calibration job"),
           );

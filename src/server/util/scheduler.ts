@@ -10,7 +10,10 @@ import type {
 import { resolveScheduleOptions } from "~/server/database/models/schedule";
 import type { LiveStatus } from "~/server/types/common";
 import type { IBasicEntity } from "~/server/types/common";
-import { getAllEmails as getAllEmailsFromDb } from "~/server/util/routes/refreshToken";
+import {
+  getAllEmails as getAllEmailsFromDb,
+  getAllEmailsWithExpiry as getAllEmailsWithExpiryFromDb,
+} from "~/server/util/routes/refreshToken";
 import {
   getAll as getAllSchedulesFromDb,
   upsert as upsertScheduleInDb,
@@ -18,6 +21,12 @@ import {
 } from "~/server/util/routes/schedule";
 import { sendEmail } from "./mailing";
 import { Fleet, type SmartChargingData } from "~/server/util/fleet";
+import { redis } from "~/server/util/redis";
+import {
+  isTokenStale,
+  notifyOnce,
+  clearNotification,
+} from "./notificationDedup";
 import { maskEmail } from "~/server/util/maskEmail";
 import AppDataSource from "~/server/database/datasource";
 import type { ISiteCalibration } from "~/server/database/models/siteCalibration";
@@ -131,6 +140,7 @@ export class Scheduler {
   private enabledScheduledTasks: Map<string, ScheduledTask> = new Map();
   private calibrationTask: ScheduledTask | null = null;
   private curveCronTask: ScheduledTask | null = null;
+  private tokenExpiryTask: ScheduledTask | null = null;
   private validEmails: { id: string; email: string }[] = [];
   private schedulingEnabled: boolean = true;
 
@@ -205,6 +215,18 @@ export class Scheduler {
       schedLog.warn("Schedule has expired during evaluation");
       this.enabledScheduledTasks.delete(schedule.id || "");
       task?.destroy();
+      if (schedule.id) {
+        await notifyOnce(
+          `sched_expired_notified:${schedule.id}`,
+          () =>
+            sendEmail(
+              "Powerwall Notification",
+              `[${new Date().toLocaleString()}] Your schedule has expired and will no longer run.`,
+              schedule.email,
+            ),
+          redis,
+        );
+      }
       return;
     }
 
@@ -319,6 +341,7 @@ export class Scheduler {
       }
 
       if (schedule.id) {
+        await clearNotification(`sched_error_notified:${schedule.id}`, redis);
         upsertScheduleInDb({
           id: schedule.id,
           lastRunTime: now.toDate(),
@@ -331,11 +354,27 @@ export class Scheduler {
     } catch (error: any) {
       const lastError = error.message || "Unknown error";
       schedLog.error({ err: error }, "Error executing schedule");
-      sendEmail(
-        "Powerwall Notification",
-        `[${new Date().toLocaleString()}] ${lastError}`,
-        schedule.email,
-      );
+      const redisKey = schedule.id
+        ? `sched_error_notified:${schedule.id}`
+        : null;
+      if (redisKey) {
+        await notifyOnce(
+          redisKey,
+          () =>
+            sendEmail(
+              "Powerwall Notification",
+              `[${new Date().toLocaleString()}] ${lastError}`,
+              schedule.email,
+            ),
+          redis,
+        );
+      } else {
+        sendEmail(
+          "Powerwall Notification",
+          `[${new Date().toLocaleString()}] ${lastError}`,
+          schedule.email,
+        );
+      }
       if (schedule.id) {
         upsertScheduleInDb({
           id: schedule.id,
@@ -386,6 +425,20 @@ export class Scheduler {
   }
 
   async initializeOneSchedule(schedule: ISchedule) {
+    if (schedule.expires_at && new Date(schedule.expires_at) < new Date()) {
+      if (schedule.id) {
+        await notifyOnce(
+          `sched_expired_notified:${schedule.id}`,
+          () =>
+            sendEmail(
+              "Powerwall Notification",
+              `[${new Date().toLocaleString()}] Your schedule has expired and will no longer run.`,
+              schedule.email,
+            ),
+          redis,
+        );
+      }
+    }
     if (!this.isValidSchedule(schedule)) {
       return;
     }
@@ -583,6 +636,37 @@ export class Scheduler {
     schedulerLog.info(
       "Charge curve aggregation and sample purge task initialized (every 6 hours)",
     );
+
+    // Daily check: warn if any user's stored access token has gone stale
+    // (expired for >2 hours without being refreshed), which can indicate
+    // that automatic token renewal is broken.
+    this.tokenExpiryTask?.stop();
+    this.tokenExpiryTask = scheduleTask("0 9 * * *", async () => {
+      try {
+        const tokens = await getAllEmailsWithExpiryFromDb();
+        for (const { email, expiresAt } of tokens) {
+          if (expiresAt && isTokenStale(expiresAt)) {
+            const notifKey = `token_stale_notified:${email}`;
+            const alreadyNotified = await redis.exists(notifKey).catch(() => 1);
+            if (!alreadyNotified) {
+              sendEmail(
+                "Powerwall Notification",
+                `[${new Date().toLocaleString()}] The Tesla access token for ${email} has not been refreshed since ${expiresAt.toLocaleString()}. Schedules for this account may be failing. Please check the server logs or re-authenticate if necessary.`,
+                email,
+              );
+              await redis
+                .set(notifKey, "1", "EX", 24 * 60 * 60)
+                .catch(() => {});
+            }
+          }
+        }
+      } catch (err: any) {
+        schedulerLog.error({ err }, "Token staleness check failed");
+      }
+    });
+    schedulerLog.info(
+      "Token staleness check task initialized (daily at 09:00)",
+    );
   }
 
   async stopAll() {
@@ -595,6 +679,8 @@ export class Scheduler {
     this.calibrationTask = null;
     this.curveCronTask?.stop();
     this.curveCronTask = null;
+    this.tokenExpiryTask?.stop();
+    this.tokenExpiryTask = null;
     schedulerLog.info("All scheduled tasks stopped");
   }
 

@@ -86,3 +86,22 @@ export async function getAllEmails(): Promise<{ id: string; email: string }[]> {
     })
     .then((records) => records.map(({ id, email }) => ({ id, email })));
 }
+
+export async function getAllEmailsWithExpiry(): Promise<
+  { id: string; email: string; expiresAt: Date }[]
+> {
+  const tokenRepo = (await AppDataSource.getInstance()).getRepository(
+    "RefreshToken",
+  );
+  return tokenRepo
+    .find({
+      select: ["id", "email", "expires_at"],
+    })
+    .then((records) =>
+      records.map(({ id, email, expires_at }) => ({
+        id,
+        email,
+        expiresAt: expires_at as unknown as Date,
+      })),
+    );
+}
