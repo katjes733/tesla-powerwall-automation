@@ -1,11 +1,11 @@
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect, afterEach } from "vitest";
 
-const originalLogLevel = Bun.env.LOG_LEVEL;
-const originalPrettyPrint = Bun.env.LOG_PRETTY_PRINT;
+const originalLogLevel = process.env.LOG_LEVEL;
+const originalPrettyPrint = process.env.LOG_PRETTY_PRINT;
 
 /**
  * Dynamically load the `log.ts` module using cache busting.
- * This ensures that changes to Bun.env are picked up.
+ * This ensures that changes to process.env are picked up.
  */
 async function loadLogger(env: Record<string, string | undefined>) {
   const { default: createLogger } = await import(
@@ -16,8 +16,8 @@ async function loadLogger(env: Record<string, string | undefined>) {
 
 describe("Logger configuration in log.ts", () => {
   afterEach(() => {
-    Bun.env.LOG_LEVEL = originalLogLevel;
-    Bun.env.LOG_PRETTY_PRINT = originalPrettyPrint;
+    process.env.LOG_LEVEL = originalLogLevel;
+    process.env.LOG_PRETTY_PRINT = originalPrettyPrint;
   });
 
   it("should use the default log level ('info') when LOG_LEVEL is not set", async () => {

@@ -2,7 +2,7 @@
  * This test file is designed to import all source files in the `src` directory
  * as workaround for bun's lack of inclusion of untested source files in coverage reports.
  */
-import { describe, it, expect } from "bun:test";
+import { describe, it, expect } from "vitest";
 
 import * as fs from "fs";
 import * as pathModule from "path";

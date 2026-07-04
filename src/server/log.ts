@@ -1,7 +1,8 @@
 import pino from "pino";
-import path from "path";
 
-export default function createLogger(env = Bun.env) {
+export default function createLogger(
+  env: Record<string, string | undefined> = process.env,
+) {
   const prettyPrint =
     env.LOG_PRETTY_PRINT !== undefined
       ? env.LOG_PRETTY_PRINT === "true"
@@ -17,7 +18,7 @@ export default function createLogger(env = Bun.env) {
       },
       ...(prettyPrint && {
         transport: {
-          target: path.resolve("node_modules/pino-pretty"),
+          target: "pino-pretty",
           options: {
             colorize: true,
             levelFirst: true,
