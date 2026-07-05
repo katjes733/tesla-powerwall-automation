@@ -18,7 +18,7 @@ export default function Footer() {
         boxShadow: 1,
       }}
     >
-      &copy; 2025 Katjes (Martin Macecek). Built with ⚡.
+      &copy; 2026 Katjes (Martin Macecek). Built with ⚡.
     </Box>
   );
 }
