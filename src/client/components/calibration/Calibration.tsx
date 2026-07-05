@@ -543,7 +543,11 @@ export default function Calibration() {
       <Box sx={{ flex: "1 1 20%", minWidth: 0 }} />
 
       <Box sx={{ flex: "0 1 60%", minWidth: "min(480px, 100%)", px: 1 }}>
-        <Typography variant="h5" gutterBottom>
+        <Typography
+          variant="h5"
+          gutterBottom
+          sx={{ display: { xs: "none", sm: "block" } }}
+        >
           Calibration
         </Typography>
 

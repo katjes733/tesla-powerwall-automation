@@ -20,6 +20,8 @@ import EditIcon from "@mui/icons-material/Edit";
 import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
 import AddIcon from "@mui/icons-material/Add";
 import PublishIcon from "@mui/icons-material/Publish";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import TouEditorDialog from "./TouEditorDialog";
@@ -39,6 +41,8 @@ interface PendingApply {
 
 export default function TouConfigs() {
   const { showNotification } = useNotification();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
@@ -222,7 +226,7 @@ export default function TouConfigs() {
       field: "schedule_name",
       headerName: "Name",
       flex: 1,
-      minWidth: 160,
+      minWidth: isMobile ? 100 : 160,
     },
     {
       field: "modified_time",
@@ -253,7 +257,7 @@ export default function TouConfigs() {
     {
       field: "actions",
       headerName: "",
-      width: 160,
+      width: isMobile ? 130 : 160,
       sortable: false,
       align: "right",
       renderCell: (params) => (
@@ -323,7 +327,9 @@ export default function TouConfigs() {
 
   return (
     <Box px={3} pb={3} display="flex" flexDirection="column" gap={2}>
-      <Typography variant="h5">TOU Schedule Configs</Typography>
+      <Typography variant="h5" sx={{ display: { xs: "none", sm: "block" } }}>
+        TOU Schedule Configs
+      </Typography>
 
       {/* Toolbar */}
       <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
@@ -368,7 +374,7 @@ export default function TouConfigs() {
               Auto-backup on apply
             </Typography>
           }
-          sx={{ ml: "auto", mr: 0 }}
+          sx={{ ml: { xs: 0, sm: "auto" }, mr: 0 }}
         />
       </Box>
 
@@ -378,6 +384,7 @@ export default function TouConfigs() {
           rows={configs}
           columns={columns}
           loading={loadingConfigs}
+          columnVisibilityModel={{ modified_time: !isMobile }}
           pageSizeOptions={[25, 50, 100]}
           initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
           disableRowSelectionOnClick

@@ -130,104 +130,106 @@ export default function TouPeriodList({
 
   return (
     <Box>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>From</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>To</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>Days</TableCell>
-            <TableCell />
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {displayPeriods.map((block) => {
-            const preset = getDayPreset(block);
-            const issue = periodIssues?.find((i) => i.periodId === block.id);
-            const fromError = issue?.fields.includes("from") ?? false;
-            const toError = issue?.fields.includes("to") ?? false;
-            const daysError = issue?.fields.includes("days") ?? false;
-            return (
-              <TableRow key={block.id}>
-                <TableCell sx={{ py: 0.5, minWidth: 130 }}>
-                  <Select
-                    size="small"
-                    value={block.type}
-                    onChange={(e) =>
-                      update(block.id, { type: e.target.value as PeriodType })
-                    }
-                    sx={{ fontSize: 13 }}
-                  >
-                    {ALL_PERIOD_TYPES.map((t) => (
-                      <MenuItem key={t} value={t} sx={{ fontSize: 13 }}>
-                        {PERIOD_LABELS[t]}
-                      </MenuItem>
-                    ))}
-                  </Select>
-                </TableCell>
-                <TableCell sx={{ py: 0.5 }}>
-                  <TimeInput
-                    hour={block.fromHour}
-                    minute={block.fromMinute}
-                    minutePrecision={minutePrecision}
-                    onChange={(h, m) =>
-                      update(block.id, { fromHour: h, fromMinute: m })
-                    }
-                    error={fromError}
-                  />
-                </TableCell>
-                <TableCell sx={{ py: 0.5 }}>
-                  <TimeInput
-                    hour={block.toHour}
-                    minute={block.toMinute}
-                    minutePrecision={minutePrecision}
-                    onChange={(h, m) =>
-                      update(block.id, { toHour: h, toMinute: m })
-                    }
-                    error={toError}
-                  />
-                </TableCell>
-                <TableCell sx={{ py: 0.5 }}>
-                  <Box display="flex" alignItems="center" gap={1}>
+      <Box sx={{ overflowX: "auto" }}>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>From</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>To</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Days</TableCell>
+              <TableCell />
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {displayPeriods.map((block) => {
+              const preset = getDayPreset(block);
+              const issue = periodIssues?.find((i) => i.periodId === block.id);
+              const fromError = issue?.fields.includes("from") ?? false;
+              const toError = issue?.fields.includes("to") ?? false;
+              const daysError = issue?.fields.includes("days") ?? false;
+              return (
+                <TableRow key={block.id}>
+                  <TableCell sx={{ py: 0.5, minWidth: 130 }}>
                     <Select
                       size="small"
-                      value={preset}
+                      value={block.type}
                       onChange={(e) =>
-                        applyPreset(block.id, e.target.value as DayPreset)
+                        update(block.id, { type: e.target.value as PeriodType })
                       }
-                      sx={{ fontSize: 13, minWidth: 120 }}
-                      error={daysError}
+                      sx={{ fontSize: 13 }}
                     >
-                      <MenuItem value="weekdays" sx={{ fontSize: 13 }}>
-                        Weekdays (M–F)
-                      </MenuItem>
-                      <MenuItem value="weekends" sx={{ fontSize: 13 }}>
-                        Weekend (Sa–Su)
-                      </MenuItem>
+                      {ALL_PERIOD_TYPES.map((t) => (
+                        <MenuItem key={t} value={t} sx={{ fontSize: 13 }}>
+                          {PERIOD_LABELS[t]}
+                        </MenuItem>
+                      ))}
                     </Select>
-                  </Box>
-                </TableCell>
-                <TableCell sx={{ py: 0.5 }}>
-                  <Box display="flex" alignItems="center" gap={0.5}>
-                    {issue && (
-                      <Tooltip title={issue.message}>
-                        <ErrorOutlineIcon fontSize="small" color="error" />
-                      </Tooltip>
-                    )}
-                    <IconButton
-                      size="small"
-                      onClick={() => remove(block.id)}
-                      color="error"
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+                  </TableCell>
+                  <TableCell sx={{ py: 0.5 }}>
+                    <TimeInput
+                      hour={block.fromHour}
+                      minute={block.fromMinute}
+                      minutePrecision={minutePrecision}
+                      onChange={(h, m) =>
+                        update(block.id, { fromHour: h, fromMinute: m })
+                      }
+                      error={fromError}
+                    />
+                  </TableCell>
+                  <TableCell sx={{ py: 0.5 }}>
+                    <TimeInput
+                      hour={block.toHour}
+                      minute={block.toMinute}
+                      minutePrecision={minutePrecision}
+                      onChange={(h, m) =>
+                        update(block.id, { toHour: h, toMinute: m })
+                      }
+                      error={toError}
+                    />
+                  </TableCell>
+                  <TableCell sx={{ py: 0.5 }}>
+                    <Box display="flex" alignItems="center" gap={1}>
+                      <Select
+                        size="small"
+                        value={preset}
+                        onChange={(e) =>
+                          applyPreset(block.id, e.target.value as DayPreset)
+                        }
+                        sx={{ fontSize: 13, minWidth: 120 }}
+                        error={daysError}
+                      >
+                        <MenuItem value="weekdays" sx={{ fontSize: 13 }}>
+                          Weekdays (M–F)
+                        </MenuItem>
+                        <MenuItem value="weekends" sx={{ fontSize: 13 }}>
+                          Weekend (Sa–Su)
+                        </MenuItem>
+                      </Select>
+                    </Box>
+                  </TableCell>
+                  <TableCell sx={{ py: 0.5 }}>
+                    <Box display="flex" alignItems="center" gap={0.5}>
+                      {issue && (
+                        <Tooltip title={issue.message}>
+                          <ErrorOutlineIcon fontSize="small" color="error" />
+                        </Tooltip>
+                      )}
+                      <IconButton
+                        size="small"
+                        onClick={() => remove(block.id)}
+                        color="error"
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </Box>
       <Box mt={1}>
         <Button
           size="small"

@@ -41,16 +41,18 @@ export default function HealthCards() {
     <Box
       sx={{
         display: "flex",
+        flexWrap: "wrap",
         gap: 4,
         justifyContent: "center",
         mx: "auto",
         margin: "0 auto",
+        px: { xs: 2, sm: 0 },
       }}
     >
       <Card
         elevation={3}
         sx={{
-          minWidth: 280,
+          minWidth: { xs: "100%", sm: 280 },
           maxWidth: 400,
           flex: 1,
           borderRadius: 2,
@@ -95,7 +97,7 @@ export default function HealthCards() {
       <Card
         elevation={3}
         sx={{
-          minWidth: 280,
+          minWidth: { xs: "100%", sm: 280 },
           maxWidth: 400,
           flex: 1,
           borderRadius: 2,

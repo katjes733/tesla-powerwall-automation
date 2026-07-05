@@ -15,6 +15,7 @@ interface Props {
   onNext: () => void;
   onDateChange: (date: Dayjs) => void;
   onRefresh: () => void;
+  showRefresh?: boolean;
 }
 
 export default function DayNavigator({
@@ -25,6 +26,7 @@ export default function DayNavigator({
   onNext,
   onDateChange,
   onRefresh,
+  showRefresh = true,
 }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
 
@@ -60,7 +62,7 @@ export default function DayNavigator({
         <ChevronRightIcon />
       </IconButton>
 
-      {isToday && (
+      {isToday && showRefresh && (
         <IconButton
           onClick={onRefresh}
           disabled={loading}

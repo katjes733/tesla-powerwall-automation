@@ -4,14 +4,30 @@ import Typography from "@mui/material/Typography";
 import Box from "@mui/material/Box";
 import { Avatar, Divider, Menu, MenuItem, IconButton } from "@mui/material";
 import AppsIcon from "@mui/icons-material/Apps";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 
 import { useAuth } from "../auth/AuthContext";
 import { useCallback, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
+
+const PAGE_TITLES: Record<string, string> = {
+  "/": "Powerwall",
+  "/health": "App Health",
+  "/schedules": "Schedules",
+  "/tou-configs": "TOU Configs",
+  "/settings": "Manual Settings",
+  "/calibration": "Calibration",
+  "/history": "Energy History",
+};
 
 export default function NavMenu() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, logout } = useAuth();
+  const theme = useTheme();
+  const pageTitle = PAGE_TITLES[location.pathname] ?? "";
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [mainMenuAnchor, setMainMenuAnchor] = useState<null | HTMLElement>(
     null,
@@ -93,7 +109,7 @@ export default function NavMenu() {
         boxShadow: 1,
       }}
     >
-      <Toolbar sx={{ minHeight: 64, px: 2 }}>
+      <Toolbar sx={{ minHeight: { xs: 48, sm: 64 }, px: 2 }}>
         <Box
           sx={{
             display: "flex",
@@ -152,19 +168,32 @@ export default function NavMenu() {
             overflow: "hidden",
           }}
         >
-          <img
-            src="/logo.png"
-            alt="Tesla Powerwall Automation Logo"
-            style={{ height: 64, width: "auto", flexShrink: 0 }}
-          />
-          <Box sx={{ minWidth: 0, overflow: "hidden" }}>
-            <Typography variant="h5" component="div" fontWeight={600} noWrap>
-              Tesla Powerwall Automation
+          {isMobile ? (
+            <Typography variant="h6" component="div" fontWeight={600} noWrap>
+              {pageTitle}
             </Typography>
-            <Typography variant="subtitle1" component="div" noWrap>
-              Scheduled energy management using the Tesla Fleet API
-            </Typography>
-          </Box>
+          ) : (
+            <>
+              <img
+                src="/logo.png"
+                alt="Tesla Powerwall Automation Logo"
+                style={{ height: 64, width: "auto", flexShrink: 0 }}
+              />
+              <Box sx={{ minWidth: 0, overflow: "hidden" }}>
+                <Typography
+                  variant="h5"
+                  component="div"
+                  fontWeight={600}
+                  noWrap
+                >
+                  Tesla Powerwall Automation
+                </Typography>
+                <Typography variant="subtitle1" component="div" noWrap>
+                  Scheduled energy management using the Tesla Fleet API
+                </Typography>
+              </Box>
+            </>
+          )}
         </Box>
         <Box
           sx={{
@@ -181,7 +210,11 @@ export default function NavMenu() {
                 ref={avatarRef}
                 onClick={handleUserMenuOpen}
                 tabIndex={0}
-                sx={{ cursor: "pointer" }}
+                sx={{
+                  cursor: "pointer",
+                  width: { xs: 32, sm: 40 },
+                  height: { xs: 32, sm: 40 },
+                }}
               />
               <Menu
                 anchorEl={anchorEl}

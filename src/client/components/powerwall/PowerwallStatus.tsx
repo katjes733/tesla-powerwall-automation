@@ -12,6 +12,8 @@ import Typography from "@mui/material/Typography";
 import PauseCircleIcon from "@mui/icons-material/PauseCircle";
 import PlayCircleIcon from "@mui/icons-material/PlayCircle";
 import RefreshIcon from "@mui/icons-material/Refresh";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { axiosInstance } from "../auth/AuthContext";
 import SiteCard from "./SiteCard";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
@@ -39,6 +41,9 @@ function secondsAgo(date: Date, now: number): string {
 }
 
 export default function PowerwallStatus() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const [sites, setSites] = useState<SiteStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -47,7 +52,10 @@ export default function PowerwallStatus() {
   const [intervalMs, setIntervalMs] = useState(30_000);
   const [hideOffGrid, setHideOffGrid] = useState(true);
   const [now, setNow] = useState(Date.now());
+  const [activeIndex, setActiveIndex] = useState(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const swipeStartX = useRef(0);
+  const swipeStartY = useRef(0);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -88,14 +96,59 @@ export default function PowerwallStatus() {
     return () => clearInterval(t);
   }, []);
 
+  const filteredSites = sites.filter(
+    ({ live }) =>
+      !hideOffGrid || (live !== null && live.island_status === "on_grid"),
+  );
+
+  // Clamp activeIndex when visible sites change
+  useEffect(() => {
+    setActiveIndex((i) => Math.min(i, Math.max(0, filteredSites.length - 1)));
+  }, [filteredSites.length]);
+
+  function onSwipeStart(e: React.TouchEvent) {
+    swipeStartX.current = e.touches[0].clientX;
+    swipeStartY.current = e.touches[0].clientY;
+  }
+
+  function onSwipeEnd(e: React.TouchEvent) {
+    const dx = e.changedTouches[0].clientX - swipeStartX.current;
+    const dy = e.changedTouches[0].clientY - swipeStartY.current;
+    if (Math.abs(dx) < 50 || Math.abs(dx) <= Math.abs(dy) * 1.5) return;
+    if (dx < 0)
+      setActiveIndex((i) => Math.min(i + 1, filteredSites.length - 1));
+    else setActiveIndex((i) => Math.max(i - 1, 0));
+  }
+
   return (
     <Box sx={{ width: "100%", maxWidth: 1200, mx: "auto", px: 2 }}>
       {/* Header row */}
-      <Box sx={{ display: "flex", alignItems: "center", mb: 3 }}>
-        <Typography variant="h5" fontWeight={600} sx={{ flex: 1 }}>
+      <Box
+        sx={{
+          display: "flex",
+          alignItems: { xs: "flex-start", sm: "center" },
+          flexDirection: { xs: "column", sm: "row" },
+          gap: { xs: 1, sm: 0 },
+          mb: 3,
+        }}
+      >
+        <Typography
+          variant="h5"
+          fontWeight={600}
+          sx={{ flex: 1, display: { xs: "none", sm: "block" } }}
+        >
           Powerwall Status
         </Typography>
-        <Box sx={{ flex: 1, display: "flex", justifyContent: "center" }}>
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            gap: 1,
+            flexWrap: "wrap",
+            flex: { xs: "none", sm: 1 },
+            justifyContent: { xs: "flex-start", sm: "center" },
+          }}
+        >
           <FormControlLabel
             control={
               <Switch
@@ -110,11 +163,11 @@ export default function PowerwallStatus() {
         </Box>
         <Box
           sx={{
-            flex: 1,
             display: "flex",
             alignItems: "center",
-            justifyContent: "flex-end",
+            justifyContent: { xs: "flex-start", sm: "flex-end" },
             gap: 1,
+            flex: { xs: "none", sm: 1 },
           }}
         >
           {lastUpdated && (
@@ -171,32 +224,95 @@ export default function PowerwallStatus() {
         </Typography>
       )}
 
-      {!loading && !error && sites.length > 0 && (
-        <Box
-          sx={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: 3,
-            justifyContent: "center",
-          }}
-        >
-          {sites
-            .filter(
-              ({ live }) =>
-                !hideOffGrid ||
-                (live !== null && live.island_status === "on_grid"),
-            )
-            .map(({ product, live, info, calibrating, activeHoliday }) => (
-              <SiteCard
-                key={product.energy_site_id}
-                product={product}
-                live={live}
-                info={info}
-                calibrating={calibrating}
-                activeHoliday={activeHoliday}
-              />
-            ))}
-        </Box>
+      {!loading && !error && filteredSites.length > 0 && (
+        <>
+          {/* Mobile: swipe carousel */}
+          {isMobile ? (
+            <>
+              <Box
+                sx={{ overflow: "hidden", width: "100%" }}
+                onTouchStart={onSwipeStart}
+                onTouchEnd={onSwipeEnd}
+              >
+                <Box
+                  sx={{
+                    display: "flex",
+                    transform: `translateX(-${activeIndex * 100}%)`,
+                    transition: "transform 0.3s ease",
+                  }}
+                >
+                  {filteredSites.map(
+                    ({ product, live, info, calibrating, activeHoliday }) => (
+                      <Box
+                        key={product.energy_site_id}
+                        sx={{ flex: "0 0 100%", px: 0.5 }}
+                      >
+                        <SiteCard
+                          product={product}
+                          live={live}
+                          info={info}
+                          calibrating={calibrating}
+                          activeHoliday={activeHoliday}
+                        />
+                      </Box>
+                    ),
+                  )}
+                </Box>
+              </Box>
+              {filteredSites.length > 1 && (
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "center",
+                    gap: 0.75,
+                    mt: 1.5,
+                  }}
+                >
+                  {filteredSites.map((_, i) => (
+                    <Box
+                      key={i}
+                      onClick={() => setActiveIndex(i)}
+                      sx={{
+                        width: i === activeIndex ? 20 : 8,
+                        height: 8,
+                        borderRadius: 4,
+                        bgcolor:
+                          i === activeIndex
+                            ? "primary.main"
+                            : "action.disabled",
+                        transition: "all 0.3s ease",
+                        cursor: "pointer",
+                      }}
+                    />
+                  ))}
+                </Box>
+              )}
+            </>
+          ) : (
+            /* Desktop: existing flex-wrap grid */
+            <Box
+              sx={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 3,
+                justifyContent: "center",
+              }}
+            >
+              {filteredSites.map(
+                ({ product, live, info, calibrating, activeHoliday }) => (
+                  <SiteCard
+                    key={product.energy_site_id}
+                    product={product}
+                    live={live}
+                    info={info}
+                    calibrating={calibrating}
+                    activeHoliday={activeHoliday}
+                  />
+                ),
+              )}
+            </Box>
+          )}
+        </>
       )}
     </Box>
   );

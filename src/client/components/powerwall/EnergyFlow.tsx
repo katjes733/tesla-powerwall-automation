@@ -27,6 +27,7 @@ interface EnergyFlowProps {
   batteryPct: number;
   batteryCount: number;
   connected: boolean;
+  maxHeight?: number;
 }
 
 function kw(watts: number): string {
@@ -395,6 +396,7 @@ export default function EnergyFlow({
   batteryPct,
   batteryCount,
   connected,
+  maxHeight = 320,
 }: EnergyFlowProps) {
   const theme = useTheme();
 
@@ -562,7 +564,7 @@ export default function EnergyFlow({
     <svg
       viewBox="0 0 280 320"
       width="100%"
-      style={{ maxHeight: 320, display: "block" }}
+      style={{ maxHeight, display: "block" }}
       xmlns="http://www.w3.org/2000/svg"
     >
       {/* Dash mode: proportional-source gradients for outgoing lines */}

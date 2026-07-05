@@ -20,6 +20,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import TextField from "@mui/material/TextField";
 import { alpha, useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import BatteryFullIcon from "@mui/icons-material/BatteryFull";
 import SettingsIcon from "@mui/icons-material/Settings";
 import BoltIcon from "@mui/icons-material/Bolt";
@@ -696,7 +697,7 @@ function TimeSettings({
             onChange={handleDaysChange}
             size="small"
             exclusive={false}
-            sx={{ gap: 1, mt: 1 }}
+            sx={{ gap: { xs: 0.5, sm: 1 }, mt: 1, flexWrap: "wrap" }}
           >
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <ToggleButton
@@ -1852,7 +1853,7 @@ function SmartSettings({
             onChange={handleDaysChange}
             size="small"
             exclusive={false}
-            sx={{ gap: 1 }}
+            sx={{ gap: { xs: 0.5, sm: 1 }, flexWrap: "wrap" }}
           >
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <ToggleButton
@@ -1905,79 +1906,82 @@ function SmartSettings({
 
         {smartMode === "tou" && (tariffInfo?.seasons ?? []).length > 0 ? (
           <Box>
-            {/* Single grid so header and data columns always share the same widths */}
-            <Box
-              display="grid"
-              gridTemplateColumns="auto max-content max-content"
-              columnGap={1}
-              rowGap={1}
-              alignItems="center"
-            >
-              <Typography variant="caption" color="text.secondary">
-                Season
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Earliest
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Latest
-              </Typography>
-              {smartSeasonalWindows.map((sw) => {
-                const err = seasonalWindowErrors.find(
-                  (e: { seasonName: string }) => e.seasonName === sw.seasonName,
-                );
-                return (
-                  <>
-                    <Typography
-                      key={`${sw.seasonName}-label`}
-                      variant="body2"
-                      sx={{ textTransform: "capitalize" }}
-                    >
-                      {sw.seasonName}
-                    </Typography>
-                    <TimePicker
-                      key={`${sw.seasonName}-from`}
-                      value={sw.from ? dayjs(`2000-01-01T${sw.from}`) : null}
-                      onChange={(v: Dayjs | null) =>
-                        handleSeasonalWindowChange(
-                          sw.seasonName,
-                          "from",
-                          v ? v.format("HH:mm") : "",
-                        )
-                      }
-                      minutesStep={15}
-                      slotProps={{
-                        field: { clearable: true },
-                        textField: {
-                          size: "small",
-                          sx: { width: 170 },
-                          error: err?.fromError,
-                        },
-                      }}
-                    />
-                    <TimePicker
-                      key={`${sw.seasonName}-to`}
-                      value={sw.to ? dayjs(`2000-01-01T${sw.to}`) : null}
-                      onChange={(v: Dayjs | null) =>
-                        handleSeasonalWindowChange(
-                          sw.seasonName,
-                          "to",
-                          v ? v.format("HH:mm") : "",
-                        )
-                      }
-                      minutesStep={15}
-                      slotProps={{
-                        field: { clearable: true },
-                        textField: {
-                          size: "small",
-                          sx: { width: 170 },
-                          error: err?.toError,
-                        },
-                      }}
-                    />
-                  </>
-                );
-              })}
+            <Box sx={{ overflowX: "auto" }}>
+              {/* Single grid so header and data columns always share the same widths */}
+              <Box
+                display="grid"
+                gridTemplateColumns="auto max-content max-content"
+                columnGap={1}
+                rowGap={1}
+                alignItems="center"
+              >
+                <Typography variant="caption" color="text.secondary">
+                  Season
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Earliest
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Latest
+                </Typography>
+                {smartSeasonalWindows.map((sw) => {
+                  const err = seasonalWindowErrors.find(
+                    (e: { seasonName: string }) =>
+                      e.seasonName === sw.seasonName,
+                  );
+                  return (
+                    <>
+                      <Typography
+                        key={`${sw.seasonName}-label`}
+                        variant="body2"
+                        sx={{ textTransform: "capitalize" }}
+                      >
+                        {sw.seasonName}
+                      </Typography>
+                      <TimePicker
+                        key={`${sw.seasonName}-from`}
+                        value={sw.from ? dayjs(`2000-01-01T${sw.from}`) : null}
+                        onChange={(v: Dayjs | null) =>
+                          handleSeasonalWindowChange(
+                            sw.seasonName,
+                            "from",
+                            v ? v.format("HH:mm") : "",
+                          )
+                        }
+                        minutesStep={15}
+                        slotProps={{
+                          field: { clearable: true },
+                          textField: {
+                            size: "small",
+                            sx: { width: 170 },
+                            error: err?.fromError,
+                          },
+                        }}
+                      />
+                      <TimePicker
+                        key={`${sw.seasonName}-to`}
+                        value={sw.to ? dayjs(`2000-01-01T${sw.to}`) : null}
+                        onChange={(v: Dayjs | null) =>
+                          handleSeasonalWindowChange(
+                            sw.seasonName,
+                            "to",
+                            v ? v.format("HH:mm") : "",
+                          )
+                        }
+                        minutesStep={15}
+                        slotProps={{
+                          field: { clearable: true },
+                          textField: {
+                            size: "small",
+                            sx: { width: 170 },
+                            error: err?.toError,
+                          },
+                        }}
+                      />
+                    </>
+                  );
+                })}
+              </Box>
             </Box>
             <Typography
               variant="caption"
@@ -2804,6 +2808,8 @@ export default function Schedules() {
   const [autoPopulateToolbarSource, setAutoPopulateToolbarSource] =
     useState("US_MAJOR");
 
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const loadSchedules = useCallback(async () => {
     setLoading(true);
     axios
@@ -3320,11 +3326,23 @@ export default function Schedules() {
   }, [smartSeasonalWindows, dialogTab, smartMode]);
 
   return (
-    <Box sx={{ px: 3, pb: 3, width: "60%", mx: "auto" }}>
-      <Typography variant="h4" gutterBottom>
+    <Box
+      sx={{
+        px: { xs: 1.5, sm: 3 },
+        pb: 3,
+        width: "100%",
+        maxWidth: 900,
+        mx: "auto",
+      }}
+    >
+      <Typography
+        variant="h4"
+        gutterBottom
+        sx={{ display: { xs: "none", sm: "block" } }}
+      >
         Schedules
       </Typography>
-      <Divider sx={{ mb: 2 }} />
+      <Divider sx={{ mb: 2, display: { xs: "none", sm: "block" } }} />
       <Box display="flex" alignItems="center" justifyContent="space-between">
         <Typography variant="body1" color="text.secondary">
           Manage your schedules here.
@@ -3403,7 +3421,11 @@ export default function Schedules() {
           columns={columns}
           loading={loading}
           getRowId={(row) => row.id}
-          columnVisibilityModel={{ id: false }}
+          columnVisibilityModel={{
+            id: false,
+            site_ids: !isMobile,
+            status: !isMobile,
+          }}
         />
       </Box>
       <Dialog
@@ -3411,6 +3433,7 @@ export default function Schedules() {
         onClose={() => setDialogOpen(false)}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
         slotProps={{ paper: { sx: { maxWidth: 520 } } }}
       >
         <DialogTitle>Schedule Details</DialogTitle>
@@ -3424,7 +3447,8 @@ export default function Schedules() {
             value={dialogTab}
             onChange={(_, v) => setDialogTab(v)}
             aria-label="schedule details tabs"
-            variant="fullWidth"
+            variant={isMobile ? "scrollable" : "fullWidth"}
+            scrollButtons="auto"
           >
             <Tab key="time" label="Time" />
             <Tab key="powerwall" label="Powerwall" />
