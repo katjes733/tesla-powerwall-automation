@@ -17,6 +17,7 @@ export default function MainContainer({ children }: MainContainerProps) {
         justifyContent: "center",
         width: "100vw",
         paddingTop: "88px", // 64px fixed AppBar + 24px consistent page breathing room
+        paddingBottom: "72px", // 56px fixed footer + 16px breathing room
       }}
     >
       {children}
