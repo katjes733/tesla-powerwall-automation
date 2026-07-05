@@ -175,7 +175,11 @@ export default function ScheduleCalibrationDialog({
       .date(parseInt(dom))
       .hour(parseInt(hour))
       .minute(parseInt(minute));
-    return `${dt.format("MMM D")} at ${dt.format("HH:mm")} (${timezone})`;
+    const timeStr = new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(dt.toDate());
+    return `${dt.format("MMM D")} at ${timeStr} (${timezone})`;
   }
 
   const canSave =
