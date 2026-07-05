@@ -4,6 +4,7 @@ import { Scheduler } from "~/server/util/scheduler";
 import AppDataSource from "../database/datasource";
 import { requireAuth } from "~/server/middleware/auth";
 import { ALLOWED_ACTIONS } from "~/server/util/fleet";
+import { CALIBRATION_SCHEDULE_ACTIONS } from "~/server/util/calibrationService";
 import { validateBody } from "~/server/middleware/validateBody";
 import {
   ScheduleUpsertSchema,
@@ -85,7 +86,10 @@ router.post(
 
     if (Array.isArray(actions)) {
       const hasInvalidAction = actions.some(
-        (a: any) => !a?.action || !ALLOWED_ACTIONS.has(a.action),
+        (a: any) =>
+          !a?.action ||
+          (!ALLOWED_ACTIONS.has(a.action) &&
+            !CALIBRATION_SCHEDULE_ACTIONS.has(a.action)),
       );
       if (hasInvalidAction) {
         res.status(400).json({

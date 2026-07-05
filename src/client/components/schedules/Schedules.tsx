@@ -51,6 +51,8 @@ import CheckIcon from "@mui/icons-material/Check";
 import Alert from "@mui/material/Alert";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
+import ScienceIcon from "@mui/icons-material/Science";
+import ShowChartIcon from "@mui/icons-material/ShowChart";
 
 type HolidayEntry = {
   name: string;
@@ -634,10 +636,11 @@ function TimeSettings({
     });
   };
 
-  const handleTimeOfDayChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setTimeOfDay(e.target.value);
+  const handleTimeOfDayChange = (value: Dayjs | null) => {
+    const formatted = value?.isValid() ? value.format("HH:mm") : "";
+    setTimeOfDay(formatted);
     setSchedule((prev: any) => {
-      const cron = parseTimeAndDaysToCron(e.target.value, selectedDays);
+      const cron = parseTimeAndDaysToCron(formatted, selectedDays);
       return { ...prev, cron };
     });
   };
@@ -669,12 +672,12 @@ function TimeSettings({
             <AccessTimeIcon />
             <Typography variant="body2">Time of day</Typography>
           </Box>
-          <TextField
-            type="time"
-            size="small"
-            sx={{ width: 120, mt: 1 }}
-            value={timeOfDay}
+          <TimePicker
+            value={timeOfDay ? dayjs(`2000-01-01T${timeOfDay}`) : null}
             onChange={handleTimeOfDayChange}
+            slotProps={{
+              textField: { size: "small", sx: { width: 160, mt: 1 } },
+            }}
           />
         </Box>
         <Box
@@ -1022,15 +1025,18 @@ type ActionProps = {
     React.SetStateAction<{ [key: string]: string | number | null }>
   >;
   setSchedule: (row: any) => void;
+  schedule?: any;
+  excludeKeys?: string[];
 };
 
 function ActionList({
   setSelectedAction,
   actionValues,
   setActionValues,
+  excludeKeys,
 }: ActionProps) {
   const theme = useTheme();
-  const actions = [
+  const allActions = [
     {
       key: "setBackupReserve",
       label: "Set backup reserve",
@@ -1052,7 +1058,20 @@ function ActionList({
       icon: <BoltIcon />,
     },
     { key: "setGridCharging", label: "Set grid charging", icon: <PowerIcon /> },
+    {
+      key: "calibrate_grid_charge_rate",
+      label: "Calibrate grid charge rate",
+      icon: <ScienceIcon />,
+    },
+    {
+      key: "calibrate_charge_curve",
+      label: "Calibrate charge curve",
+      icon: <ShowChartIcon />,
+    },
   ];
+  const actions = excludeKeys
+    ? allActions.filter((a) => !excludeKeys.includes(a.key))
+    : allActions;
   return (
     <>
       <Typography variant="subtitle1" mt={2}>
@@ -1097,12 +1116,46 @@ function ActionList({
   );
 }
 
+const CALIBRATION_ACTIONS = new Set([
+  "calibrate_grid_charge_rate",
+  "calibrate_charge_curve",
+]);
+
+function nextCronOccurrence(cron: string): Date | null {
+  if (!cron || cron === "* * * * *") return null;
+  const { time, days } = parseCronToTimeAndDays(cron);
+  if (!time || days.length === 0) return null;
+  const [hour, minute] = time.split(":").map(Number);
+  const dayMap: Record<string, number> = {
+    Sun: 0,
+    Mon: 1,
+    Tue: 2,
+    Wed: 3,
+    Thu: 4,
+    Fri: 5,
+    Sat: 6,
+  };
+  const now = new Date();
+  let earliest: Date | null = null;
+  for (const day of days) {
+    const targetDow = dayMap[day] ?? 0;
+    const candidate = new Date(now);
+    candidate.setHours(hour, minute, 0, 0);
+    let diff = targetDow - now.getDay();
+    if (diff < 0 || (diff === 0 && candidate <= now)) diff += 7;
+    candidate.setDate(candidate.getDate() + diff);
+    if (!earliest || candidate < earliest) earliest = candidate;
+  }
+  return earliest;
+}
+
 function ActionConfigDialog({
   selectedAction,
   setSelectedAction,
   actionValues,
   setActionValues,
   setSchedule,
+  schedule,
 }: ActionProps) {
   const theme = useTheme();
   const actionConfig: {
@@ -1190,8 +1243,22 @@ function ActionConfigDialog({
       step: 1,
       unit: "%",
     },
+    calibrate_grid_charge_rate: {
+      label: "Calibrate Grid Charge Rate",
+      description:
+        "Runs grid charge rate calibration for each selected site. Requires SOC < 80%, solar < 0.1 kW, on-grid, and off-peak. If conditions are not met at run time, the occurrence is skipped and you will receive an email.",
+    },
+    calibrate_charge_curve: {
+      label: "Calibrate Charge Curve",
+      description:
+        "Runs charge curve calibration for each selected site (up to 3 h). Requires SOC < 85%, on-grid, and off-peak. If conditions are not met at run time, the occurrence is skipped and you will receive an email.",
+    },
   };
   const [tempValue, setTempValue] = useState<string | number | null>(null);
+  const [peakWarning, setPeakWarning] = useState<{
+    hasTouData: boolean;
+    inPeak: boolean;
+  } | null>(null);
   useEffect(() => {
     if (selectedAction !== null) {
       const config = actionConfig[selectedAction];
@@ -1225,6 +1292,53 @@ function ActionConfigDialog({
       setTempValue(null);
     }
   }, [selectedAction, actionValues]);
+
+  useEffect(() => {
+    if (!selectedAction || !CALIBRATION_ACTIONS.has(selectedAction)) {
+      setPeakWarning(null);
+      return;
+    }
+    const cron = schedule?.cron as string | undefined;
+    if (!cron) {
+      setPeakWarning(null);
+      return;
+    }
+    const { time, days } = parseCronToTimeAndDays(cron);
+    if (!time) {
+      setPeakWarning(null);
+      return;
+    }
+    const siteId = (schedule?.site_ids as string[] | undefined)?.[0];
+    if (!siteId) {
+      setPeakWarning(null);
+      return;
+    }
+    const [hour, minute] = time.split(":").map(Number);
+    // Tesla DOW: 0=Mon…6=Sun
+    const DAY_TO_TESLA_DOW: Record<string, number> = {
+      Mon: 0,
+      Tue: 1,
+      Wed: 2,
+      Thu: 3,
+      Fri: 4,
+      Sat: 5,
+      Sun: 6,
+    };
+    const teslaDows = days
+      .map((d) => DAY_TO_TESLA_DOW[d] ?? -1)
+      .filter((n) => n >= 0);
+    const params = new URLSearchParams({
+      siteId,
+      hour: String(hour),
+      minute: String(minute),
+      daysOfWeek: teslaDows.join(","),
+    });
+    axios
+      .get(`/api/calibration/peak-status?${params}`)
+      .then((res) => setPeakWarning(res.data.data))
+      .catch(() => setPeakWarning(null));
+  }, [selectedAction, schedule?.cron, schedule?.site_ids]);
+
   if (!selectedAction) return null;
   const config = actionConfig[selectedAction];
   const value = tempValue ?? 20;
@@ -1245,6 +1359,14 @@ function ActionConfigDialog({
           {config.description && (
             <Typography variant="body2">{config.description}</Typography>
           )}
+          {CALIBRATION_ACTIONS.has(selectedAction) &&
+            peakWarning?.hasTouData &&
+            peakWarning.inPeak && (
+              <Alert severity="warning" sx={{ mt: 1 }}>
+                The next scheduled occurrence falls within an on-peak period.
+                Calibration will be skipped and you will receive an email.
+              </Alert>
+            )}
           {config.min !== undefined &&
             config.max !== undefined &&
             config.step !== undefined &&
@@ -1356,8 +1478,9 @@ function ActionConfigDialog({
           variant="contained"
           color="primary"
           onClick={() => {
-            const serialized =
-              selectedAction === "setSmartGridCharging"
+            const serialized = CALIBRATION_ACTIONS.has(selectedAction)
+              ? "{}"
+              : selectedAction === "setSmartGridCharging"
                 ? JSON.stringify({ targetSoc: Number(tempValue) })
                 : tempValue;
             setActionValues((prev) => {
@@ -2645,6 +2768,8 @@ export default function Schedules() {
     setEnergyExports: null,
     setGridCharging: null,
     setSmartGridCharging: null,
+    calibrate_grid_charge_rate: null,
+    calibrate_charge_curve: null,
   });
   const [smartMode, setSmartMode] = useState<"tou" | "customDays">("tou");
   const [smartDays, setSmartDays] = useState<string[]>([]);
@@ -3260,6 +3385,8 @@ export default function Schedules() {
               setEnergyExports: null,
               setGridCharging: null,
               setSmartGridCharging: null,
+              calibrate_grid_charge_rate: null,
+              calibrate_charge_curve: null,
             });
             setSmartMode("tou");
             setSmartDays([]);
@@ -3367,6 +3494,10 @@ export default function Schedules() {
                 actionValues={actionValues}
                 setActionValues={setActionValues}
                 setSchedule={setSchedule}
+                excludeKeys={[
+                  "calibrate_grid_charge_rate",
+                  "calibrate_charge_curve",
+                ]}
               />
             </Box>
           )}
@@ -3391,6 +3522,10 @@ export default function Schedules() {
                 actionValues={actionValues}
                 setActionValues={setActionValues}
                 setSchedule={setSchedule}
+                excludeKeys={[
+                  "calibrate_grid_charge_rate",
+                  "calibrate_charge_curve",
+                ]}
               />
             </Box>
           )}
@@ -3505,6 +3640,7 @@ export default function Schedules() {
         actionValues={actionValues}
         setActionValues={setActionValues}
         setSchedule={setSchedule}
+        schedule={schedule}
       />
       <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
         <DialogTitle>Confirm Delete</DialogTitle>

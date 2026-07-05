@@ -12,6 +12,7 @@ const ScheduleConditionSchema = z.object({
 
 const ScheduleOptionsSchema = z.object({
   recovery: z.enum(["none", "on_restart"]).optional(),
+  runOnce: z.boolean().optional(),
 });
 
 export const ScheduleUpsertSchema = z.object({

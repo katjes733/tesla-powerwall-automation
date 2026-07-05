@@ -39,6 +39,13 @@ import {
   isValidCandidate,
   type ChargeCurveCalibrationData,
 } from "~/server/util/curveFit";
+import {
+  triggerGridChargeRateCalibration,
+  triggerChargeCurveCalibration,
+  CALIBRATION_SCHEDULE_ACTIONS,
+} from "~/server/util/calibrationService";
+
+const CALIBRATION_ACTIONS = CALIBRATION_SCHEDULE_ACTIONS;
 
 const schedulerLog = logger.child({ service: "scheduler" });
 
@@ -189,6 +196,9 @@ export class Scheduler {
       schedLog.warn({ config }, "Invalid schedule action configuration");
       return false;
     }
+    // Calibration actions are dispatched by the scheduler directly — they have
+    // no fleet action map entry so skip the map lookup for them.
+    if (CALIBRATION_ACTIONS.has(config.action)) return true;
     if (!Fleet.getInstance(schedule.email).getActionMap()[config.action]) {
       schedLog.warn(
         { action: config.action },
@@ -312,6 +322,31 @@ export class Scheduler {
           if (!this.isValidConfigurationItem(config, schedule)) {
             continue;
           }
+          if (CALIBRATION_ACTIONS.has(config.action)) {
+            if (!isDryRun) {
+              await (config.action === "calibrate_grid_charge_rate"
+                ? triggerGridChargeRateCalibration(
+                    String(product.energy_site_id),
+                    schedule.email,
+                  )
+                : triggerChargeCurveCalibration(
+                    String(product.energy_site_id),
+                    schedule.email,
+                  ));
+            }
+            siteSchedLog.info(
+              {
+                scheduleAction: config.action,
+                ...(isDryRun && { dryRun: true }),
+              },
+              isDryRun
+                ? "[DRY RUN] Calibration action — skipped in dry-run mode"
+                : "Calibration triggered",
+            );
+            actionIndex++;
+            actionsExecuted++;
+            continue;
+          }
           /* eslint-disable no-unexpected-multiline */
           const result = await Fleet.getInstance(schedule.email)
             .getActionMap()
@@ -351,6 +386,12 @@ export class Scheduler {
           }),
         });
       }
+      if (resolveScheduleOptions(schedule.options).runOnce && schedule.id) {
+        schedLog.info("One-time schedule completed — disabling");
+        await upsertScheduleInDb({ id: schedule.id, enabled: false });
+        task?.destroy();
+        this.enabledScheduledTasks.delete(schedule.id);
+      }
     } catch (error: any) {
       const lastError = error.message || "Unknown error";
       schedLog.error({ err: error }, "Error executing schedule");
@@ -383,6 +424,12 @@ export class Scheduler {
           lastError,
           lastErrorTime: now.toDate(),
         });
+      }
+      if (resolveScheduleOptions(schedule.options).runOnce && schedule.id) {
+        schedLog.info("One-time schedule errored — disabling");
+        await upsertScheduleInDb({ id: schedule.id, enabled: false });
+        task?.destroy();
+        this.enabledScheduledTasks.delete(schedule.id);
       }
     }
   }

@@ -83,6 +83,41 @@ export function isCurrentlyInPeak(t: TariffContent, now: Moment): boolean {
 }
 
 /**
+ * Returns true if `hour:minute` falls within an on-peak period in ANY season
+ * for any of the provided Tesla day-of-week values (0=Mon…6=Sun).
+ * Pass an empty array for `teslaDows` to ignore day-of-week and check all days.
+ * Use this for recurring schedules where the exact future season is unknown.
+ */
+export function isInPeakInAnySeasonAtTime(
+  t: TariffContent,
+  hour: number,
+  minute: number,
+  teslaDows: number[],
+): boolean {
+  const seasons = getSeasons(t);
+  if (!seasons) return false;
+  const nowMins = hour * 60 + minute;
+  for (const season of Object.values(seasons)) {
+    for (const period of getOnPeakPeriods(season)) {
+      const dayMatch =
+        teslaDows.length === 0 ||
+        teslaDows.some(
+          (dow) => dow >= period.fromDayOfWeek && dow <= period.toDayOfWeek,
+        );
+      if (!dayMatch) continue;
+      const fromMins = period.fromHour * 60 + period.fromMinute;
+      const toMins = period.toHour * 60 + period.toMinute;
+      const inTime =
+        fromMins <= toMins
+          ? nowMins >= fromMins && nowMins < toMins
+          : nowMins >= fromMins || nowMins < toMins;
+      if (inTime) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Returns the nearest future on_peak start moment. If we are currently in a
  * peak the current peak's start is in the past, so we skip it and return the
  * next one. Returns null when no TOU data or no upcoming peak found within 7 days.

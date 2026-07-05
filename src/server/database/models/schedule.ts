@@ -34,6 +34,7 @@ export interface IScheduleAction {
 
 export interface IScheduleOptions {
   recovery?: "none" | "on_restart";
+  runOnce?: boolean;
 }
 
 export function resolveScheduleOptions(
@@ -42,6 +43,7 @@ export function resolveScheduleOptions(
   const opts = (raw ?? {}) as Partial<IScheduleOptions>;
   return {
     recovery: opts.recovery ?? "none",
+    runOnce: opts.runOnce ?? false,
   };
 }
 
