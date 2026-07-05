@@ -219,6 +219,7 @@ export class Scheduler {
     const schedLog = schedulerLog.child({
       scheduleId: schedule.id,
       email: maskEmail(schedule.email),
+      actions: (schedule.actions ?? []).map((a) => a.action).join(", "),
     });
 
     if (schedule.expires_at && now.isAfter(moment(schedule.expires_at))) {
@@ -501,6 +502,7 @@ export class Scheduler {
         email: maskEmail(schedule.email),
         cron: schedule.cron,
         timezone: schedule.timezone,
+        actions: (schedule.actions ?? []).map((a) => a.action).join(", "),
         nextRun: task.getNextRun()?.toISOString() ?? null,
       },
       "Schedule registered",
