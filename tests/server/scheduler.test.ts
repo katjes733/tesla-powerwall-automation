@@ -14,6 +14,8 @@ const {
   mockGetAllEmailsWithExpiry,
   mockQueryBuilder,
   cronCallbacks,
+  mockTriggerGridRate,
+  mockTriggerChargeCurve,
 } = vi.hoisted(() => {
   const mockQueryBuilder = {
     select: vi.fn().mockReturnThis(),
@@ -41,6 +43,8 @@ const {
     ),
     mockQueryBuilder,
     cronCallbacks: {} as Record<string, () => Promise<void>>,
+    mockTriggerGridRate: vi.fn(async () => {}),
+    mockTriggerChargeCurve: vi.fn(async () => {}),
   };
 });
 
@@ -86,6 +90,15 @@ vi.mock("~/server/util/curveFit", () => ({
   buildChargeCurveBins: vi.fn(() => ({})),
   blendChargeCurveBins: vi.fn(() => ({})),
   isValidCandidate: vi.fn(() => false),
+  MAX_CURVE_START_SOC_PERCENT: 85,
+}));
+vi.mock("~/server/util/calibrationService", () => ({
+  triggerGridChargeRateCalibration: mockTriggerGridRate,
+  triggerChargeCurveCalibration: mockTriggerChargeCurve,
+  CALIBRATION_SCHEDULE_ACTIONS: new Set([
+    "calibrate_grid_charge_rate",
+    "calibrate_charge_curve",
+  ]),
 }));
 vi.mock("node-cron", () => ({
   schedule: vi.fn((expr: string, cb: () => Promise<void>) => {
@@ -373,5 +386,146 @@ describe("token staleness cron (0 9 * * *)", () => {
 
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
     expect(mockSendEmail.mock.calls[0][2]).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runEvaluation — calibration action dispatch
+// ---------------------------------------------------------------------------
+
+// Helpers to work around narrow BASE_SCHEDULE inferred types
+function withActions(actions: Array<{ action: string; value: string }>) {
+  return { actions: actions as never[] };
+}
+function withOptions(options: Record<string, unknown> | null) {
+  return { options: options as null };
+}
+function upsertCalls() {
+  return mockUpsertSchedule.mock.calls as unknown as Array<
+    [Record<string, unknown>]
+  >;
+}
+
+describe("runEvaluation — calibration action dispatch", () => {
+  const PRODUCT = { energy_site_id: "42" };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.keys(cronCallbacks).forEach((k) => delete cronCallbacks[k]);
+    mockGetEnergyProducts.mockResolvedValue([PRODUCT]);
+  });
+
+  it("dispatches calibrate_grid_charge_rate to triggerGridChargeRateCalibration", async () => {
+    await runEval(
+      freshScheduler(),
+      withActions([{ action: "calibrate_grid_charge_rate", value: "{}" }]),
+    );
+
+    expect(mockTriggerGridRate).toHaveBeenCalledOnce();
+    expect(mockTriggerGridRate).toHaveBeenCalledWith("42", "owner@example.com");
+    expect(mockTriggerChargeCurve).not.toHaveBeenCalled();
+  });
+
+  it("dispatches calibrate_charge_curve to triggerChargeCurveCalibration", async () => {
+    await runEval(
+      freshScheduler(),
+      withActions([{ action: "calibrate_charge_curve", value: "{}" }]),
+    );
+
+    expect(mockTriggerChargeCurve).toHaveBeenCalledOnce();
+    expect(mockTriggerChargeCurve).toHaveBeenCalledWith(
+      "42",
+      "owner@example.com",
+    );
+    expect(mockTriggerGridRate).not.toHaveBeenCalled();
+  });
+
+  it("sends email when calibration trigger throws (conditions not met)", async () => {
+    mockTriggerGridRate.mockRejectedValueOnce(
+      new Error("conditions not met for site 42: SOC too high"),
+    );
+    mockRedis.exists.mockResolvedValue(0);
+
+    await runEval(
+      freshScheduler(),
+      withActions([{ action: "calibrate_grid_charge_rate", value: "{}" }]),
+    );
+
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    expect((mockSendEmail.mock.calls as Array<unknown[]>)[0][2]).toBe(
+      "owner@example.com",
+    );
+  });
+
+  it("does not call fleet action map for calibration actions", async () => {
+    await runEval(
+      freshScheduler(),
+      withActions([{ action: "calibrate_grid_charge_rate", value: "{}" }]),
+    );
+
+    expect(mockGetActionMap).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// runEvaluation — runOnce cleanup
+// ---------------------------------------------------------------------------
+
+describe("runEvaluation — runOnce cleanup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.keys(cronCallbacks).forEach((k) => delete cronCallbacks[k]);
+    mockGetEnergyProducts.mockResolvedValue([]);
+  });
+
+  it("disables the schedule after a successful run when runOnce is true", async () => {
+    await runEval(freshScheduler(), withOptions({ runOnce: true }));
+
+    const disableCalls = upsertCalls().filter(
+      (call) => call[0]?.id === "sched-1" && call[0]?.enabled === false,
+    );
+    expect(disableCalls).toHaveLength(1);
+  });
+
+  it("does not disable the schedule after a successful run when runOnce is false", async () => {
+    await runEval(freshScheduler(), withOptions({ runOnce: false }));
+
+    const disableCalls = upsertCalls().filter(
+      (call) => call[0]?.enabled === false,
+    );
+    expect(disableCalls).toHaveLength(0);
+  });
+
+  it("does not disable the schedule when options is null (default)", async () => {
+    await runEval(freshScheduler(), withOptions(null));
+
+    const disableCalls = upsertCalls().filter(
+      (call) => call[0]?.enabled === false,
+    );
+    expect(disableCalls).toHaveLength(0);
+  });
+
+  it("disables the schedule after a failed run when runOnce is true", async () => {
+    mockGetEnergyProducts.mockRejectedValueOnce(new Error("API down"));
+    mockRedis.exists.mockResolvedValue(0);
+
+    await runEval(freshScheduler(), withOptions({ runOnce: true }));
+
+    const disableCalls = upsertCalls().filter(
+      (call) => call[0]?.id === "sched-1" && call[0]?.enabled === false,
+    );
+    expect(disableCalls).toHaveLength(1);
+  });
+
+  it("does not disable the schedule after a failed run when runOnce is false", async () => {
+    mockGetEnergyProducts.mockRejectedValueOnce(new Error("API down"));
+    mockRedis.exists.mockResolvedValue(0);
+
+    await runEval(freshScheduler(), withOptions({ runOnce: false }));
+
+    const disableCalls = upsertCalls().filter(
+      (call) => call[0]?.enabled === false,
+    );
+    expect(disableCalls).toHaveLength(0);
   });
 });

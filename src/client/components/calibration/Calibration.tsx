@@ -21,6 +21,7 @@ import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
 import ChargeCurveChart from "./ChargeCurveChart";
+import ScheduleCalibrationDialog from "./ScheduleCalibrationDialog";
 
 interface SafeguardStatus {
   socOkGridRate: boolean;
@@ -34,6 +35,7 @@ interface SafeguardStatus {
   solarKw: number;
   batteryKw: number;
   gridKw: number;
+  siteTimezone: string;
 }
 
 interface GridChargeRateData {
@@ -154,6 +156,11 @@ export default function Calibration() {
   const [curveStartDialogOpen, setCurveStartDialogOpen] = useState(false);
   const [autoCurveEnabled, setAutoCurveEnabled] = useState(true);
   const [autoCurveLoading, setAutoCurveLoading] = useState(false);
+
+  const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
+  const [scheduleDialogType, setScheduleDialogType] = useState<
+    "calibrate_grid_charge_rate" | "calibrate_charge_curve"
+  >("calibrate_grid_charge_rate");
 
   // Curve tab state
   const [curveJobStatus, setCurveJobStatus] = useState<CurveJobResponse | null>(
@@ -661,16 +668,28 @@ export default function Calibration() {
                 </Box>
               )}
 
-              <Button
-                variant="contained"
-                onClick={handleStartCalibration}
-                disabled={!allSafeguardsOk || jobRunning || starting}
-                startIcon={
-                  starting ? <CircularProgress size={16} /> : undefined
-                }
-              >
-                {starting ? "Starting…" : "Start Calibration"}
-              </Button>
+              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Button
+                  variant="contained"
+                  onClick={handleStartCalibration}
+                  disabled={!allSafeguardsOk || jobRunning || starting}
+                  startIcon={
+                    starting ? <CircularProgress size={16} /> : undefined
+                  }
+                >
+                  {starting ? "Starting…" : "Start Calibration"}
+                </Button>
+                <Button
+                  variant="outlined"
+                  size="small"
+                  onClick={() => {
+                    setScheduleDialogType("calibrate_grid_charge_rate");
+                    setScheduleDialogOpen(true);
+                  }}
+                >
+                  Schedule
+                </Button>
+              </Box>
             </SettingCard>
 
             <SettingCard>
@@ -858,7 +877,7 @@ export default function Calibration() {
                   </Box>
                 )}
 
-                <Box sx={{ display: "flex", gap: 1 }}>
+                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
                   <Button
                     variant="contained"
                     onClick={() => setCurveStartDialogOpen(true)}
@@ -889,6 +908,17 @@ export default function Calibration() {
                       {curveStopping ? "Stopping…" : "Stop"}
                     </Button>
                   )}
+
+                  <Button
+                    variant="outlined"
+                    size="small"
+                    onClick={() => {
+                      setScheduleDialogType("calibrate_charge_curve");
+                      setScheduleDialogOpen(true);
+                    }}
+                  >
+                    Schedule
+                  </Button>
                 </Box>
               </Paper>
 
@@ -1138,6 +1168,18 @@ export default function Calibration() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <ScheduleCalibrationDialog
+        open={scheduleDialogOpen}
+        onClose={() => setScheduleDialogOpen(false)}
+        calibrationType={scheduleDialogType}
+        siteId={selectedSiteId}
+        siteName={
+          sites.find((s) => s.id === selectedSiteId)?.site_name ??
+          selectedSiteId
+        }
+        siteTimezone={safeguards?.siteTimezone ?? "UTC"}
+      />
     </Box>
   );
 }

@@ -6,6 +6,7 @@ import {
   getSeasonNames,
   getCurrentSeason,
   isCurrentlyInPeak,
+  isInPeakInAnySeasonAtTime,
   findNextPeakStart,
   isWithinWindow,
 } from "~/server/util/tariff";
@@ -288,6 +289,96 @@ describe("real SRP E27 tariff shape (top-level seasons + ON_PEAK keys)", () => {
     const next = findNextPeakStart(srpTariff, now);
     expect(next).not.toBeNull();
     expect(next!.format("HH:mm")).toBe("14:00");
+  });
+});
+
+describe("isInPeakInAnySeasonAtTime", () => {
+  // Summer: off-peak starts at 20:00 (peak 17:00–20:00 Mon-Fri)
+  // Winter: off-peak starts at 21:00 (peak 17:00–21:00 Mon-Fri)
+  // 20:00 is off-peak in summer but still peak in winter.
+  function makeMultiSeasonTariff(): TariffContent {
+    return {
+      utility_rates: {
+        seasons: {
+          summer: {
+            fromMonth: 5,
+            fromDay: 1,
+            toMonth: 9,
+            toDay: 30,
+            tou_periods: {
+              on_peak: [
+                {
+                  fromDayOfWeek: 0,
+                  toDayOfWeek: 4,
+                  fromHour: 17,
+                  fromMinute: 0,
+                  toHour: 20,
+                  toMinute: 0,
+                },
+              ],
+            },
+          },
+          winter: {
+            fromMonth: 10,
+            fromDay: 1,
+            toMonth: 4,
+            toDay: 30,
+            tou_periods: {
+              on_peak: [
+                {
+                  fromDayOfWeek: 0,
+                  toDayOfWeek: 4,
+                  fromHour: 17,
+                  fromMinute: 0,
+                  toHour: 21,
+                  toMinute: 0,
+                },
+              ],
+            },
+          },
+        },
+      },
+    };
+  }
+
+  it("returns true when time is peak in any season even if off-peak in the current one", () => {
+    // 20:00 Mon is off-peak in summer but peak in winter → should warn
+    expect(isInPeakInAnySeasonAtTime(makeMultiSeasonTariff(), 20, 0, [0])).toBe(
+      true,
+    );
+  });
+
+  it("returns false when time is off-peak in all seasons", () => {
+    // 22:00 is after peak in both seasons
+    expect(isInPeakInAnySeasonAtTime(makeMultiSeasonTariff(), 22, 0, [0])).toBe(
+      false,
+    );
+  });
+
+  it("returns false when selected days are weekend-only and peak periods are weekday-only", () => {
+    // Saturday (Tesla DOW 5) and Sunday (Tesla DOW 6) are not in Mon-Fri peak
+    expect(
+      isInPeakInAnySeasonAtTime(makeMultiSeasonTariff(), 20, 0, [5, 6]),
+    ).toBe(false);
+  });
+
+  it("returns true when some selected days fall in peak", () => {
+    // Mon-Wed (0,1,2) includes weekdays covered by peak
+    expect(
+      isInPeakInAnySeasonAtTime(makeMultiSeasonTariff(), 20, 0, [0, 1, 2]),
+    ).toBe(true);
+  });
+
+  it("returns false when tariff has no seasons", () => {
+    const t: TariffContent = { utility_rates: { seasons: {} } };
+    expect(isInPeakInAnySeasonAtTime(t, 20, 0, [])).toBe(false);
+  });
+
+  it("checks all days when daysOfWeek is empty", () => {
+    // Empty array means check all days — weekday peak at 20:00 exists in winter
+    expect(isInPeakInAnySeasonAtTime(makeMultiSeasonTariff(), 20, 0, [])).toBe(
+      true,
+    );
   });
 });
 

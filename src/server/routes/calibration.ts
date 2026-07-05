@@ -5,11 +5,8 @@ import { Fleet } from "~/server/util/fleet";
 import { requireAuth } from "~/server/middleware/auth";
 import { validateBody } from "~/server/middleware/validateBody";
 import AppDataSource from "~/server/database/datasource";
-import type { IBasicEntity, Product } from "~/server/types/common";
-import type {
-  ISiteCalibration,
-  IGridChargeRateCalibrationData,
-} from "~/server/database/models/siteCalibration";
+import type { IBasicEntity } from "~/server/types/common";
+import type { ISiteCalibration } from "~/server/database/models/siteCalibration";
 import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
 import {
   CalibrationStartSchema,
@@ -21,81 +18,32 @@ import {
   parseTariffContent,
   hasTouData,
   isCurrentlyInPeak,
+  isInPeakInAnySeasonAtTime,
 } from "~/server/util/tariff";
 import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
+import { buildChargeCurveBins, isValidCandidate } from "~/server/util/curveFit";
 import {
-  buildChargeCurveBins,
-  isValidCandidate,
-  SAMPLE_RETENTION_DAYS,
-  MAX_CURVE_START_SOC_PERCENT,
-} from "~/server/util/curveFit";
-
-const MAX_GRID_RATE_SOC_PERCENT = 80;
-const MAX_CURVE_CALIBRATION_SOC_PERCENT = MAX_CURVE_START_SOC_PERCENT;
-const MAX_SOLAR_KW = 0.1;
-const STABILITY_POLL_INTERVAL_MS = 15 * 1000;
-const STABILITY_WINDOW = 4;
-const STABILITY_TOLERANCE_PERCENT = 5;
-const STABILITY_TIMEOUT_MS = 10 * 60 * 1000;
-const SAMPLE_DURATION_MS = 3 * 60 * 1000;
-const SAMPLE_INTERVAL_MS = 15 * 1000;
-const JOB_TTL_MS = 30 * 60 * 1000;
-const CALIBRATION_TYPE = "grid_charge_rate";
-
-const CURVE_CALIBRATION_TYPE = "chargeCurve";
-const CURVE_JOB_TTL_MS = 4 * 60 * 60 * 1000;
-const CURVE_SAMPLE_INTERVAL_MS = 15 * 1000;
-const CURVE_MAX_DURATION_MS = 3 * 60 * 60 * 1000;
-
-type CalibrationPhase = "ramp-up" | "sampling" | "done";
-type CalibrationJobStatus = "running" | "complete" | "failed";
-
-interface CalibrationJob {
-  status: CalibrationJobStatus;
-  phase: CalibrationPhase;
-  startedAt: number;
-  error?: string;
-  result?: ISiteCalibration & IBasicEntity;
-}
-
-const calibrationJobs = new Map<string, CalibrationJob>();
-
-interface CurveCalibrationJob {
-  status: "running" | "complete" | "interrupted" | "failed";
-  phase: "charging" | "done";
-  startSoc: number;
-  currentSoc: number;
-  sampleCount: number;
-  interruptRequested: boolean;
-  startedAt: number; // performance.now()
-  error?: string;
-}
-
-interface CurveCalibrationRedisPayload {
-  jobId: string;
-  email: string;
-  energySiteId: string;
-  productSiteId: string; // product.id — used as curveJobBySite key
-  previousGridState: "enabled" | "disabled";
-  startSoc: number;
-  startedAtMs: number; // Date.now()
-}
-
-const curveJobs = new Map<string, CurveCalibrationJob>(); // jobId → job
-const curveJobBySite = new Map<string, string>(); // product.id → jobId
-
-function curveRedisKey(energySiteId: string): string {
-  return `curve_calibration_${energySiteId}`;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function mean(values: number[]): number {
-  return values.reduce((a, b) => a + b, 0) / values.length;
-}
+  MAX_GRID_RATE_SOC_PERCENT,
+  MAX_CURVE_CALIBRATION_SOC_PERCENT,
+  MAX_SOLAR_KW,
+  JOB_TTL_MS,
+  CALIBRATION_TYPE,
+  CURVE_CALIBRATION_TYPE,
+  CURVE_JOB_TTL_MS,
+  calibrationJobs,
+  calibrationJobBySite,
+  curveJobs,
+  curveJobBySite,
+  curveRedisKey,
+  runCalibration,
+  runCurveCalibration,
+  finalizeCurveCalibration,
+  isCalibrationRunningForSite,
+  type CalibrationJob,
+  type CurveCalibrationJob,
+  type CurveCalibrationRedisPayload,
+} from "~/server/util/calibrationService";
 
 const calibLog = logger.child({ service: "calibration" });
 
@@ -167,6 +115,7 @@ router.get("/", async (req, res, next) => {
           solarKw: Math.round(liveStatus.solar_power / 10) / 100,
           batteryKw: Math.round(liveStatus.battery_power / 10) / 100,
           gridKw: Math.round(liveStatus.grid_power / 10) / 100,
+          siteTimezone: timezone,
         }
       : null;
     res.json({
@@ -194,6 +143,15 @@ router.post(
       const product = products.find((p) => String(p.energy_site_id) === siteId);
       if (!product) {
         res.status(404).json({ success: false, message: "Site not found" });
+        return;
+      }
+
+      if (isCalibrationRunningForSite(siteId)) {
+        res.status(409).json({
+          success: false,
+          message:
+            "A calibration is already running for this site — only one calibration type may run at a time",
+        });
         return;
       }
 
@@ -246,8 +204,10 @@ router.post(
         status: "running",
         phase: "ramp-up",
         startedAt: performance.now(),
+        siteId,
       };
       calibrationJobs.set(jobId, job);
+      calibrationJobBySite.set(siteId, jobId);
 
       res.json({ success: true, data: { jobId } });
 
@@ -269,121 +229,6 @@ router.post(
     }
   },
 );
-
-async function runCalibration(
-  fleet: Fleet,
-  product: Product,
-  job: CalibrationJob,
-  previousGridState: "enabled" | "disabled",
-  email: string,
-): Promise<void> {
-  try {
-    // Phase 1: stability detection — wait for charge rate to stabilize
-    const window: number[] = [];
-    const deadline = performance.now() + STABILITY_TIMEOUT_MS;
-    while (true) {
-      if (performance.now() > deadline) {
-        throw new Error(
-          "Charge rate did not stabilize within 10 minutes — try again",
-        );
-      }
-      await sleep(STABILITY_POLL_INTERVAL_MS);
-      const live = await fleet.getLiveStatus(product);
-      if (!live) continue;
-      const batteryChargingKw =
-        live.battery_power < 0 ? -live.battery_power / 1000 : 0;
-      window.push(batteryChargingKw);
-      if (window.length > STABILITY_WINDOW) window.shift();
-      if (window.length === STABILITY_WINDOW) {
-        const avg = mean(window);
-        if (avg > 0) {
-          const allWithin = window.every(
-            (r) =>
-              (Math.abs(r - avg) / avg) * 100 <= STABILITY_TOLERANCE_PERCENT,
-          );
-          if (allWithin) break;
-        }
-      }
-    }
-
-    // Phase 2: sampling
-    job.phase = "sampling";
-    const samples: number[] = [];
-    const N = Math.round(SAMPLE_DURATION_MS / SAMPLE_INTERVAL_MS);
-    let lastLive = null;
-    for (let i = 0; i < N; i++) {
-      await sleep(SAMPLE_INTERVAL_MS);
-      const live = await fleet.getLiveStatus(product);
-      if (!live) continue;
-      lastLive = live;
-      const batteryChargingKw =
-        live.battery_power < 0 ? -live.battery_power / 1000 : 0;
-      samples.push(batteryChargingKw);
-    }
-
-    if (samples.length === 0 || !lastLive) {
-      throw new Error("No valid samples collected — try again");
-    }
-
-    const avgRateKw = Math.round(mean(samples) * 100) / 100;
-    const calibrationData: IGridChargeRateCalibrationData = {
-      kw: avgRateKw,
-      soc_percent: Math.round(lastLive.percentage_charged * 10) / 10,
-      solar_kw: Math.round(lastLive.solar_power / 10) / 100,
-      battery_kw: Math.round(Math.abs(lastLive.battery_power) / 10) / 100,
-      sample_count: samples.length,
-    };
-
-    const now = new Date();
-    const db = await AppDataSource.getInstance();
-    const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
-      "SiteCalibration",
-    );
-    const saved = await repo.save({
-      site_id: String(product.energy_site_id),
-      calibration_type: CALIBRATION_TYPE,
-      calibration_data: calibrationData as unknown as Record<string, unknown>,
-      creation_time: now,
-      modified_time: now,
-    });
-
-    job.status = "complete";
-    job.phase = "done";
-    job.result = saved;
-    calibLog.info(
-      {
-        siteId: product.energy_site_id,
-        kw: avgRateKw,
-        sampleCount: samples.length,
-      },
-      "Grid charge rate calibration complete",
-    );
-  } catch (err: any) {
-    job.status = "failed";
-    job.phase = "done";
-    job.error = err?.message ?? "Unknown error";
-    calibLog.error({ err }, "Calibration job failed");
-    sendEmail(
-      "Powerwall Notification",
-      `[${new Date().toLocaleString()}] Grid charge rate calibration failed for site ${String(product.energy_site_id)}: ${job.error}`,
-      email,
-    );
-  } finally {
-    await fleet
-      .setGridCharging(product, previousGridState)
-      .catch((err: any) => {
-        calibLog.error(
-          { err },
-          "Failed to restore grid charging state after calibration",
-        );
-        sendEmail(
-          "Powerwall Notification",
-          `[${new Date().toLocaleString()}] Failed to restore grid charging for site ${String(product.energy_site_id)} after calibration: ${err?.message ?? "Unknown error"}. Please check the site manually.`,
-          email,
-        );
-      });
-  }
-}
 
 router.get("/job", (req, res) => {
   const jobId = req.query.jobId as string | undefined;
@@ -488,8 +333,6 @@ router.delete(
           calibration_type: CURVE_CALIBRATION_TYPE,
         });
       } else {
-        // mode === "last-session": remove the most recent session's samples,
-        // then rebuild the curve from whatever remains.
         const SESSION_GAP_MS = 60 * 60 * 1000;
         const allSamples = (await (sampleRepo as any).find({
           where: {
@@ -545,150 +388,6 @@ router.delete(
 );
 
 // ---------------------------------------------------------------------------
-// Curve calibration helpers
-// ---------------------------------------------------------------------------
-
-async function finalizeCurveCalibration(energySiteId: string): Promise<void> {
-  const db = await AppDataSource.getInstance(true);
-  const sampleRepo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
-    "SiteCalibrationSample",
-  );
-  const calibRepo = db.getRepository<ISiteCalibration & IBasicEntity>(
-    "SiteCalibration",
-  );
-
-  // Pool all samples within the retention window so that multiple manual
-  // calibration sessions accumulate into a single curve. buildChargeCurveBins
-  // already handles session splitting and partial-session filtering internally.
-  const cutoff = new Date(
-    Date.now() - SAMPLE_RETENTION_DAYS * 24 * 3600 * 1000,
-  );
-  const allSamples = (await (sampleRepo as any).find({
-    where: { site_id: energySiteId, calibration_type: CURVE_CALIBRATION_TYPE },
-    order: { creation_time: "ASC" },
-  })) as Array<IBasicEntity & ISiteCalibrationSample>;
-  const pooledSamples = allSamples.filter(
-    (s) => new Date(s.creation_time as unknown as string) >= cutoff,
-  );
-
-  const candidate = buildChargeCurveBins(pooledSamples);
-
-  if (isValidCandidate(candidate)) {
-    const now = new Date();
-    await calibRepo.save({
-      site_id: energySiteId,
-      calibration_type: CURVE_CALIBRATION_TYPE,
-      calibration_data: candidate as unknown as Record<string, unknown>,
-      creation_time: now,
-      modified_time: now,
-    });
-    calibLog.info(
-      {
-        energySiteId,
-        bins: candidate.bins.length,
-        samples: candidate.total_sample_count,
-      },
-      "Curve calibration written to site_calibrations",
-    );
-  } else {
-    calibLog.info(
-      { energySiteId },
-      "Pooled curve calibration did not meet quality threshold — not written",
-    );
-  }
-}
-
-async function runCurveCalibration(
-  fleet: Fleet,
-  product: Product,
-  jobId: string,
-  previousGridState: "enabled" | "disabled",
-  email: string,
-): Promise<void> {
-  const job = curveJobs.get(jobId);
-  if (!job) return;
-  const energySiteId = String(product.energy_site_id);
-  const db = await AppDataSource.getInstance(true);
-  const sampleRepo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
-    "SiteCalibrationSample",
-  );
-  const deadline = performance.now() + CURVE_MAX_DURATION_MS;
-
-  try {
-    while (true) {
-      if (job.interruptRequested) break;
-      if (performance.now() > deadline) break;
-
-      await sleep(CURVE_SAMPLE_INTERVAL_MS);
-
-      if (job.interruptRequested) break;
-
-      const live = await fleet.getLiveStatus(product);
-      if (!live) continue;
-
-      job.currentSoc = live.percentage_charged;
-
-      if (live.battery_power < -500) {
-        const now = new Date();
-        await sampleRepo.save({
-          site_id: energySiteId,
-          calibration_type: CURVE_CALIBRATION_TYPE,
-          creation_time: now,
-          modified_time: now,
-          sample_data: {
-            soc_percent: Math.round(live.percentage_charged * 100) / 100,
-            battery_kw: Math.round(Math.abs(live.battery_power) / 10) / 100,
-            solar_kw: Math.round(live.solar_power / 10) / 100,
-            grid_kw: Math.round(live.grid_power / 10) / 100,
-          },
-        } as IBasicEntity & ISiteCalibrationSample);
-        job.sampleCount++;
-      }
-
-      if (live.percentage_charged >= 100) break;
-    }
-
-    job.status = job.interruptRequested ? "interrupted" : "complete";
-  } catch (err: any) {
-    job.status = "failed";
-    job.error = err?.message ?? "Unknown error";
-    calibLog.error({ err }, "Curve calibration job failed");
-    sendEmail(
-      "Powerwall Notification",
-      `[${new Date().toLocaleString()}] Curve calibration failed for site ${String(product.energy_site_id)}: ${job.error}`,
-      email,
-    );
-  } finally {
-    job.phase = "done";
-    curveJobBySite.delete(String(product.energy_site_id));
-
-    await fleet
-      .setGridCharging(product, previousGridState)
-      .catch((err: any) => {
-        calibLog.error(
-          { err },
-          "Failed to restore grid charging after curve calibration",
-        );
-        sendEmail(
-          "Powerwall Notification",
-          `[${new Date().toLocaleString()}] Failed to restore grid charging for site ${String(product.energy_site_id)} after curve calibration: ${err?.message ?? "Unknown error"}. Please check the site manually.`,
-          email,
-        );
-      });
-
-    try {
-      await redis.del(curveRedisKey(energySiteId));
-    } catch {
-      // non-fatal
-    }
-
-    await finalizeCurveCalibration(energySiteId).catch((err: any) =>
-      calibLog.error({ err }, "Failed to finalize curve calibration"),
-    );
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Curve calibration routes
 // ---------------------------------------------------------------------------
 
@@ -711,10 +410,11 @@ router.post(
       }
       const energySiteId = String(product.energy_site_id);
 
-      if (curveJobBySite.has(siteId)) {
+      if (isCalibrationRunningForSite(siteId)) {
         res.status(409).json({
           success: false,
-          message: "Curve calibration already running for this site",
+          message:
+            "A calibration is already running for this site — only one calibration type may run at a time",
         });
         return;
       }
@@ -791,7 +491,7 @@ router.post(
           JSON.stringify(redisPayload),
         );
       } catch {
-        // non-fatal — in-memory job still runs; restart recovery won't be available
+        // non-fatal
       }
 
       res.json({ success: true, data: { jobId } });
@@ -911,8 +611,6 @@ router.get("/curve-status", async (req, res, next) => {
       "SiteCalibrationSample",
     );
 
-    // TypeORM doesn't distribute FindOptionsOrder over intersection types;
-    // cast around it and re-annotate the result.
     const samples = (await (repo as any).find({
       where: { site_id: energySiteId },
       order: { creation_time: "ASC" },
@@ -957,6 +655,69 @@ router.get("/curve-status", async (req, res, next) => {
     });
   } catch (error: any) {
     calibLog.error({ err: error }, "Error fetching curve status");
+    next(error);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Peak status check endpoint
+// ---------------------------------------------------------------------------
+
+router.get("/peak-status", async (req, res, next) => {
+  const email = req.session.user!;
+  const siteId = req.query.siteId as string | undefined;
+  const timestamp = req.query.timestamp as string | undefined;
+  const hourParam = req.query.hour as string | undefined;
+  const minuteParam = req.query.minute as string | undefined;
+  const dowParam = req.query.daysOfWeek as string | undefined;
+  if (!siteId) {
+    res
+      .status(400)
+      .json({ success: false, message: "siteId query parameter required" });
+    return;
+  }
+  try {
+    const fleet = Fleet.getInstance(email, {
+      throwOnError: false,
+      mailOnError: false,
+    });
+    const products = await fleet.getEnergyProducts();
+    const product = products.find((p) => String(p.energy_site_id) === siteId);
+    if (!product) {
+      res.status(404).json({ success: false, message: "Site not found" });
+      return;
+    }
+    const siteInfo = await fleet.getSiteInfo(product);
+    if (!siteInfo) {
+      res.json({ success: true, data: { hasTouData: false, inPeak: false } });
+      return;
+    }
+    const tariff = parseTariffContent(siteInfo.tariff_content);
+    const tariffHasData = hasTouData(tariff);
+    let inPeak = false;
+    if (tariffHasData && tariff) {
+      if (hourParam !== undefined && minuteParam !== undefined) {
+        // All-seasons check for recurring schedules.
+        const hour = parseInt(hourParam, 10);
+        const minute = parseInt(minuteParam, 10);
+        const teslaDows = dowParam
+          ? dowParam
+              .split(",")
+              .map(Number)
+              .filter((n) => !isNaN(n))
+          : [];
+        inPeak = isInPeakInAnySeasonAtTime(tariff, hour, minute, teslaDows);
+      } else {
+        const timezone = siteInfo.installation_time_zone ?? "UTC";
+        const checkMoment = timestamp
+          ? moment(timestamp).tz(timezone)
+          : moment().tz(timezone);
+        inPeak = isCurrentlyInPeak(tariff, checkMoment);
+      }
+    }
+    res.json({ success: true, data: { hasTouData: tariffHasData, inPeak } });
+  } catch (error: any) {
+    calibLog.error({ err: error }, "Error checking peak status");
     next(error);
   }
 });
