@@ -7,6 +7,8 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import {
   ALL_PERIOD_TYPES,
   PERIOD_LABELS,
@@ -22,6 +24,9 @@ interface Props {
 }
 
 export default function TouRateTable({ periods, rates, onChange }: Props) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const fieldWidth = isMobile ? 95 : 110;
   const usedTypes = Array.from(new Set(periods.map((p) => p.type))).sort(
     (a, b) => ALL_PERIOD_TYPES.indexOf(a) - ALL_PERIOD_TYPES.indexOf(b),
   );
@@ -50,56 +55,60 @@ export default function TouRateTable({ periods, rates, onChange }: Props) {
       <Typography variant="subtitle2" gutterBottom>
         Pricing ($/kWh)
       </Typography>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell sx={{ fontWeight: 600 }}>Period</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>Buy Rate</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>Sell Rate</TableCell>
-          </TableRow>
-        </TableHead>
-        <TableBody>
-          {usedTypes.map((type) => (
-            <TableRow key={type}>
-              <TableCell sx={{ py: 0.5 }}>{PERIOD_LABELS[type]}</TableCell>
-              <TableCell sx={{ py: 0.5 }}>
-                <TextField
-                  type="number"
-                  size="small"
-                  value={(rates.buy[type] ?? 0).toFixed(2)}
-                  slotProps={{
-                    htmlInput: { step: 0.001, min: 0 },
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">$</InputAdornment>
-                      ),
-                    },
-                  }}
-                  onChange={(e) => setRate("buy", type, e.target.value)}
-                  sx={{ width: 110 }}
-                />
-              </TableCell>
-              <TableCell sx={{ py: 0.5 }}>
-                <TextField
-                  type="number"
-                  size="small"
-                  value={(rates.sell[type] ?? 0).toFixed(2)}
-                  slotProps={{
-                    htmlInput: { step: 0.001, min: 0 },
-                    input: {
-                      startAdornment: (
-                        <InputAdornment position="start">$</InputAdornment>
-                      ),
-                    },
-                  }}
-                  onChange={(e) => setRate("sell", type, e.target.value)}
-                  sx={{ width: 110 }}
-                />
-              </TableCell>
+      <Box sx={{ overflowX: "auto" }}>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ fontWeight: 600 }}>Period</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Buy Rate</TableCell>
+              <TableCell sx={{ fontWeight: 600 }}>Sell Rate</TableCell>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHead>
+          <TableBody>
+            {usedTypes.map((type) => (
+              <TableRow key={type}>
+                <TableCell sx={{ py: 0.5, whiteSpace: "nowrap" }}>
+                  {PERIOD_LABELS[type]}
+                </TableCell>
+                <TableCell sx={{ py: 0.5 }}>
+                  <TextField
+                    type="number"
+                    size="small"
+                    value={(rates.buy[type] ?? 0).toFixed(2)}
+                    slotProps={{
+                      htmlInput: { step: 0.001, min: 0 },
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">$</InputAdornment>
+                        ),
+                      },
+                    }}
+                    onChange={(e) => setRate("buy", type, e.target.value)}
+                    sx={{ width: fieldWidth }}
+                  />
+                </TableCell>
+                <TableCell sx={{ py: 0.5 }}>
+                  <TextField
+                    type="number"
+                    size="small"
+                    value={(rates.sell[type] ?? 0).toFixed(2)}
+                    slotProps={{
+                      htmlInput: { step: 0.001, min: 0 },
+                      input: {
+                        startAdornment: (
+                          <InputAdornment position="start">$</InputAdornment>
+                        ),
+                      },
+                    }}
+                    onChange={(e) => setRate("sell", type, e.target.value)}
+                    sx={{ width: fieldWidth }}
+                  />
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </Box>
     </Box>
   );
 }

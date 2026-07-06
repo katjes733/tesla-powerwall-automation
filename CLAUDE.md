@@ -223,6 +223,26 @@ Security issues that were consciously assessed and accepted rather than fixed. D
 
 Node.js / Bun validate TLS certificates by default (`rejectUnauthorized: true`). A custom agent with the same default adds no protection: it cannot defend against a compromised OS trust store (the only meaningful upgrade would be certificate pinning, which is brittle and breaks silently on Tesla cert rotation). There is no `rejectUnauthorized: false` anywhere in the codebase.
 
+## UI / Frontend conventions
+
+### Mobile-responsive layout
+
+All UI work must support both desktop (≥ 600 px, MUI `sm` and above) and mobile phones (< 600 px, MUI `xs`). The desktop layout must remain pixel-identical. Only additive changes for `xs` are permitted.
+
+- **Breakpoint strategy** — use MUI `sm` (600 px) as the phone/desktop boundary. Use `sx` responsive objects (`sx={{ prop: { xs: v, sm: v } }}`) for simple cases; use `useMediaQuery(theme.breakpoints.down("sm"))` when JS branching is needed (e.g. conditional props).
+- **No hardcoded pixel widths** without a responsive fallback — use `width: { xs: "100%", sm: N }` or `minWidth: { xs: "100%", sm: N }`.
+- **No overflow-prone horizontal flex rows** — always add `flexWrap: "wrap"` or switch to `flexDirection: { xs: "column", sm: "row" }` when a row's content might exceed 375 px.
+- **DataGrid / MUI Table columns** — configure `columnVisibilityModel` to hide non-essential columns on `xs` (e.g. timestamp, status) so the grid fits a phone viewport.
+- **Complex dialogs** (multi-tab editors, form-heavy content) — add `fullScreen={isMobile}` so the dialog occupies the full phone screen. Simple confirm/alert dialogs do not need this.
+- **Wide tables inside dialogs** — wrap `<Table>` in `<Box sx={{ overflowX: "auto" }}>` so it scrolls horizontally rather than overflowing the dialog body.
+- **ToggleButtonGroup day selectors** — add `flexWrap: "wrap"` and reduce `gap` on `xs` so 7 day buttons can wrap to a second line on very narrow screens.
+- **TimePicker pairs side-by-side in dialogs** — wrap in `<Box sx={{ overflowX: "auto" }}>` or switch to a column layout on `xs`.
+- **Card min-widths** — use `minWidth: { xs: "100%", sm: N }` so cards stack full-width on phones.
+- **Verification** — after any UI change, verify:
+  1. Desktop (≥ 1280 px): layout unchanged.
+  2. Mobile (375 px DevTools emulation): no horizontal scroll, all content reachable.
+  Use the Playwright MCP browser to resize and screenshot both viewports.
+
 ## Key conventions
 
 - **Site identifier** — Always use `String(product.energy_site_id)` (e.g. `"2252499435259085"`) as the canonical `site_id` for all DB writes, Redis cache keys, and API responses. `product.id` is the gateway string (`STE…`) returned by Tesla's `/products` endpoint and is only valid as a transient lookup key when resolving a client-supplied `siteId` to a `Product`. Do not store or expose `product.id` in the DB or API surface.

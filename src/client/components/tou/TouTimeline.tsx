@@ -104,7 +104,7 @@ export default function TouTimeline({ periods, view }: Props) {
             <Typography
               variant="caption"
               color="text.secondary"
-              sx={{ fontSize: 9 }}
+              sx={{ fontSize: { xs: 10, sm: 9 } }}
             >
               {h === 0 || h === 24
                 ? "12a"

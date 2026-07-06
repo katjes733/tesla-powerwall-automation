@@ -9,12 +9,16 @@ import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
+import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import Grid from "@mui/material/Grid";
+import InputLabel from "@mui/material/InputLabel";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Switch from "@mui/material/Switch";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import TouTimeline from "./TouTimeline";
 import TouPeriodList from "./TouPeriodList";
 import TouRateTable from "./TouRateTable";
@@ -67,6 +71,9 @@ interface Props {
 }
 
 export default function SeasonEditor({ season, onChange }: Props) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const [showDays, setShowDays] = useState(
     () =>
       season.fromDay !== 1 || season.toDay !== lastDayOfMonth(season.toMonth),
@@ -151,24 +158,44 @@ export default function SeasonEditor({ season, onChange }: Props) {
           />
         </Box>
         <Grid container spacing={2} alignItems="center">
+          {!isMobile && (
+            <Grid size="auto">
+              <Typography variant="body2" color="text.secondary">
+                From
+              </Typography>
+            </Grid>
+          )}
           <Grid size="auto">
-            <Typography variant="body2" color="text.secondary">
-              From
-            </Typography>
-          </Grid>
-          <Grid size="auto">
-            <Select
-              size="small"
-              value={season.fromMonth}
-              onChange={(e) => patch({ fromMonth: Number(e.target.value) })}
-              sx={{ minWidth: 120 }}
-            >
-              {MONTHS.map((m, i) => (
-                <MenuItem key={i + 1} value={i + 1}>
-                  {m}
-                </MenuItem>
-              ))}
-            </Select>
+            {isMobile ? (
+              <FormControl size="small">
+                <InputLabel>From</InputLabel>
+                <Select
+                  label="From"
+                  value={season.fromMonth}
+                  onChange={(e) => patch({ fromMonth: Number(e.target.value) })}
+                  sx={{ minWidth: 130 }}
+                >
+                  {MONTHS.map((m, i) => (
+                    <MenuItem key={i + 1} value={i + 1}>
+                      {m}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : (
+              <Select
+                size="small"
+                value={season.fromMonth}
+                onChange={(e) => patch({ fromMonth: Number(e.target.value) })}
+                sx={{ minWidth: 120 }}
+              >
+                {MONTHS.map((m, i) => (
+                  <MenuItem key={i + 1} value={i + 1}>
+                    {m}
+                  </MenuItem>
+                ))}
+              </Select>
+            )}
           </Grid>
           {showDays && (
             <Grid size="auto">
@@ -186,24 +213,44 @@ export default function SeasonEditor({ season, onChange }: Props) {
               </Select>
             </Grid>
           )}
+          {!isMobile && (
+            <Grid size="auto">
+              <Typography variant="body2" color="text.secondary">
+                To
+              </Typography>
+            </Grid>
+          )}
           <Grid size="auto">
-            <Typography variant="body2" color="text.secondary">
-              To
-            </Typography>
-          </Grid>
-          <Grid size="auto">
-            <Select
-              size="small"
-              value={season.toMonth}
-              onChange={(e) => patch({ toMonth: Number(e.target.value) })}
-              sx={{ minWidth: 120 }}
-            >
-              {MONTHS.map((m, i) => (
-                <MenuItem key={i + 1} value={i + 1}>
-                  {m}
-                </MenuItem>
-              ))}
-            </Select>
+            {isMobile ? (
+              <FormControl size="small">
+                <InputLabel>To</InputLabel>
+                <Select
+                  label="To"
+                  value={season.toMonth}
+                  onChange={(e) => patch({ toMonth: Number(e.target.value) })}
+                  sx={{ minWidth: 130 }}
+                >
+                  {MONTHS.map((m, i) => (
+                    <MenuItem key={i + 1} value={i + 1}>
+                      {m}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            ) : (
+              <Select
+                size="small"
+                value={season.toMonth}
+                onChange={(e) => patch({ toMonth: Number(e.target.value) })}
+                sx={{ minWidth: 120 }}
+              >
+                {MONTHS.map((m, i) => (
+                  <MenuItem key={i + 1} value={i + 1}>
+                    {m}
+                  </MenuItem>
+                ))}
+              </Select>
+            )}
           </Grid>
           {showDays && (
             <Grid size="auto">

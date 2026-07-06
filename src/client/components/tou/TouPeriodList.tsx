@@ -5,6 +5,7 @@ import IconButton from "@mui/material/IconButton";
 import MenuItem from "@mui/material/MenuItem";
 import Select from "@mui/material/Select";
 import Table from "@mui/material/Table";
+import Typography from "@mui/material/Typography";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
 import dayjs, { type Dayjs } from "dayjs";
 import TableBody from "@mui/material/TableBody";
@@ -15,6 +16,8 @@ import Tooltip from "@mui/material/Tooltip";
 import DeleteIcon from "@mui/icons-material/Delete";
 import AddIcon from "@mui/icons-material/Add";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import {
   ALL_PERIOD_TYPES,
   PERIOD_LABELS,
@@ -47,6 +50,7 @@ interface TimeInputProps {
   minutePrecision: boolean;
   onChange: (hour: number, minute: number) => void;
   error?: boolean;
+  fullWidth?: boolean;
 }
 
 function TimeInput({
@@ -55,6 +59,7 @@ function TimeInput({
   minutePrecision,
   onChange,
   error,
+  fullWidth = false,
 }: TimeInputProps) {
   const value: Dayjs = dayjs().hour(hour).minute(minute).second(0);
   return (
@@ -68,7 +73,7 @@ function TimeInput({
         textField: {
           size: "small",
           error,
-          sx: { width: 140 },
+          sx: fullWidth ? { width: "100%" } : { width: 140 },
         },
       }}
     />
@@ -90,6 +95,8 @@ export default function TouPeriodList({
   minutePrecision,
   periodIssues,
 }: Props) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const displayPeriods = sortedForDisplay(periods);
 
   function update(id: string, patch: Partial<TouTimeBlock>) {
@@ -130,17 +137,9 @@ export default function TouPeriodList({
 
   return (
     <Box>
-      <Table size="small">
-        <TableHead>
-          <TableRow>
-            <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>From</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>To</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>Days</TableCell>
-            <TableCell />
-          </TableRow>
-        </TableHead>
-        <TableBody>
+      {isMobile ? (
+        /* Mobile: one card per period */
+        <Box>
           {displayPeriods.map((block) => {
             const preset = getDayPreset(block);
             const issue = periodIssues?.find((i) => i.periodId === block.id);
@@ -148,15 +147,53 @@ export default function TouPeriodList({
             const toError = issue?.fields.includes("to") ?? false;
             const daysError = issue?.fields.includes("days") ?? false;
             return (
-              <TableRow key={block.id}>
-                <TableCell sx={{ py: 0.5, minWidth: 130 }}>
+              <Box
+                key={block.id}
+                sx={{
+                  position: "relative",
+                  border: 1,
+                  borderColor: "divider",
+                  borderRadius: 2,
+                  p: 1.5,
+                  mb: 1.5,
+                }}
+              >
+                {/* Delete + error pinned to top-right corner */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    top: 6,
+                    right: 6,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 0.5,
+                  }}
+                >
+                  {issue && (
+                    <Tooltip title={issue.message}>
+                      <ErrorOutlineIcon fontSize="small" color="error" />
+                    </Tooltip>
+                  )}
+                  <IconButton
+                    size="small"
+                    onClick={() => remove(block.id)}
+                    color="error"
+                  >
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+
+                {/* Row 1: Type + Days — pr reserves space for the corner delete */}
+                <Box display="flex" gap={1} mb={1} sx={{ pr: 5 }}>
                   <Select
                     size="small"
                     value={block.type}
                     onChange={(e) =>
-                      update(block.id, { type: e.target.value as PeriodType })
+                      update(block.id, {
+                        type: e.target.value as PeriodType,
+                      })
                     }
-                    sx={{ fontSize: 13 }}
+                    sx={{ flex: 1, fontSize: 13 }}
                   >
                     {ALL_PERIOD_TYPES.map((t) => (
                       <MenuItem key={t} value={t} sx={{ fontSize: 13 }}>
@@ -164,70 +201,164 @@ export default function TouPeriodList({
                       </MenuItem>
                     ))}
                   </Select>
-                </TableCell>
-                <TableCell sx={{ py: 0.5 }}>
-                  <TimeInput
-                    hour={block.fromHour}
-                    minute={block.fromMinute}
-                    minutePrecision={minutePrecision}
-                    onChange={(h, m) =>
-                      update(block.id, { fromHour: h, fromMinute: m })
+                  <Select
+                    size="small"
+                    value={preset}
+                    onChange={(e) =>
+                      applyPreset(block.id, e.target.value as DayPreset)
                     }
-                    error={fromError}
-                  />
-                </TableCell>
-                <TableCell sx={{ py: 0.5 }}>
-                  <TimeInput
-                    hour={block.toHour}
-                    minute={block.toMinute}
-                    minutePrecision={minutePrecision}
-                    onChange={(h, m) =>
-                      update(block.id, { toHour: h, toMinute: m })
-                    }
-                    error={toError}
-                  />
-                </TableCell>
-                <TableCell sx={{ py: 0.5 }}>
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <Select
-                      size="small"
-                      value={preset}
-                      onChange={(e) =>
-                        applyPreset(block.id, e.target.value as DayPreset)
+                    sx={{ flex: 1, fontSize: 13 }}
+                    error={daysError}
+                  >
+                    <MenuItem value="weekdays" sx={{ fontSize: 13 }}>
+                      Weekdays (M–F)
+                    </MenuItem>
+                    <MenuItem value="weekends" sx={{ fontSize: 13 }}>
+                      Weekend (Sa–Su)
+                    </MenuItem>
+                  </Select>
+                </Box>
+                {/* Row 2: From → To */}
+                <Box display="flex" gap={1} alignItems="center">
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <TimeInput
+                      hour={block.fromHour}
+                      minute={block.fromMinute}
+                      minutePrecision={minutePrecision}
+                      onChange={(h, m) =>
+                        update(block.id, { fromHour: h, fromMinute: m })
                       }
-                      sx={{ fontSize: 13, minWidth: 120 }}
-                      error={daysError}
-                    >
-                      <MenuItem value="weekdays" sx={{ fontSize: 13 }}>
-                        Weekdays (M–F)
-                      </MenuItem>
-                      <MenuItem value="weekends" sx={{ fontSize: 13 }}>
-                        Weekend (Sa–Su)
-                      </MenuItem>
-                    </Select>
+                      error={fromError}
+                      fullWidth
+                    />
                   </Box>
-                </TableCell>
-                <TableCell sx={{ py: 0.5 }}>
-                  <Box display="flex" alignItems="center" gap={0.5}>
-                    {issue && (
-                      <Tooltip title={issue.message}>
-                        <ErrorOutlineIcon fontSize="small" color="error" />
-                      </Tooltip>
-                    )}
-                    <IconButton
-                      size="small"
-                      onClick={() => remove(block.id)}
-                      color="error"
-                    >
-                      <DeleteIcon fontSize="small" />
-                    </IconButton>
+                  <Typography variant="body2" color="text.secondary">
+                    →
+                  </Typography>
+                  <Box sx={{ flex: 1, minWidth: 0 }}>
+                    <TimeInput
+                      hour={block.toHour}
+                      minute={block.toMinute}
+                      minutePrecision={minutePrecision}
+                      onChange={(h, m) =>
+                        update(block.id, { toHour: h, toMinute: m })
+                      }
+                      error={toError}
+                      fullWidth
+                    />
                   </Box>
-                </TableCell>
-              </TableRow>
+                </Box>
+              </Box>
             );
           })}
-        </TableBody>
-      </Table>
+        </Box>
+      ) : (
+        /* Desktop: original table */
+        <Box sx={{ overflowX: "auto" }}>
+          <Table size="small">
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 600 }}>Type</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>From</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>To</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Days</TableCell>
+                <TableCell />
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {displayPeriods.map((block) => {
+                const preset = getDayPreset(block);
+                const issue = periodIssues?.find(
+                  (i) => i.periodId === block.id,
+                );
+                const fromError = issue?.fields.includes("from") ?? false;
+                const toError = issue?.fields.includes("to") ?? false;
+                const daysError = issue?.fields.includes("days") ?? false;
+                return (
+                  <TableRow key={block.id}>
+                    <TableCell sx={{ py: 0.5, minWidth: 130 }}>
+                      <Select
+                        size="small"
+                        value={block.type}
+                        onChange={(e) =>
+                          update(block.id, {
+                            type: e.target.value as PeriodType,
+                          })
+                        }
+                        sx={{ fontSize: 13 }}
+                      >
+                        {ALL_PERIOD_TYPES.map((t) => (
+                          <MenuItem key={t} value={t} sx={{ fontSize: 13 }}>
+                            {PERIOD_LABELS[t]}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </TableCell>
+                    <TableCell sx={{ py: 0.5 }}>
+                      <TimeInput
+                        hour={block.fromHour}
+                        minute={block.fromMinute}
+                        minutePrecision={minutePrecision}
+                        onChange={(h, m) =>
+                          update(block.id, { fromHour: h, fromMinute: m })
+                        }
+                        error={fromError}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ py: 0.5 }}>
+                      <TimeInput
+                        hour={block.toHour}
+                        minute={block.toMinute}
+                        minutePrecision={minutePrecision}
+                        onChange={(h, m) =>
+                          update(block.id, { toHour: h, toMinute: m })
+                        }
+                        error={toError}
+                      />
+                    </TableCell>
+                    <TableCell sx={{ py: 0.5 }}>
+                      <Box display="flex" alignItems="center" gap={1}>
+                        <Select
+                          size="small"
+                          value={preset}
+                          onChange={(e) =>
+                            applyPreset(block.id, e.target.value as DayPreset)
+                          }
+                          sx={{ fontSize: 13, minWidth: 120 }}
+                          error={daysError}
+                        >
+                          <MenuItem value="weekdays" sx={{ fontSize: 13 }}>
+                            Weekdays (M–F)
+                          </MenuItem>
+                          <MenuItem value="weekends" sx={{ fontSize: 13 }}>
+                            Weekend (Sa–Su)
+                          </MenuItem>
+                        </Select>
+                      </Box>
+                    </TableCell>
+                    <TableCell sx={{ py: 0.5 }}>
+                      <Box display="flex" alignItems="center" gap={0.5}>
+                        {issue && (
+                          <Tooltip title={issue.message}>
+                            <ErrorOutlineIcon fontSize="small" color="error" />
+                          </Tooltip>
+                        )}
+                        <IconButton
+                          size="small"
+                          onClick={() => remove(block.id)}
+                          color="error"
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </Box>
+      )}
       <Box mt={1}>
         <Button
           size="small"

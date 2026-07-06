@@ -113,6 +113,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.0",
+    "react-swipeable": "^7.0.2",
     "recharts": "^3.9.0",
     "typeorm": "^0.3.30",
     "uuid": "^14.0.1",

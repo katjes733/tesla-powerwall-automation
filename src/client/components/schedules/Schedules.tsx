@@ -20,6 +20,7 @@ import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
 import TextField from "@mui/material/TextField";
 import { alpha, useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import BatteryFullIcon from "@mui/icons-material/BatteryFull";
 import SettingsIcon from "@mui/icons-material/Settings";
 import BoltIcon from "@mui/icons-material/Bolt";
@@ -49,7 +50,9 @@ import { v4 as uuidv4 } from "uuid";
 import Badge from "@mui/material/Badge";
 import CheckIcon from "@mui/icons-material/Check";
 import Alert from "@mui/material/Alert";
+import CircularProgress from "@mui/material/CircularProgress";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import SwipeToDeleteRow from "../shared/SwipeToDeleteRow";
 import dayjs, { type Dayjs } from "dayjs";
 import ScienceIcon from "@mui/icons-material/Science";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
@@ -696,7 +699,7 @@ function TimeSettings({
             onChange={handleDaysChange}
             size="small"
             exclusive={false}
-            sx={{ gap: 1, mt: 1 }}
+            sx={{ gap: { xs: 0.5, sm: 1 }, mt: 1, flexWrap: "wrap" }}
           >
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <ToggleButton
@@ -1527,8 +1530,7 @@ function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
     // }
   }, [schedule?.conditions]);
 
-  const handleFromChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newFrom = e.target.value;
+  const handleFromChange = (newFrom: string) => {
     setBetweenHours({ ...betweenHours, from: newFrom });
     setSchedule((prev: any) => {
       const filtered = (prev.conditions || []).filter(
@@ -1551,8 +1553,7 @@ function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
     });
   };
 
-  const handleToChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newTo = e.target.value;
+  const handleToChange = (newTo: string) => {
     setBetweenHours({ ...betweenHours, to: newTo });
     setSchedule((prev: any) => {
       const filtered = (prev.conditions || []).filter(
@@ -1601,20 +1602,34 @@ function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
         </Typography>
       </Box>
       <Box display="flex" alignItems="center" gap={1}>
-        <TextField
-          type="time"
-          size="small"
-          sx={{ width: 120, mt: 1 }}
-          value={betweenHours.from || ""}
-          onChange={handleFromChange}
+        <TimePicker
+          label="From"
+          value={
+            betweenHours.from ? dayjs(`2000-01-01T${betweenHours.from}`) : null
+          }
+          onChange={(v: Dayjs | null) =>
+            handleFromChange(v ? v.format("HH:mm") : "")
+          }
+          slotProps={{
+            field: { clearable: true },
+            textField: { size: "small", sx: { width: 130 } },
+          }}
         />
-        <Typography variant="body2">and</Typography>
-        <TextField
-          type="time"
-          size="small"
-          sx={{ width: 120, mt: 1 }}
-          value={betweenHours.to || ""}
-          onChange={handleToChange}
+        <Typography variant="body2" sx={{ flexShrink: 0 }}>
+          and
+        </Typography>
+        <TimePicker
+          label="To"
+          value={
+            betweenHours.to ? dayjs(`2000-01-01T${betweenHours.to}`) : null
+          }
+          onChange={(v: Dayjs | null) =>
+            handleToChange(v ? v.format("HH:mm") : "")
+          }
+          slotProps={{
+            field: { clearable: true },
+            textField: { size: "small", sx: { width: 130 } },
+          }}
         />
       </Box>
     </Box>
@@ -1672,6 +1687,7 @@ function SmartSettings({
   setSmartSeasonalWindows,
 }: SmartSettingsProps) {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const seasonalWindowErrors = useMemo(
     () =>
@@ -1852,7 +1868,7 @@ function SmartSettings({
             onChange={handleDaysChange}
             size="small"
             exclusive={false}
-            sx={{ gap: 1 }}
+            sx={{ gap: { xs: 0.5, sm: 1 }, flexWrap: "wrap" }}
           >
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <ToggleButton
@@ -1905,80 +1921,156 @@ function SmartSettings({
 
         {smartMode === "tou" && (tariffInfo?.seasons ?? []).length > 0 ? (
           <Box>
-            {/* Single grid so header and data columns always share the same widths */}
-            <Box
-              display="grid"
-              gridTemplateColumns="auto max-content max-content"
-              columnGap={1}
-              rowGap={1}
-              alignItems="center"
-            >
-              <Typography variant="caption" color="text.secondary">
-                Season
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Earliest
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                Latest
-              </Typography>
-              {smartSeasonalWindows.map((sw) => {
-                const err = seasonalWindowErrors.find(
-                  (e: { seasonName: string }) => e.seasonName === sw.seasonName,
-                );
-                return (
-                  <>
-                    <Typography
-                      key={`${sw.seasonName}-label`}
-                      variant="body2"
-                      sx={{ textTransform: "capitalize" }}
-                    >
-                      {sw.seasonName}
-                    </Typography>
-                    <TimePicker
-                      key={`${sw.seasonName}-from`}
-                      value={sw.from ? dayjs(`2000-01-01T${sw.from}`) : null}
-                      onChange={(v: Dayjs | null) =>
-                        handleSeasonalWindowChange(
-                          sw.seasonName,
-                          "from",
-                          v ? v.format("HH:mm") : "",
-                        )
-                      }
-                      minutesStep={15}
-                      slotProps={{
-                        field: { clearable: true },
-                        textField: {
-                          size: "small",
-                          sx: { width: 170 },
-                          error: err?.fromError,
-                        },
-                      }}
-                    />
-                    <TimePicker
-                      key={`${sw.seasonName}-to`}
-                      value={sw.to ? dayjs(`2000-01-01T${sw.to}`) : null}
-                      onChange={(v: Dayjs | null) =>
-                        handleSeasonalWindowChange(
-                          sw.seasonName,
-                          "to",
-                          v ? v.format("HH:mm") : "",
-                        )
-                      }
-                      minutesStep={15}
-                      slotProps={{
-                        field: { clearable: true },
-                        textField: {
-                          size: "small",
-                          sx: { width: 170 },
-                          error: err?.toError,
-                        },
-                      }}
-                    />
-                  </>
-                );
-              })}
-            </Box>
+            {isMobile ? (
+              /* Mobile: per-season stacked rows with inline labels */
+              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+                {smartSeasonalWindows.map((sw) => {
+                  const err = seasonalWindowErrors.find(
+                    (e: { seasonName: string }) =>
+                      e.seasonName === sw.seasonName,
+                  );
+                  return (
+                    <Box key={sw.seasonName}>
+                      <Typography
+                        variant="caption"
+                        color="text.secondary"
+                        sx={{
+                          textTransform: "capitalize",
+                          display: "block",
+                          mb: 0.5,
+                        }}
+                      >
+                        {sw.seasonName}
+                      </Typography>
+                      <Box sx={{ display: "flex", gap: 1 }}>
+                        <TimePicker
+                          label="Earliest"
+                          value={
+                            sw.from ? dayjs(`2000-01-01T${sw.from}`) : null
+                          }
+                          onChange={(v: Dayjs | null) =>
+                            handleSeasonalWindowChange(
+                              sw.seasonName,
+                              "from",
+                              v ? v.format("HH:mm") : "",
+                            )
+                          }
+                          minutesStep={15}
+                          slotProps={{
+                            field: { clearable: true },
+                            textField: {
+                              size: "small",
+                              sx: { flex: 1 },
+                              error: err?.fromError,
+                            },
+                          }}
+                        />
+                        <TimePicker
+                          label="Latest"
+                          value={sw.to ? dayjs(`2000-01-01T${sw.to}`) : null}
+                          onChange={(v: Dayjs | null) =>
+                            handleSeasonalWindowChange(
+                              sw.seasonName,
+                              "to",
+                              v ? v.format("HH:mm") : "",
+                            )
+                          }
+                          minutesStep={15}
+                          slotProps={{
+                            field: { clearable: true },
+                            textField: {
+                              size: "small",
+                              sx: { flex: 1 },
+                              error: err?.toError,
+                            },
+                          }}
+                        />
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Box>
+            ) : (
+              /* Desktop: original header + grid layout */
+              <Box sx={{ overflowX: "auto" }}>
+                <Box
+                  display="grid"
+                  gridTemplateColumns="auto max-content max-content"
+                  columnGap={1}
+                  rowGap={1}
+                  alignItems="center"
+                >
+                  <Typography variant="caption" color="text.secondary">
+                    Season
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Earliest
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    Latest
+                  </Typography>
+                  {smartSeasonalWindows.map((sw) => {
+                    const err = seasonalWindowErrors.find(
+                      (e: { seasonName: string }) =>
+                        e.seasonName === sw.seasonName,
+                    );
+                    return (
+                      <>
+                        <Typography
+                          key={`${sw.seasonName}-label`}
+                          variant="body2"
+                          sx={{ textTransform: "capitalize" }}
+                        >
+                          {sw.seasonName}
+                        </Typography>
+                        <TimePicker
+                          key={`${sw.seasonName}-from`}
+                          value={
+                            sw.from ? dayjs(`2000-01-01T${sw.from}`) : null
+                          }
+                          onChange={(v: Dayjs | null) =>
+                            handleSeasonalWindowChange(
+                              sw.seasonName,
+                              "from",
+                              v ? v.format("HH:mm") : "",
+                            )
+                          }
+                          minutesStep={15}
+                          slotProps={{
+                            field: { clearable: true },
+                            textField: {
+                              size: "small",
+                              sx: { width: 170 },
+                              error: err?.fromError,
+                            },
+                          }}
+                        />
+                        <TimePicker
+                          key={`${sw.seasonName}-to`}
+                          value={sw.to ? dayjs(`2000-01-01T${sw.to}`) : null}
+                          onChange={(v: Dayjs | null) =>
+                            handleSeasonalWindowChange(
+                              sw.seasonName,
+                              "to",
+                              v ? v.format("HH:mm") : "",
+                            )
+                          }
+                          minutesStep={15}
+                          slotProps={{
+                            field: { clearable: true },
+                            textField: {
+                              size: "small",
+                              sx: { width: 170 },
+                              error: err?.toError,
+                            },
+                          }}
+                        />
+                      </>
+                    );
+                  })}
+                </Box>
+              </Box>
+            )}
             <Typography
               variant="caption"
               color="text.secondary"
@@ -2025,13 +2117,13 @@ function SmartSettings({
                   field: { clearable: true },
                   textField: {
                     size: "small",
-                    sx: { width: 170 },
+                    sx: isMobile ? { flex: 1 } : { width: 170 },
                     error: customWindowError.fromError,
                   },
                 }}
               />
               <TimePicker
-                label="Latest / Charge by"
+                label={isMobile ? "Latest" : "Latest / Charge by"}
                 value={
                   smartWindow.to ? dayjs(`2000-01-01T${smartWindow.to}`) : null
                 }
@@ -2043,7 +2135,7 @@ function SmartSettings({
                   field: { clearable: true },
                   textField: {
                     size: "small",
-                    sx: { width: 175 },
+                    sx: isMobile ? { flex: 1 } : { width: 175 },
                     error: customWindowError.toError,
                   },
                 }}
@@ -2231,8 +2323,12 @@ function HolidaysSettings({
   setAutoPopulateToolbarSource,
 }: HolidaysSettingsProps) {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
+  const [openSwipeHoliday, setOpenSwipeHoliday] = useState<number | null>(null);
 
   const handleDeleteEntry = (idx: number) => {
+    setOpenSwipeHoliday(null);
     setHolidayEntries(holidayEntries.filter((_, i) => i !== idx));
   };
 
@@ -2359,86 +2455,122 @@ function HolidaysSettings({
             mt: 1,
           }}
         >
-          <Box
-            sx={{
-              display: "grid",
-              gridTemplateColumns: "1fr 130px 60px 80px 36px",
-              bgcolor: alpha(
-                theme.palette.background.paper,
-                theme.palette.mode === "light" ? 0.5 : 0.2,
-              ),
-              borderBottom: 1,
-              borderColor: "divider",
-              px: 1,
-              py: 0.5,
-            }}
-          >
-            <Typography variant="caption" color="text.secondary">
-              Name
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Date
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Observ.
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              Source
-            </Typography>
-            <span />
-          </Box>
-          {holidayEntries.map((entry, idx) => (
+          {/* Desktop header */}
+          {!isMobile && (
             <Box
-              key={idx}
               sx={{
                 display: "grid",
                 gridTemplateColumns: "1fr 130px 60px 80px 36px",
-                alignItems: "center",
-                px: 1,
-                py: 0.25,
-                borderBottom: idx < holidayEntries.length - 1 ? 1 : 0,
+                bgcolor: alpha(
+                  theme.palette.background.paper,
+                  theme.palette.mode === "light" ? 0.5 : 0.2,
+                ),
+                borderBottom: 1,
                 borderColor: "divider",
-                "&:hover": { bgcolor: alpha(theme.palette.action.hover, 0.04) },
+                px: 1,
+                py: 0.5,
               }}
             >
-              <Tooltip title={entry.name} placement="top">
+              <Typography variant="caption" color="text.secondary">
+                Name
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Date
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Observ.
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                Source
+              </Typography>
+              <span />
+            </Box>
+          )}
+          {holidayEntries.map((entry, idx) => {
+            const isFixed = /^\d{2}-\d{2}$/.test(entry.date);
+            const observLabel = isFixed
+              ? entry.observance === "auto"
+                ? "Auto"
+                : "None"
+              : "—";
+            return isMobile ? (
+              /* Mobile: two-line card row with swipe-to-delete */
+              <SwipeToDeleteRow
+                key={idx}
+                isOpen={openSwipeHoliday === idx}
+                onOpen={() => setOpenSwipeHoliday(idx)}
+                onClose={() => setOpenSwipeHoliday(null)}
+                onDelete={() => handleDeleteEntry(idx)}
+              >
+                <Box sx={{ px: 1, py: 0.75 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {entry.name}
+                  </Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {formatHolidayDate(entry.date)} · {observLabel} ·{" "}
+                    {entry.source}
+                  </Typography>
+                </Box>
+              </SwipeToDeleteRow>
+            ) : (
+              /* Desktop: original grid row */
+              <Box
+                key={idx}
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 130px 60px 80px 36px",
+                  alignItems: "center",
+                  px: 1,
+                  py: 0.25,
+                  borderBottom: idx < holidayEntries.length - 1 ? 1 : 0,
+                  borderColor: "divider",
+                  "&:hover": {
+                    bgcolor: alpha(theme.palette.action.hover, 0.04),
+                  },
+                }}
+              >
+                <Tooltip title={entry.name} placement="top">
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {entry.name}
+                  </Typography>
+                </Tooltip>
+                <Typography variant="body2" color="text.secondary">
+                  {formatHolidayDate(entry.date)}
+                </Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {observLabel}
+                </Typography>
                 <Typography
                   variant="body2"
+                  color="text.secondary"
                   sx={{
                     overflow: "hidden",
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {entry.name}
+                  {entry.source}
                 </Typography>
-              </Tooltip>
-              <Typography variant="body2" color="text.secondary">
-                {formatHolidayDate(entry.date)}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {/^\d{2}-\d{2}$/.test(entry.date)
-                  ? entry.observance === "auto"
-                    ? "Auto"
-                    : "None"
-                  : "—"}
-              </Typography>
-              <Typography
-                variant="body2"
-                color="text.secondary"
-                sx={{
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {entry.source}
-              </Typography>
-              <IconButton size="small" onClick={() => handleDeleteEntry(idx)}>
-                <DeleteIcon fontSize="small" />
-              </IconButton>
-            </Box>
-          ))}
+                <IconButton size="small" onClick={() => handleDeleteEntry(idx)}>
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Box>
+            );
+          })}
         </Box>
       )}
 
@@ -2804,6 +2936,8 @@ export default function Schedules() {
   const [autoPopulateToolbarSource, setAutoPopulateToolbarSource] =
     useState("US_MAJOR");
 
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const loadSchedules = useCallback(async () => {
     setLoading(true);
     axios
@@ -2822,6 +2956,49 @@ export default function Schedules() {
       .then((res) => setAvailableSites(res.data.data ?? []))
       .catch(() => setAvailableSites([]));
   }, [loadSchedules]);
+
+  const [openSwipeRow, setOpenSwipeRow] = useState<string | null>(null);
+
+  const getTabForSchedule = (row: any): number => {
+    if (
+      (row?.actions ?? []).some(
+        (a: any) => a.action === "setTouHolidayOverride",
+      )
+    )
+      return 4;
+    if (
+      (row?.actions ?? []).some((a: any) => a.action === "setSmartGridCharging")
+    )
+      return 3;
+    if (row?.conditions && Array.isArray(row.conditions)) {
+      const condKey = row.conditions[0]?.condition;
+      if (tabOptions.flow.some((opt) => opt.key === condKey)) return 2;
+      if (tabOptions.powerwall.some((opt) => opt.key === condKey)) return 1;
+    }
+    return 0;
+  };
+
+  const openEditDialogForRow = (row: any) => {
+    setSchedule(row);
+    const tab = getTabForSchedule(row);
+    setDialogTab(tab);
+    setDialogOpen(true);
+    setActionValues(
+      Object.fromEntries(
+        (row.actions || []).map((a: any) => [a.action, a.value]),
+      ),
+    );
+    if (tab === 4) {
+      const holidayCond = (row.conditions ?? []).find(
+        (c: any) => c.condition === "holidayList",
+      );
+      setHolidayEntries(
+        Array.isArray(holidayCond?.value) ? holidayCond.value : [],
+      );
+    } else {
+      setHolidayEntries([]);
+    }
+  };
 
   const columns: GridColDef[] = [
     { field: "id", headerName: "ID", flex: 1, minWidth: 80 },
@@ -2853,7 +3030,7 @@ export default function Schedules() {
       field: "summary",
       headerName: "Schedule",
       flex: 3,
-      minWidth: 260,
+      minWidth: isMobile ? 140 : 260,
       sortable: false,
       renderCell: (params) => {
         const summary = summarizeSchedule(params.row);
@@ -2978,79 +3155,39 @@ export default function Schedules() {
     {
       field: "edit",
       headerName: "",
-      width: 100,
+      width: isMobile ? 80 : 100,
       sortable: false,
-      renderCell: (params) => {
-        const getTabForSchedule = (schedule: any) => {
-          if (
-            (schedule?.actions ?? []).some(
-              (a: any) => a.action === "setTouHolidayOverride",
-            )
-          )
-            return 4;
-          if (
-            (schedule?.actions ?? []).some(
-              (a: any) => a.action === "setSmartGridCharging",
-            )
-          )
-            return 3;
-          if (schedule?.conditions && Array.isArray(schedule.conditions)) {
-            const condKey = schedule.conditions[0]?.condition;
-            if (tabOptions.flow.some((opt) => opt.key === condKey)) return 2;
-            if (tabOptions.powerwall.some((opt) => opt.key === condKey))
-              return 1;
-          }
-          return 0;
-        };
-        return (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              height: "100%",
+      renderCell: (params) => (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100%",
+            gap: isMobile ? 0.5 : 0,
+          }}
+        >
+          <IconButton
+            size={isMobile ? "small" : "medium"}
+            onClick={(event) => {
+              event.stopPropagation();
+              openEditDialogForRow(params.row);
             }}
           >
-            <IconButton
-              onClick={(event) => {
-                event.stopPropagation();
-                setSchedule(params.row);
-                const tab = getTabForSchedule(params.row);
-                setDialogTab(tab);
-                setDialogOpen(true);
-                setActionValues(
-                  Object.fromEntries(
-                    (params.row.actions || []).map((a: any) => [
-                      a.action,
-                      a.value,
-                    ]),
-                  ),
-                );
-                if (tab === 4) {
-                  const holidayCond = (params.row.conditions ?? []).find(
-                    (c: any) => c.condition === "holidayList",
-                  );
-                  setHolidayEntries(
-                    Array.isArray(holidayCond?.value) ? holidayCond.value : [],
-                  );
-                } else {
-                  setHolidayEntries([]);
-                }
-              }}
-            >
-              <EditIcon />
-            </IconButton>
-            <IconButton
-              onClick={(event) => {
-                event.stopPropagation();
-                setScheduleToDelete(params.row);
-                setConfirmOpen(true);
-              }}
-            >
-              <DeleteIcon />
-            </IconButton>
-          </Box>
-        );
-      },
+            <EditIcon fontSize={isMobile ? "small" : "medium"} />
+          </IconButton>
+          <IconButton
+            size={isMobile ? "small" : "medium"}
+            onClick={(event) => {
+              event.stopPropagation();
+              setScheduleToDelete(params.row);
+              setConfirmOpen(true);
+            }}
+          >
+            <DeleteIcon fontSize={isMobile ? "small" : "medium"} />
+          </IconButton>
+        </Box>
+      ),
     },
   ];
 
@@ -3320,11 +3457,23 @@ export default function Schedules() {
   }, [smartSeasonalWindows, dialogTab, smartMode]);
 
   return (
-    <Box sx={{ px: 3, pb: 3, width: "60%", mx: "auto" }}>
-      <Typography variant="h4" gutterBottom>
+    <Box
+      sx={{
+        px: { xs: 1.5, sm: 3 },
+        pb: 3,
+        width: "100%",
+        maxWidth: 900,
+        mx: "auto",
+      }}
+    >
+      <Typography
+        variant="h4"
+        gutterBottom
+        sx={{ display: { xs: "none", sm: "block" } }}
+      >
         Schedules
       </Typography>
-      <Divider sx={{ mb: 2 }} />
+      <Divider sx={{ mb: 2, display: { xs: "none", sm: "block" } }} />
       <Box display="flex" alignItems="center" justifyContent="space-between">
         <Typography variant="body1" color="text.secondary">
           Manage your schedules here.
@@ -3397,20 +3546,89 @@ export default function Schedules() {
           <AddIcon sx={{ fontSize: 24 }} />
         </IconButton>
       </Box>
-      <Box sx={{ height: 400, width: "100%", mt: 2 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={loading}
-          getRowId={(row) => row.id}
-          columnVisibilityModel={{ id: false }}
-        />
-      </Box>
+      {isMobile ? (
+        <Box
+          sx={{
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            overflow: "hidden",
+            mt: 2,
+          }}
+        >
+          {loading ? (
+            <Box display="flex" justifyContent="center" py={4}>
+              <CircularProgress />
+            </Box>
+          ) : rows.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+              No schedules yet. Tap + to create one.
+            </Typography>
+          ) : (
+            rows.map((row) => (
+              <SwipeToDeleteRow
+                key={row.id}
+                isOpen={openSwipeRow === row.id}
+                onOpen={() => setOpenSwipeRow(row.id)}
+                onClose={() => setOpenSwipeRow(null)}
+                onDelete={() => {
+                  setScheduleToDelete(row);
+                  setConfirmOpen(true);
+                }}
+              >
+                <Box display="flex" alignItems="center" px={1.5} py={1} gap={1}>
+                  <Switch
+                    checked={row.enabled ?? true}
+                    size="small"
+                    onChange={() => handleToggleEnabled(row)}
+                  />
+                  <Typography
+                    variant="body2"
+                    noWrap
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      color:
+                        row.enabled === false
+                          ? "text.disabled"
+                          : "text.primary",
+                    }}
+                  >
+                    {summarizeSchedule(row)}
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    onClick={() => openEditDialogForRow(row)}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              </SwipeToDeleteRow>
+            ))
+          )}
+        </Box>
+      ) : (
+        <Box sx={{ height: 400, width: "100%", mt: 2 }}>
+          <DataGrid
+            rows={rows}
+            columns={columns}
+            loading={loading}
+            getRowId={(row) => row.id}
+            disableColumnMenu={isMobile}
+            columnVisibilityModel={{
+              id: false,
+              site_ids: !isMobile,
+              status: !isMobile,
+            }}
+          />
+        </Box>
+      )}
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}
         maxWidth="sm"
         fullWidth
+        fullScreen={isMobile}
         slotProps={{ paper: { sx: { maxWidth: 520 } } }}
       >
         <DialogTitle>Schedule Details</DialogTitle>
@@ -3424,7 +3642,8 @@ export default function Schedules() {
             value={dialogTab}
             onChange={(_, v) => setDialogTab(v)}
             aria-label="schedule details tabs"
-            variant="fullWidth"
+            variant={isMobile ? "scrollable" : "fullWidth"}
+            scrollButtons="auto"
           >
             <Tab key="time" label="Time" />
             <Tab key="powerwall" label="Powerwall" />

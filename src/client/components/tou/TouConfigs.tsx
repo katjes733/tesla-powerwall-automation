@@ -20,6 +20,8 @@ import EditIcon from "@mui/icons-material/Edit";
 import CloudDownloadIcon from "@mui/icons-material/CloudDownload";
 import AddIcon from "@mui/icons-material/Add";
 import PublishIcon from "@mui/icons-material/Publish";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import TouEditorDialog from "./TouEditorDialog";
@@ -31,14 +33,85 @@ import {
 } from "~/shared/types/tou";
 import type { ITouScheduleConfig } from "~/server/database/models/touScheduleConfig";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
+import SwipeToDeleteRow from "../shared/SwipeToDeleteRow";
 
 interface PendingApply {
   config: ITouScheduleConfig;
   siteName: string;
 }
 
+interface RowActionsProps {
+  onApply: () => void;
+  onEdit: () => void;
+  onCopy: () => void;
+  onDelete: () => void;
+}
+
+function RowActions({ onApply, onEdit, onCopy, onDelete }: RowActionsProps) {
+  return (
+    <Box
+      display="flex"
+      alignItems="center"
+      justifyContent="flex-end"
+      height="100%"
+      gap={0.5}
+    >
+      <Tooltip title="Apply to Tesla">
+        <IconButton
+          size="small"
+          color="primary"
+          onClick={(e) => {
+            e.stopPropagation();
+            onApply();
+          }}
+        >
+          <PublishIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <Divider
+        orientation="vertical"
+        sx={{ height: 18, mx: 0.5, borderRightWidth: 2 }}
+      />
+      <IconButton
+        size="small"
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit();
+        }}
+        title="Edit"
+      >
+        <EditIcon fontSize="small" />
+      </IconButton>
+      <Tooltip title="Copy config">
+        <IconButton
+          size="small"
+          onClick={(e) => {
+            e.stopPropagation();
+            onCopy();
+          }}
+        >
+          <ContentCopyIcon fontSize="small" />
+        </IconButton>
+      </Tooltip>
+      <IconButton
+        size="small"
+        color="error"
+        onClick={(e) => {
+          e.stopPropagation();
+          onDelete();
+        }}
+        title="Delete"
+      >
+        <DeleteIcon fontSize="small" />
+      </IconButton>
+    </Box>
+  );
+}
+
 export default function TouConfigs() {
   const { showNotification } = useNotification();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
@@ -57,6 +130,7 @@ export default function TouConfigs() {
 
   const [pendingApply, setPendingApply] = useState<PendingApply | null>(null);
   const [applying, setApplying] = useState(false);
+  const [openSwipeRow, setOpenSwipeRow] = useState<string | null>(null);
   const [autoBackup, setAutoBackup] = useState(
     () => localStorage.getItem("tou-auto-backup") === "true",
   );
@@ -222,7 +296,27 @@ export default function TouConfigs() {
       field: "schedule_name",
       headerName: "Name",
       flex: 1,
-      minWidth: 160,
+      minWidth: isMobile ? 120 : 160,
+      renderCell: (params) => (
+        <Box
+          display="flex"
+          alignItems="center"
+          gap={1}
+          height="100%"
+          sx={{ minWidth: 0 }}
+        >
+          {isMobile && params.row.is_active && (
+            <CheckCircleIcon
+              color="success"
+              fontSize="small"
+              sx={{ flexShrink: 0 }}
+            />
+          )}
+          <Typography variant="body2" noWrap>
+            {params.row.schedule_name}
+          </Typography>
+        </Box>
+      ),
     },
     {
       field: "modified_time",
@@ -256,74 +350,31 @@ export default function TouConfigs() {
       width: 160,
       sortable: false,
       align: "right",
-      renderCell: (params) => (
-        <Box
-          display="flex"
-          alignItems="center"
-          justifyContent="flex-end"
-          height="100%"
-          gap={0.5}
-        >
-          <Tooltip title="Apply to Tesla">
-            <IconButton
-              size="small"
-              color="primary"
-              onClick={(e) => {
-                e.stopPropagation();
-                const site = sites.find((s) => s.id === selectedSiteId);
-                setPendingApply({
-                  config: params.row as ITouScheduleConfig,
-                  siteName: site?.site_name ?? selectedSiteId,
-                });
-              }}
-            >
-              <PublishIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Divider
-            orientation="vertical"
-            sx={{ height: 18, mx: 0.5, borderRightWidth: 2 }}
+      renderCell: (params) => {
+        const row = params.row as ITouScheduleConfig;
+        const site = sites.find((s) => s.id === selectedSiteId);
+        return (
+          <RowActions
+            onApply={() =>
+              setPendingApply({
+                config: row,
+                siteName: site?.site_name ?? selectedSiteId,
+              })
+            }
+            onEdit={() => openEditEditor(row)}
+            onCopy={() => handleCopy(row)}
+            onDelete={() => handleDelete(row.id)}
           />
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              openEditEditor(params.row as ITouScheduleConfig);
-            }}
-            title="Edit"
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
-          <Tooltip title="Copy config">
-            <IconButton
-              size="small"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleCopy(params.row as ITouScheduleConfig);
-              }}
-            >
-              <ContentCopyIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <IconButton
-            size="small"
-            color="error"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete(params.row.id);
-            }}
-            title="Delete"
-          >
-            <DeleteIcon fontSize="small" />
-          </IconButton>
-        </Box>
-      ),
+        );
+      },
     },
   ];
 
   return (
     <Box px={3} pb={3} display="flex" flexDirection="column" gap={2}>
-      <Typography variant="h5">TOU Schedule Configs</Typography>
+      <Typography variant="h5" sx={{ display: { xs: "none", sm: "block" } }}>
+        TOU Schedule Configs
+      </Typography>
 
       {/* Toolbar */}
       <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
@@ -331,30 +382,66 @@ export default function TouConfigs() {
           sites={sites}
           value={selectedSiteId}
           onChange={setSelectedSiteId}
-          sx={{ minWidth: 280 }}
+          sx={{
+            minWidth: { xs: 0, sm: 280 },
+            width: { xs: "100%", sm: "auto" },
+          }}
         />
-        <Button
-          variant="outlined"
-          startIcon={<AddIcon />}
-          onClick={openNewEditor}
-          disabled={!selectedSiteId}
-        >
-          New Config
-        </Button>
-        <Button
-          variant="outlined"
-          startIcon={
-            loadingTesla ? (
-              <CircularProgress size={16} />
-            ) : (
-              <CloudDownloadIcon />
-            )
-          }
-          onClick={loadFromTesla}
-          disabled={!selectedSiteId || loadingTesla}
-        >
-          Load from Tesla
-        </Button>
+        {isMobile ? (
+          <Box display="flex" gap={1}>
+            <Tooltip title="New Config">
+              <span>
+                <IconButton
+                  onClick={openNewEditor}
+                  disabled={!selectedSiteId}
+                  color="primary"
+                >
+                  <AddIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
+            <Tooltip title="Load from Tesla">
+              <span>
+                <IconButton
+                  onClick={loadFromTesla}
+                  disabled={!selectedSiteId || loadingTesla}
+                  color="primary"
+                >
+                  {loadingTesla ? (
+                    <CircularProgress size={20} />
+                  ) : (
+                    <CloudDownloadIcon />
+                  )}
+                </IconButton>
+              </span>
+            </Tooltip>
+          </Box>
+        ) : (
+          <Box display="flex" gap={1}>
+            <Button
+              variant="outlined"
+              startIcon={<AddIcon />}
+              onClick={openNewEditor}
+              disabled={!selectedSiteId}
+            >
+              New Config
+            </Button>
+            <Button
+              variant="outlined"
+              startIcon={
+                loadingTesla ? (
+                  <CircularProgress size={16} />
+                ) : (
+                  <CloudDownloadIcon />
+                )
+              }
+              onClick={loadFromTesla}
+              disabled={!selectedSiteId || loadingTesla}
+            >
+              Load from Tesla
+            </Button>
+          </Box>
+        )}
         <FormControlLabel
           control={
             <Switch
@@ -368,28 +455,121 @@ export default function TouConfigs() {
               Auto-backup on apply
             </Typography>
           }
-          sx={{ ml: "auto", mr: 0 }}
+          sx={{ ml: { xs: 0, sm: "auto" }, mr: 0 }}
         />
       </Box>
 
       {/* Config list */}
-      <Box sx={{ height: 500 }}>
-        <DataGrid
-          rows={configs}
-          columns={columns}
-          loading={loadingConfigs}
-          pageSizeOptions={[25, 50, 100]}
-          initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
-          disableRowSelectionOnClick
+      {isMobile ? (
+        <Box
           sx={{
-            "& .MuiDataGrid-cell[data-field='actions']": {
-              overflow: "visible",
-              paddingLeft: "6px",
-              paddingRight: "6px",
-            },
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            overflow: "hidden",
           }}
-        />
-      </Box>
+        >
+          {loadingConfigs ? (
+            <Box display="flex" justifyContent="center" py={4}>
+              <CircularProgress />
+            </Box>
+          ) : configs.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+              No configs saved for this site.
+            </Typography>
+          ) : (
+            configs.map((config) => {
+              const site = sites.find((s) => s.id === selectedSiteId);
+              return (
+                <SwipeToDeleteRow
+                  key={config.id}
+                  isOpen={openSwipeRow === config.id}
+                  onOpen={() => setOpenSwipeRow(config.id)}
+                  onClose={() => setOpenSwipeRow(null)}
+                  onDelete={() => handleDelete(config.id)}
+                >
+                  <Box
+                    display="flex"
+                    alignItems="center"
+                    px={2}
+                    py={1.5}
+                    gap={1}
+                  >
+                    <Box
+                      sx={{
+                        flex: 1,
+                        minWidth: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                      }}
+                    >
+                      {config.is_active && (
+                        <CheckCircleIcon
+                          color="success"
+                          fontSize="small"
+                          sx={{ flexShrink: 0 }}
+                        />
+                      )}
+                      <Typography variant="body2" noWrap>
+                        {config.schedule_name}
+                      </Typography>
+                    </Box>
+                    <Box display="flex" alignItems="center" gap={0.5}>
+                      <Tooltip title="Apply to Tesla">
+                        <IconButton
+                          size="small"
+                          color="primary"
+                          onClick={() =>
+                            setPendingApply({
+                              config,
+                              siteName: site?.site_name ?? selectedSiteId,
+                            })
+                          }
+                        >
+                          <PublishIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                      <IconButton
+                        size="small"
+                        onClick={() => openEditEditor(config)}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                      <Tooltip title="Copy config">
+                        <IconButton
+                          size="small"
+                          onClick={() => handleCopy(config)}
+                        >
+                          <ContentCopyIcon fontSize="small" />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  </Box>
+                </SwipeToDeleteRow>
+              );
+            })
+          )}
+        </Box>
+      ) : (
+        <Box sx={{ height: 500 }}>
+          <DataGrid
+            rows={configs}
+            columns={columns}
+            loading={loadingConfigs}
+            pageSizeOptions={[25, 50, 100]}
+            initialState={{ pagination: { paginationModel: { pageSize: 25 } } }}
+            disableRowSelectionOnClick
+            sx={{
+              "& .MuiDataGrid-cell[data-field='actions']": {
+                overflow: "visible",
+                paddingLeft: "6px",
+                paddingRight: "6px",
+              },
+            }}
+          />
+        </Box>
+      )}
 
       {/* Editor dialog */}
       <TouEditorDialog

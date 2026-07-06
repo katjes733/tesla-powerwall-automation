@@ -7,11 +7,15 @@ import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
 import DialogContent from "@mui/material/DialogContent";
 import DialogTitle from "@mui/material/DialogTitle";
+import IconButton from "@mui/material/IconButton";
 import TextField from "@mui/material/TextField";
 import ToggleButton from "@mui/material/ToggleButton";
 import ToggleButtonGroup from "@mui/material/ToggleButtonGroup";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import SeasonTabs from "./SeasonTabs";
 import type { TouEditorState } from "~/shared/types/tou";
 import {
@@ -98,6 +102,9 @@ export default function TouEditorDialog({
   saving,
   nameExists = false,
 }: Props) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+
   const [showValidationErrors, setShowValidationErrors] = useState(false);
   const [shiftOpen, setShiftOpen] = useState(false);
   const [shiftMinutes, setShiftMinutes] = useState<15 | -15>(15);
@@ -157,7 +164,13 @@ export default function TouEditorDialog({
 
   return (
     <>
-      <Dialog open={open} onClose={handleClose} maxWidth="lg" fullWidth>
+      <Dialog
+        open={open}
+        onClose={handleClose}
+        maxWidth="lg"
+        fullWidth
+        fullScreen={isMobile}
+      >
         <DialogTitle>TOU Schedule Editor</DialogTitle>
         <DialogContent dividers>
           <Box display="flex" flexDirection="column" gap={3}>
@@ -205,16 +218,31 @@ export default function TouEditorDialog({
                 <Typography variant="subtitle1" fontWeight={600}>
                   Seasons
                 </Typography>
-                <Button
-                  size="small"
-                  variant="outlined"
-                  startIcon={<AccessTimeIcon />}
-                  onClick={() => setShiftOpen(true)}
-                  disabled={!hasOnPeak}
-                  sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
-                >
-                  Shift On-Peak Start…
-                </Button>
+                {isMobile ? (
+                  <Tooltip title="Shift On-Peak Start…">
+                    <span>
+                      <IconButton
+                        size="small"
+                        onClick={() => setShiftOpen(true)}
+                        disabled={!hasOnPeak}
+                        color="primary"
+                      >
+                        <AccessTimeIcon fontSize="small" />
+                      </IconButton>
+                    </span>
+                  </Tooltip>
+                ) : (
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    startIcon={<AccessTimeIcon />}
+                    onClick={() => setShiftOpen(true)}
+                    disabled={!hasOnPeak}
+                    sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
+                  >
+                    Shift On-Peak Start…
+                  </Button>
+                )}
               </Box>
               {monthIssues.length > 0 && (
                 <Alert severity="warning" sx={{ mb: 1.5 }}>

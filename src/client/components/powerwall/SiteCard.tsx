@@ -7,6 +7,7 @@ import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
 import EnergyFlow from "./EnergyFlow";
 
@@ -49,6 +50,7 @@ export default function SiteCard({
   activeHoliday = null,
 }: Props) {
   const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
   const isOnGrid =
     live?.grid_status?.toLowerCase() === "active" &&
@@ -72,7 +74,12 @@ export default function SiteCard({
   return (
     <Card
       elevation={3}
-      sx={{ minWidth: 300, maxWidth: 420, flex: 1, borderRadius: 2 }}
+      sx={{
+        minWidth: { xs: 260, sm: 300 },
+        maxWidth: 420,
+        flex: 1,
+        borderRadius: 2,
+      }}
     >
       <CardHeader
         title={
@@ -81,7 +88,7 @@ export default function SiteCard({
           `Site ${product.energy_site_id}`
         }
         titleTypographyProps={{ variant: "h6", fontWeight: 600 }}
-        subheader={`ID: ${product.energy_site_id}`}
+        subheader={isMobile ? undefined : `ID: ${product.energy_site_id}`}
         action={
           <Box
             sx={{
@@ -112,14 +119,14 @@ export default function SiteCard({
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
-            mb: 2,
+            mb: { xs: 1, sm: 2 },
           }}
         >
           <Box sx={{ position: "relative", display: "inline-flex" }}>
             <CircularProgress
               variant="determinate"
               value={isConnected ? soc : 0}
-              size={120}
+              size={isMobile ? 88 : 120}
               thickness={6}
               color={socColor === "inherit" ? "inherit" : socColor}
               sx={{
@@ -136,7 +143,7 @@ export default function SiteCard({
               }}
             >
               <Typography
-                variant="h4"
+                variant={isMobile ? "h5" : "h4"}
                 fontWeight={700}
                 color={!isConnected ? "text.disabled" : undefined}
               >
@@ -169,6 +176,7 @@ export default function SiteCard({
           batteryPct={live?.percentage_charged ?? 0}
           batteryCount={info?.battery_count ?? 0}
           connected={isConnected}
+          maxHeight={isMobile ? 240 : 320}
         />
 
         {info && (

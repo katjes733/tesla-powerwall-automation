@@ -543,7 +543,11 @@ export default function Calibration() {
       <Box sx={{ flex: "1 1 20%", minWidth: 0 }} />
 
       <Box sx={{ flex: "0 1 60%", minWidth: "min(480px, 100%)", px: 1 }}>
-        <Typography variant="h5" gutterBottom>
+        <Typography
+          variant="h5"
+          gutterBottom
+          sx={{ display: { xs: "none", sm: "block" } }}
+        >
           Calibration
         </Typography>
 
@@ -817,8 +821,16 @@ export default function Calibration() {
               </Typography>
             </SettingCard>
 
-            <Box sx={{ display: "flex", gap: 2, mb: 2, alignItems: "stretch" }}>
-              {/* Manual Curve Calibration — 2/3 width */}
+            <Box
+              sx={{
+                display: "flex",
+                flexDirection: { xs: "column", sm: "row" },
+                gap: 2,
+                mb: 2,
+                alignItems: "stretch",
+              }}
+            >
+              {/* Manual Curve Calibration — 2/3 width on desktop, full width on mobile */}
               <Paper
                 variant="outlined"
                 sx={{ p: 3, flex: "2 1 0", minWidth: 0 }}
@@ -983,6 +995,7 @@ export default function Calibration() {
                       <Box
                         sx={{
                           display: "flex",
+                          flexDirection: { xs: "column", sm: "row" },
                           gap: 2,
                           alignItems: "stretch",
                         }}
@@ -1057,7 +1070,12 @@ export default function Calibration() {
                             {curveClearing ? "Clearing…" : "Clear Curve Data"}
                           </Button>
                         </Box>
-                        <Box sx={{ flex: "0 0 50%", minWidth: 0 }}>
+                        <Box
+                          sx={{
+                            flex: { xs: "1 1 auto", sm: "0 0 50%" },
+                            minWidth: 0,
+                          }}
+                        >
                           <Typography
                             variant="caption"
                             color="text.secondary"
