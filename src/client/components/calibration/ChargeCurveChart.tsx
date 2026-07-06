@@ -188,7 +188,16 @@ export default function ChargeCurveChart({
         </Box>
       )}
 
-      <Box onDoubleClick={resetZoom}>
+      <Box
+        onDoubleClick={resetZoom}
+        data-energy-chart="true"
+        sx={{
+          touchAction: "pan-y",
+          WebkitUserSelect: "none",
+          userSelect: "none",
+          WebkitTouchCallout: "none",
+        }}
+      >
         <ResponsiveContainer width="100%" height={height}>
           <ComposedChart
             data={displayData}

@@ -134,17 +134,21 @@ export default function EnergyHistory() {
     let startY = 0;
     let pullActive = false;
     let gestureDecided = false;
+    let onChart = false;
 
     function onStart(e: TouchEvent) {
+      const target = e.target as HTMLElement | null;
+      onChart = !!target?.closest("[data-energy-chart]");
       startX = e.touches[0].clientX;
       startY = e.touches[0].clientY;
       pullActive = false;
       gestureDecided = false;
-      if (window.scrollY <= 0 && !loadingRef.current) {
+      if (!onChart && window.scrollY <= 0 && !loadingRef.current) {
         pullActive = true;
       }
     }
     function onMove(e: TouchEvent) {
+      if (onChart) return;
       if (!pullActive) return;
       const dx = e.touches[0].clientX - startX;
       const dy = e.touches[0].clientY - startY;
@@ -173,6 +177,7 @@ export default function EnergyHistory() {
       pullYRef.current = clamped;
     }
     function onEnd(e: TouchEvent) {
+      if (onChart) return;
       const dx = e.changedTouches[0].clientX - startX;
       const dy = e.changedTouches[0].clientY - startY;
 
