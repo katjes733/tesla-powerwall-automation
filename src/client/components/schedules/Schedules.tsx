@@ -50,7 +50,9 @@ import { v4 as uuidv4 } from "uuid";
 import Badge from "@mui/material/Badge";
 import CheckIcon from "@mui/icons-material/Check";
 import Alert from "@mui/material/Alert";
+import CircularProgress from "@mui/material/CircularProgress";
 import { TimePicker } from "@mui/x-date-pickers/TimePicker";
+import SwipeToDeleteRow from "../shared/SwipeToDeleteRow";
 import dayjs, { type Dayjs } from "dayjs";
 import ScienceIcon from "@mui/icons-material/Science";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
@@ -2323,7 +2325,10 @@ function HolidaysSettings({
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
+  const [openSwipeHoliday, setOpenSwipeHoliday] = useState<number | null>(null);
+
   const handleDeleteEntry = (idx: number) => {
+    setOpenSwipeHoliday(null);
     setHolidayEntries(holidayEntries.filter((_, i) => i !== idx));
   };
 
@@ -2489,23 +2494,15 @@ function HolidaysSettings({
                 : "None"
               : "—";
             return isMobile ? (
-              /* Mobile: two-line card row */
-              <Box
+              /* Mobile: two-line card row with swipe-to-delete */
+              <SwipeToDeleteRow
                 key={idx}
-                sx={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  px: 1,
-                  py: 0.75,
-                  borderBottom: idx < holidayEntries.length - 1 ? 1 : 0,
-                  borderColor: "divider",
-                  "&:hover": {
-                    bgcolor: alpha(theme.palette.action.hover, 0.04),
-                  },
-                }}
+                isOpen={openSwipeHoliday === idx}
+                onOpen={() => setOpenSwipeHoliday(idx)}
+                onClose={() => setOpenSwipeHoliday(null)}
+                onDelete={() => handleDeleteEntry(idx)}
               >
-                <Box sx={{ minWidth: 0 }}>
+                <Box sx={{ px: 1, py: 0.75 }}>
                   <Typography
                     variant="body2"
                     sx={{
@@ -2521,14 +2518,7 @@ function HolidaysSettings({
                     {entry.source}
                   </Typography>
                 </Box>
-                <IconButton
-                  size="small"
-                  onClick={() => handleDeleteEntry(idx)}
-                  sx={{ flexShrink: 0, ml: 1 }}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Box>
+              </SwipeToDeleteRow>
             ) : (
               /* Desktop: original grid row */
               <Box
@@ -2967,6 +2957,49 @@ export default function Schedules() {
       .catch(() => setAvailableSites([]));
   }, [loadSchedules]);
 
+  const [openSwipeRow, setOpenSwipeRow] = useState<string | null>(null);
+
+  const getTabForSchedule = (row: any): number => {
+    if (
+      (row?.actions ?? []).some(
+        (a: any) => a.action === "setTouHolidayOverride",
+      )
+    )
+      return 4;
+    if (
+      (row?.actions ?? []).some((a: any) => a.action === "setSmartGridCharging")
+    )
+      return 3;
+    if (row?.conditions && Array.isArray(row.conditions)) {
+      const condKey = row.conditions[0]?.condition;
+      if (tabOptions.flow.some((opt) => opt.key === condKey)) return 2;
+      if (tabOptions.powerwall.some((opt) => opt.key === condKey)) return 1;
+    }
+    return 0;
+  };
+
+  const openEditDialogForRow = (row: any) => {
+    setSchedule(row);
+    const tab = getTabForSchedule(row);
+    setDialogTab(tab);
+    setDialogOpen(true);
+    setActionValues(
+      Object.fromEntries(
+        (row.actions || []).map((a: any) => [a.action, a.value]),
+      ),
+    );
+    if (tab === 4) {
+      const holidayCond = (row.conditions ?? []).find(
+        (c: any) => c.condition === "holidayList",
+      );
+      setHolidayEntries(
+        Array.isArray(holidayCond?.value) ? holidayCond.value : [],
+      );
+    } else {
+      setHolidayEntries([]);
+    }
+  };
+
   const columns: GridColDef[] = [
     { field: "id", headerName: "ID", flex: 1, minWidth: 80 },
     {
@@ -3124,81 +3157,37 @@ export default function Schedules() {
       headerName: "",
       width: isMobile ? 80 : 100,
       sortable: false,
-      renderCell: (params) => {
-        const getTabForSchedule = (schedule: any) => {
-          if (
-            (schedule?.actions ?? []).some(
-              (a: any) => a.action === "setTouHolidayOverride",
-            )
-          )
-            return 4;
-          if (
-            (schedule?.actions ?? []).some(
-              (a: any) => a.action === "setSmartGridCharging",
-            )
-          )
-            return 3;
-          if (schedule?.conditions && Array.isArray(schedule.conditions)) {
-            const condKey = schedule.conditions[0]?.condition;
-            if (tabOptions.flow.some((opt) => opt.key === condKey)) return 2;
-            if (tabOptions.powerwall.some((opt) => opt.key === condKey))
-              return 1;
-          }
-          return 0;
-        };
-        return (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              height: "100%",
-              gap: isMobile ? 0.5 : 0,
+      renderCell: (params) => (
+        <Box
+          sx={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            height: "100%",
+            gap: isMobile ? 0.5 : 0,
+          }}
+        >
+          <IconButton
+            size={isMobile ? "small" : "medium"}
+            onClick={(event) => {
+              event.stopPropagation();
+              openEditDialogForRow(params.row);
             }}
           >
-            <IconButton
-              size={isMobile ? "small" : "medium"}
-              onClick={(event) => {
-                event.stopPropagation();
-                setSchedule(params.row);
-                const tab = getTabForSchedule(params.row);
-                setDialogTab(tab);
-                setDialogOpen(true);
-                setActionValues(
-                  Object.fromEntries(
-                    (params.row.actions || []).map((a: any) => [
-                      a.action,
-                      a.value,
-                    ]),
-                  ),
-                );
-                if (tab === 4) {
-                  const holidayCond = (params.row.conditions ?? []).find(
-                    (c: any) => c.condition === "holidayList",
-                  );
-                  setHolidayEntries(
-                    Array.isArray(holidayCond?.value) ? holidayCond.value : [],
-                  );
-                } else {
-                  setHolidayEntries([]);
-                }
-              }}
-            >
-              <EditIcon fontSize={isMobile ? "small" : "medium"} />
-            </IconButton>
-            <IconButton
-              size={isMobile ? "small" : "medium"}
-              onClick={(event) => {
-                event.stopPropagation();
-                setScheduleToDelete(params.row);
-                setConfirmOpen(true);
-              }}
-            >
-              <DeleteIcon fontSize={isMobile ? "small" : "medium"} />
-            </IconButton>
-          </Box>
-        );
-      },
+            <EditIcon fontSize={isMobile ? "small" : "medium"} />
+          </IconButton>
+          <IconButton
+            size={isMobile ? "small" : "medium"}
+            onClick={(event) => {
+              event.stopPropagation();
+              setScheduleToDelete(params.row);
+              setConfirmOpen(true);
+            }}
+          >
+            <DeleteIcon fontSize={isMobile ? "small" : "medium"} />
+          </IconButton>
+        </Box>
+      ),
     },
   ];
 
@@ -3557,20 +3546,83 @@ export default function Schedules() {
           <AddIcon sx={{ fontSize: 24 }} />
         </IconButton>
       </Box>
-      <Box sx={{ height: 400, width: "100%", mt: 2 }}>
-        <DataGrid
-          rows={rows}
-          columns={columns}
-          loading={loading}
-          getRowId={(row) => row.id}
-          disableColumnMenu={isMobile}
-          columnVisibilityModel={{
-            id: false,
-            site_ids: !isMobile,
-            status: !isMobile,
+      {isMobile ? (
+        <Box
+          sx={{
+            border: 1,
+            borderColor: "divider",
+            borderRadius: 1,
+            overflow: "hidden",
+            mt: 2,
           }}
-        />
-      </Box>
+        >
+          {loading ? (
+            <Box display="flex" justifyContent="center" py={4}>
+              <CircularProgress />
+            </Box>
+          ) : rows.length === 0 ? (
+            <Typography variant="body2" color="text.secondary" sx={{ p: 2 }}>
+              No schedules yet. Tap + to create one.
+            </Typography>
+          ) : (
+            rows.map((row) => (
+              <SwipeToDeleteRow
+                key={row.id}
+                isOpen={openSwipeRow === row.id}
+                onOpen={() => setOpenSwipeRow(row.id)}
+                onClose={() => setOpenSwipeRow(null)}
+                onDelete={() => {
+                  setScheduleToDelete(row);
+                  setConfirmOpen(true);
+                }}
+              >
+                <Box display="flex" alignItems="center" px={1.5} py={1} gap={1}>
+                  <Switch
+                    checked={row.enabled ?? true}
+                    size="small"
+                    onChange={() => handleToggleEnabled(row)}
+                  />
+                  <Typography
+                    variant="body2"
+                    noWrap
+                    sx={{
+                      flex: 1,
+                      minWidth: 0,
+                      color:
+                        row.enabled === false
+                          ? "text.disabled"
+                          : "text.primary",
+                    }}
+                  >
+                    {summarizeSchedule(row)}
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    onClick={() => openEditDialogForRow(row)}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              </SwipeToDeleteRow>
+            ))
+          )}
+        </Box>
+      ) : (
+        <Box sx={{ height: 400, width: "100%", mt: 2 }}>
+          <DataGrid
+            rows={rows}
+            columns={columns}
+            loading={loading}
+            getRowId={(row) => row.id}
+            disableColumnMenu={isMobile}
+            columnVisibilityModel={{
+              id: false,
+              site_ids: !isMobile,
+              status: !isMobile,
+            }}
+          />
+        </Box>
+      )}
       <Dialog
         open={dialogOpen}
         onClose={() => setDialogOpen(false)}

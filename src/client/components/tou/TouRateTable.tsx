@@ -7,6 +7,8 @@ import TableHead from "@mui/material/TableHead";
 import TableRow from "@mui/material/TableRow";
 import TextField from "@mui/material/TextField";
 import Typography from "@mui/material/Typography";
+import { useTheme } from "@mui/material/styles";
+import useMediaQuery from "@mui/material/useMediaQuery";
 import {
   ALL_PERIOD_TYPES,
   PERIOD_LABELS,
@@ -22,6 +24,9 @@ interface Props {
 }
 
 export default function TouRateTable({ periods, rates, onChange }: Props) {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const fieldWidth = isMobile ? 95 : 110;
   const usedTypes = Array.from(new Set(periods.map((p) => p.type))).sort(
     (a, b) => ALL_PERIOD_TYPES.indexOf(a) - ALL_PERIOD_TYPES.indexOf(b),
   );
@@ -62,7 +67,9 @@ export default function TouRateTable({ periods, rates, onChange }: Props) {
           <TableBody>
             {usedTypes.map((type) => (
               <TableRow key={type}>
-                <TableCell sx={{ py: 0.5 }}>{PERIOD_LABELS[type]}</TableCell>
+                <TableCell sx={{ py: 0.5, whiteSpace: "nowrap" }}>
+                  {PERIOD_LABELS[type]}
+                </TableCell>
                 <TableCell sx={{ py: 0.5 }}>
                   <TextField
                     type="number"
@@ -77,7 +84,7 @@ export default function TouRateTable({ periods, rates, onChange }: Props) {
                       },
                     }}
                     onChange={(e) => setRate("buy", type, e.target.value)}
-                    sx={{ width: 110 }}
+                    sx={{ width: fieldWidth }}
                   />
                 </TableCell>
                 <TableCell sx={{ py: 0.5 }}>
@@ -94,7 +101,7 @@ export default function TouRateTable({ periods, rates, onChange }: Props) {
                       },
                     }}
                     onChange={(e) => setRate("sell", type, e.target.value)}
-                    sx={{ width: 110 }}
+                    sx={{ width: fieldWidth }}
                   />
                 </TableCell>
               </TableRow>
