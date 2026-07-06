@@ -16,6 +16,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - [Module mocking](#module-mocking)
     - [Logger silencing](#logger-silencing)
     - [Environment variables in tests](#environment-variables-in-tests)
+  - [Accepted security findings](#accepted-security-findings)
+  - [UI / Frontend conventions](#ui--frontend-conventions)
+    - [Mobile-responsive layout](#mobile-responsive-layout)
+    - [Charts](#charts)
   - [Key conventions](#key-conventions)
     - [Request validation](#request-validation)
     - [Security conventions for new routes](#security-conventions-for-new-routes)
@@ -242,6 +246,19 @@ All UI work must support both desktop (≥ 600 px, MUI `sm` and above) and mobil
   1. Desktop (≥ 1280 px): layout unchanged.
   2. Mobile (375 px DevTools emulation): no horizontal scroll, all content reachable.
   Use the Playwright MCP browser to resize and screenshot both viewports.
+
+### Charts
+
+All Recharts-based charts must reuse the shared building blocks in `src/client/components/shared/charts/` instead of re-implementing touch handling, drag-to-zoom, or tick math per chart:
+
+- **`TouchSafeChartFrame`** — wraps `ResponsiveContainer` with `touch-action`/`user-select` CSS so touch-drag on the chart (tooltip scrub, drag-to-zoom) isn't hijacked by the browser's native gestures (page swipe, text selection, iOS's magnifying-glass loupe). Tags the DOM node with `data-energy-chart="true"` so page-level touch handlers (e.g. day-swipe navigation) can detect "this gesture started on a chart" and bail out.
+- **`useDragZoom(minSelectionWidth)`** — drag-to-select zoom state machine (`zoomDomain`/`dragStart`/`dragEnd` + mouse/touch handlers wired to the chart's `onMouseDown`/`onMouseMove`/`onMouseUp`). `minSelectionWidth` is in the chart's own X-axis units (ms for time-series, percent for SOC-based charts).
+- **`ZoomResetButton`** — the absolutely-positioned "Reset zoom" button shown while `zoomDomain` is set.
+- **`niceTickInterval`** (`chartMath.ts`) — computes evenly-spaced axis tick intervals.
+
+**Constraint to respect**: Recharts inspects the *direct* children of `<ComposedChart>` by element type (`XAxis`, `YAxis`, `Tooltip`, `ReferenceArea`, etc.) to decide how to render them. Wrapping one of these in a custom component breaks that detection — Recharts won't recognize it. Axes, `ReferenceLine`/`ReferenceArea`, and other chart-internal elements must stay inline in each chart's JSX; only state logic and elements *outside* the chart tree (the frame, the reset button, tick math) belong in the shared module.
+
+When adding a new chart, start from `EnergyChart.tsx` or `ChargeCurveChart.tsx` as a template rather than writing the touch/zoom scaffolding from scratch.
 
 ## Key conventions
 

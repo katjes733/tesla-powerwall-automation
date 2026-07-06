@@ -5,14 +5,16 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   ReferenceLine,
   ReferenceArea,
 } from "recharts";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import { useTheme, type Theme } from "@mui/material/styles";
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback } from "react";
+import { niceTickInterval } from "../shared/charts/chartMath";
+import { useDragZoom } from "../shared/charts/useDragZoom";
+import TouchSafeChartFrame from "../shared/charts/TouchSafeChartFrame";
+import ZoomResetButton from "../shared/charts/ZoomResetButton";
 
 export interface ChartSeriesConfig {
   dataKey: string;
@@ -40,15 +42,6 @@ function formatTimeInZone(epochMs: number, timezone?: string): string {
     hour12: false,
     timeZone: timezone,
   }).format(new Date(epochMs));
-}
-
-function niceTickInterval(dataMin: number, dataMax: number): number {
-  const range = Math.max(Math.abs(dataMax - dataMin), 1);
-  const rough = range / 5;
-  const exp = Math.floor(Math.log10(rough));
-  const frac = rough / Math.pow(10, exp);
-  const niceFrac = frac <= 1.5 ? 1 : frac <= 3 ? 2 : frac <= 7 ? 5 : 10;
-  return niceFrac * Math.pow(10, exp);
 }
 
 function gradId(label: string, suffix = ""): string {
@@ -137,43 +130,16 @@ export default function EnergyChart({
     : 0;
   const dayEndMs = dayStartMs + 24 * 3600 * 1000;
 
-  // Drag-to-select zoom state.
-  const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
-  const [dragStart, setDragStart] = useState<number | null>(null);
-  const [dragEnd, setDragEnd] = useState<number | null>(null);
-
-  const handleMouseDown = useCallback(
-    (e: { activeLabel?: string | number }) => {
-      if (e.activeLabel != null) {
-        const t = Number(e.activeLabel);
-        setDragStart(t);
-        setDragEnd(null);
-      }
-    },
-    [],
-  );
-
-  const handleMouseMove = useCallback(
-    (e: { activeLabel?: string | number }) => {
-      if (dragStart != null && e.activeLabel != null) {
-        setDragEnd(Number(e.activeLabel));
-      }
-    },
-    [dragStart],
-  );
-
-  const handleMouseUp = useCallback(() => {
-    if (dragStart != null && dragEnd != null && dragStart !== dragEnd) {
-      const from = Math.min(dragStart, dragEnd);
-      const to = Math.max(dragStart, dragEnd);
-      // Only zoom if selection is at least 10 minutes wide.
-      if (to - from >= 10 * 60 * 1000) setZoomDomain([from, to]);
-    }
-    setDragStart(null);
-    setDragEnd(null);
-  }, [dragStart, dragEnd]);
-
-  const resetZoom = useCallback(() => setZoomDomain(null), []);
+  // Drag-to-select zoom; only zoom if selection is at least 10 minutes wide.
+  const {
+    zoomDomain,
+    dragStart,
+    dragEnd,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    resetZoom,
+  } = useDragZoom(10 * 60 * 1000);
 
   // For mirror series, build chart data with two steps:
   // 1. Insert a linearly-interpolated zero-crossing point between any two consecutive
@@ -420,96 +386,81 @@ export default function EnergyChart({
 
   return (
     <Box position="relative">
-      {zoomDomain && (
-        // Placed after the Y-axis (width=60) so it doesn't overlap the Import/Export labels
-        // that sit on the right edge of the chart container.
-        <Box position="absolute" top={4} left={64} zIndex={1}>
-          <Button
-            size="small"
-            variant="text"
-            onClick={resetZoom}
-            sx={{ fontSize: 10, py: 0, minWidth: 0 }}
-          >
-            Reset zoom
-          </Button>
-        </Box>
-      )}
+      {zoomDomain && <ZoomResetButton onClick={resetZoom} />}
 
-      <Box onDoubleClick={resetZoom}>
-        <ResponsiveContainer width="100%" height={height}>
-          <ComposedChart
-            data={displayData}
-            margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-          >
-            <defs>{gradients}</defs>
+      <TouchSafeChartFrame height={height} onDoubleClick={resetZoom}>
+        <ComposedChart
+          data={displayData}
+          margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        >
+          <defs>{gradients}</defs>
 
-            <CartesianGrid
-              vertical={false}
+          <CartesianGrid
+            vertical={false}
+            stroke={theme.palette.divider}
+            strokeDasharray="3 3"
+          />
+
+          <XAxis
+            dataKey="time"
+            type="number"
+            scale="time"
+            domain={xDomain}
+            tickFormatter={(v: number) => formatTimeInZone(v, timezone)}
+            tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+            tickLine={{ stroke: theme.palette.divider }}
+            axisLine={{ stroke: theme.palette.divider }}
+            minTickGap={40}
+          />
+
+          <YAxis
+            domain={
+              hasMirror && yRange
+                ? yRange.domain
+                : ([0, "auto"] as [number, string])
+            }
+            ticks={hasMirror && yRange ? yRange.ticks : undefined}
+            tickFormatter={(v: number) => {
+              const n = Math.round(v * 10) / 10;
+              return `${n % 1 === 0 ? n : n.toFixed(1)} ${unit}`;
+            }}
+            tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+            axisLine={false}
+            tickLine={false}
+            width={60}
+          />
+
+          <Tooltip
+            content={renderTooltip}
+            cursor={{ stroke: theme.palette.divider, strokeWidth: 1 }}
+          />
+
+          {(hasMirror || showZeroLine) && (
+            <ReferenceLine
+              y={0}
               stroke={theme.palette.divider}
-              strokeDasharray="3 3"
+              strokeWidth={1}
             />
+          )}
 
-            <XAxis
-              dataKey="time"
-              type="number"
-              scale="time"
-              domain={xDomain}
-              tickFormatter={(v: number) => formatTimeInZone(v, timezone)}
-              tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
-              tickLine={{ stroke: theme.palette.divider }}
-              axisLine={{ stroke: theme.palette.divider }}
-              minTickGap={40}
+          {/* Drag-selection highlight */}
+          {dragStart != null && dragEnd != null && (
+            <ReferenceArea
+              x1={Math.min(dragStart, dragEnd)}
+              x2={Math.max(dragStart, dragEnd)}
+              fill={theme.palette.primary.main}
+              fillOpacity={0.08}
+              stroke={theme.palette.primary.main}
+              strokeOpacity={0.3}
             />
+          )}
 
-            <YAxis
-              domain={
-                hasMirror && yRange
-                  ? yRange.domain
-                  : ([0, "auto"] as [number, string])
-              }
-              ticks={hasMirror && yRange ? yRange.ticks : undefined}
-              tickFormatter={(v: number) => {
-                const n = Math.round(v * 10) / 10;
-                return `${n % 1 === 0 ? n : n.toFixed(1)} ${unit}`;
-              }}
-              tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
-              axisLine={false}
-              tickLine={false}
-              width={60}
-            />
-
-            <Tooltip
-              content={renderTooltip}
-              cursor={{ stroke: theme.palette.divider, strokeWidth: 1 }}
-            />
-
-            {(hasMirror || showZeroLine) && (
-              <ReferenceLine
-                y={0}
-                stroke={theme.palette.divider}
-                strokeWidth={1}
-              />
-            )}
-
-            {/* Drag-selection highlight */}
-            {dragStart != null && dragEnd != null && (
-              <ReferenceArea
-                x1={Math.min(dragStart, dragEnd)}
-                x2={Math.max(dragStart, dragEnd)}
-                fill={theme.palette.primary.main}
-                fillOpacity={0.08}
-                stroke={theme.palette.primary.main}
-                strokeOpacity={0.3}
-              />
-            )}
-
-            {areas}
-          </ComposedChart>
-        </ResponsiveContainer>
-      </Box>
+          {areas}
+        </ComposedChart>
+      </TouchSafeChartFrame>
 
       {/* Import/Export or Discharge/Charge region labels for mirror series */}
       {series

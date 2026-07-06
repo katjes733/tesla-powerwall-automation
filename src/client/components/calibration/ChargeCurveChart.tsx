@@ -5,13 +5,15 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import { useTheme, type Theme } from "@mui/material/styles";
-import { useMemo, useCallback, useState } from "react";
+import { useMemo, useCallback } from "react";
+import { niceTickInterval } from "../shared/charts/chartMath";
+import { useDragZoom } from "../shared/charts/useDragZoom";
+import TouchSafeChartFrame from "../shared/charts/TouchSafeChartFrame";
+import ZoomResetButton from "../shared/charts/ZoomResetButton";
 
 export interface ChargeCurveBin {
   soc_percent: number;
@@ -22,15 +24,6 @@ export interface ChargeCurveBin {
 interface ChargeCurveChartProps {
   bins: ChargeCurveBin[];
   height?: number;
-}
-
-function niceTickInterval(dataMin: number, dataMax: number): number {
-  const range = Math.max(Math.abs(dataMax - dataMin), 1);
-  const rough = range / 5;
-  const exp = Math.floor(Math.log10(rough));
-  const frac = rough / Math.pow(10, exp);
-  const niceFrac = frac <= 1.5 ? 1 : frac <= 3 ? 2 : frac <= 7 ? 5 : 10;
-  return niceFrac * Math.pow(10, exp);
 }
 
 interface ChartPoint {
@@ -85,40 +78,15 @@ export default function ChargeCurveChart({
   const theme = useTheme();
   const color = theme.palette.primary.main;
 
-  const [zoomDomain, setZoomDomain] = useState<[number, number] | null>(null);
-  const [dragStart, setDragStart] = useState<number | null>(null);
-  const [dragEnd, setDragEnd] = useState<number | null>(null);
-
-  const handleMouseDown = useCallback(
-    (e: { activeLabel?: string | number }) => {
-      if (e.activeLabel != null) {
-        setDragStart(Number(e.activeLabel));
-        setDragEnd(null);
-      }
-    },
-    [],
-  );
-
-  const handleMouseMove = useCallback(
-    (e: { activeLabel?: string | number }) => {
-      if (dragStart != null && e.activeLabel != null) {
-        setDragEnd(Number(e.activeLabel));
-      }
-    },
-    [dragStart],
-  );
-
-  const handleMouseUp = useCallback(() => {
-    if (dragStart != null && dragEnd != null && dragStart !== dragEnd) {
-      const from = Math.min(dragStart, dragEnd);
-      const to = Math.max(dragStart, dragEnd);
-      if (to - from >= 2) setZoomDomain([from, to]);
-    }
-    setDragStart(null);
-    setDragEnd(null);
-  }, [dragStart, dragEnd]);
-
-  const resetZoom = useCallback(() => setZoomDomain(null), []);
+  const {
+    zoomDomain,
+    dragStart,
+    dragEnd,
+    handleMouseDown,
+    handleMouseMove,
+    handleMouseUp,
+    resetZoom,
+  } = useDragZoom(2);
 
   const chartData = useMemo(() => {
     const data = bins.map((b) => ({ soc: b.soc_percent, kw: b.battery_kw }));
@@ -175,97 +143,84 @@ export default function ChargeCurveChart({
 
   return (
     <Box sx={{ position: "relative" }}>
-      {zoomDomain && (
-        <Box sx={{ position: "absolute", top: 4, left: 64, zIndex: 1 }}>
-          <Button
-            size="small"
-            variant="outlined"
-            onClick={resetZoom}
-            sx={{ fontSize: 10, py: 0, minWidth: 0 }}
-          >
-            Reset zoom
-          </Button>
-        </Box>
-      )}
+      {zoomDomain && <ZoomResetButton onClick={resetZoom} variant="outlined" />}
 
-      <Box onDoubleClick={resetZoom}>
-        <ResponsiveContainer width="100%" height={height}>
-          <ComposedChart
-            data={displayData}
-            margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-          >
-            <defs>
-              <linearGradient id="ccg-kw" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={color} stopOpacity={0.35} />
-                <stop offset="100%" stopColor={color} stopOpacity={0.05} />
-              </linearGradient>
-            </defs>
+      <TouchSafeChartFrame height={height} onDoubleClick={resetZoom}>
+        <ComposedChart
+          data={displayData}
+          margin={{ top: 8, right: 12, bottom: 0, left: 0 }}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        >
+          <defs>
+            <linearGradient id="ccg-kw" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={color} stopOpacity={0.05} />
+            </linearGradient>
+          </defs>
 
-            <CartesianGrid
-              vertical={false}
-              stroke={theme.palette.divider}
-              strokeDasharray="3 3"
+          <CartesianGrid
+            vertical={false}
+            stroke={theme.palette.divider}
+            strokeDasharray="3 3"
+          />
+
+          <XAxis
+            dataKey="soc"
+            type="number"
+            domain={zoomDomain ?? xDomain}
+            tickFormatter={(v: number) => `${v}%`}
+            tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+            tickLine={{ stroke: theme.palette.divider }}
+            axisLine={{ stroke: theme.palette.divider }}
+            minTickGap={30}
+          />
+
+          <YAxis
+            domain={[0, yMax]}
+            ticks={yTicks}
+            tickFormatter={(v: number) => {
+              const n = Math.round(v * 10) / 10;
+              return `${n % 1 === 0 ? n : n.toFixed(1)} kW`;
+            }}
+            tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
+            axisLine={false}
+            tickLine={false}
+            width={60}
+          />
+
+          <Tooltip
+            content={renderTooltip}
+            cursor={{ stroke: theme.palette.divider, strokeWidth: 1 }}
+          />
+
+          {dragStart != null && dragEnd != null && (
+            <ReferenceArea
+              x1={Math.min(dragStart, dragEnd)}
+              x2={Math.max(dragStart, dragEnd)}
+              fill={theme.palette.primary.main}
+              fillOpacity={0.08}
+              stroke={theme.palette.primary.main}
+              strokeOpacity={0.3}
             />
+          )}
 
-            <XAxis
-              dataKey="soc"
-              type="number"
-              domain={zoomDomain ?? xDomain}
-              tickFormatter={(v: number) => `${v}%`}
-              tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
-              tickLine={{ stroke: theme.palette.divider }}
-              axisLine={{ stroke: theme.palette.divider }}
-              minTickGap={30}
-            />
-
-            <YAxis
-              domain={[0, yMax]}
-              ticks={yTicks}
-              tickFormatter={(v: number) => {
-                const n = Math.round(v * 10) / 10;
-                return `${n % 1 === 0 ? n : n.toFixed(1)} kW`;
-              }}
-              tick={{ fontSize: 11, fill: theme.palette.text.secondary }}
-              axisLine={false}
-              tickLine={false}
-              width={60}
-            />
-
-            <Tooltip
-              content={renderTooltip}
-              cursor={{ stroke: theme.palette.divider, strokeWidth: 1 }}
-            />
-
-            {dragStart != null && dragEnd != null && (
-              <ReferenceArea
-                x1={Math.min(dragStart, dragEnd)}
-                x2={Math.max(dragStart, dragEnd)}
-                fill={theme.palette.primary.main}
-                fillOpacity={0.08}
-                stroke={theme.palette.primary.main}
-                strokeOpacity={0.3}
-              />
-            )}
-
-            <Area
-              type="monotone"
-              dataKey="kw"
-              name="Charge rate"
-              stroke={color}
-              strokeWidth={1.5}
-              fill="url(#ccg-kw)"
-              fillOpacity={1}
-              dot={false}
-              activeDot={{ r: 3, stroke: color }}
-              isAnimationActive={false}
-              connectNulls={false}
-            />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </Box>
+          <Area
+            type="monotone"
+            dataKey="kw"
+            name="Charge rate"
+            stroke={color}
+            strokeWidth={1.5}
+            fill="url(#ccg-kw)"
+            fillOpacity={1}
+            dot={false}
+            activeDot={{ r: 3, stroke: color }}
+            isAnimationActive={false}
+            connectNulls={false}
+          />
+        </ComposedChart>
+      </TouchSafeChartFrame>
     </Box>
   );
 }
