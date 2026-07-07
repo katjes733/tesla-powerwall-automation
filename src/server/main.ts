@@ -22,7 +22,10 @@ import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
 import { getNewTokenWithCode } from "~/server/util/auth";
 import { upsert as upsertRefreshToken } from "~/server/util/routes/refreshToken";
-import type { TokenData } from "~/server/types/common";
+import {
+  validateOAuthState,
+  exchangeAndSaveToken,
+} from "~/server/util/oauthCallback";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -260,8 +263,6 @@ app.get("/callback", async (req, res) => {
     `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'`,
   );
 
-  const code = req.query.code as string | undefined;
-  const state = req.query.state as string | undefined;
   const stored = req.session.oauthState;
   req.session.oauthState = undefined; // single-use, regardless of outcome
 
@@ -275,62 +276,41 @@ app.get("/callback", async (req, res) => {
     );
   };
 
-  if (!code || !state) {
-    fail("missing_params");
-    return;
-  }
-  if (!stored) {
-    fail("session_expired");
-    return;
-  }
-  if (stored.value !== state) {
-    fail("invalid_state");
-    return;
-  }
-  if (stored.expiresAt < Date.now()) {
-    fail("expired");
+  const validation = validateOAuthState(
+    {
+      code: req.query.code as string | undefined,
+      state: req.query.state as string | undefined,
+    },
+    stored,
+    Date.now(),
+  );
+  if (!validation.ok) {
+    fail(validation.code);
     return;
   }
 
   const redirectUri = `${req.protocol}://${req.get("host")}/callback`;
-  let tokenData: TokenData;
-  try {
-    const tokenResponse = await getNewTokenWithCode(code, redirectUri);
-    if (!tokenResponse.ok) {
-      const errorText = await tokenResponse.text();
+  const result = await exchangeAndSaveToken({
+    code: req.query.code as string,
+    redirectUri,
+    email: validation.email,
+    getToken: getNewTokenWithCode,
+    saveToken: upsertRefreshToken,
+    onError: (code, error) =>
       oauthCallbackLog.error(
-        { err: errorText, email: stored.email },
-        "Tesla token exchange failed",
-      );
-      fail("exchange_failed");
-      return;
-    }
-    tokenData = (await tokenResponse.json()) as TokenData;
-  } catch (error) {
-    oauthCallbackLog.error(
-      { err: error, email: stored.email },
-      "Error exchanging Tesla authorization code",
-    );
-    fail("exchange_failed");
-    return;
-  }
-
-  try {
-    await upsertRefreshToken({
-      email: stored.email,
-      refreshToken: tokenData.refresh_token,
-    });
-  } catch (error) {
-    oauthCallbackLog.error(
-      { err: error, email: stored.email },
-      "Error saving new Tesla refresh token",
-    );
-    fail("save_failed");
+        { err: error, email: validation.email },
+        code === "exchange_failed"
+          ? "Tesla token exchange failed"
+          : "Error saving new Tesla refresh token",
+      ),
+  });
+  if (!result.ok) {
+    fail(result.code);
     return;
   }
 
   oauthCallbackLog.info(
-    { event: "oauth.callback.success", email: stored.email },
+    { event: "oauth.callback.success", email: validation.email },
     "Tesla refresh token regenerated",
   );
   res.type("html").send(renderOAuthCallbackPage({ success: true, nonce }));

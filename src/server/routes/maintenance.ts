@@ -3,6 +3,7 @@ import { v4 } from "uuid";
 import { requireAuth } from "~/server/middleware/auth";
 import { getCurrentAccountEmail } from "~/server/util/currentAccount";
 import { getByEmail } from "~/server/util/routes/refreshToken";
+import { buildTeslaAuthorizeUrl } from "~/server/util/oauthCallback";
 
 const clientId = process.env.TESLA_CLIENT_ID;
 const baseAuthUrl =
@@ -53,12 +54,12 @@ router.post("/refresh-token/start", (req, res) => {
   };
 
   const redirectUri = `${req.protocol}://${req.get("host")}/callback`;
-  const authorizeUrl = new URL(
-    `/oauth2/v3/authorize?response_type=code&client_id=${encodeURIComponent(
-      clientId,
-    )}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=openid%20offline_access%20user_data%20energy_device_data%20energy_cmds&state=${encodeURIComponent(state)}`,
+  const authorizeUrl = buildTeslaAuthorizeUrl({
+    clientId,
     baseAuthUrl,
-  ).toString();
+    redirectUri,
+    state,
+  });
 
   apiLog.info(
     { event: "maintenance.refresh_token.start", email },
