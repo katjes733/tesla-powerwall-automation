@@ -16,7 +16,8 @@ import ConfirmDialog from "../shared/ConfirmDialog";
 interface RefreshTokenStatus {
   email: string;
   hasToken: boolean;
-  expiresAt: string | null;
+  stale: boolean;
+  lastRefreshedAt: string | null;
 }
 
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -44,11 +45,10 @@ function StatusChip({ status }: { status: RefreshTokenStatus }) {
   if (!status.hasToken) {
     return <Chip label="No token" color="error" size="small" />;
   }
-  const daysLeft = dayjs(status.expiresAt).diff(dayjs(), "day");
-  if (daysLeft < 0) return <Chip label="Expired" color="error" size="small" />;
-  if (daysLeft < 7)
-    return <Chip label="Expiring soon" color="warning" size="small" />;
-  return <Chip label="Valid" color="success" size="small" />;
+  if (status.stale) {
+    return <Chip label="Needs attention" color="warning" size="small" />;
+  }
+  return <Chip label="Healthy" color="success" size="small" />;
 }
 
 export default function Maintenance() {
@@ -160,9 +160,10 @@ export default function Maintenance() {
             >
               <Typography variant="body2">{status.email}</Typography>
               <StatusChip status={status} />
-              {status.hasToken && status.expiresAt && (
+              {status.hasToken && status.lastRefreshedAt && (
                 <Typography variant="body2" color="text.secondary">
-                  Expires {dayjs(status.expiresAt).format("MMM D, YYYY h:mm A")}
+                  Last refreshed{" "}
+                  {dayjs(status.lastRefreshedAt).format("MMM D, YYYY h:mm A")}
                 </Typography>
               )}
             </Box>

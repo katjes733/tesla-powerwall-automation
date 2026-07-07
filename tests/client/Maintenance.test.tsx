@@ -27,9 +27,8 @@ function mockStatus(overrides: Partial<Record<string, unknown>> = {}) {
       data: {
         email: "user@example.com",
         hasToken: true,
-        expiresAt: new Date(
-          Date.now() + 30 * 24 * 60 * 60 * 1000,
-        ).toISOString(),
+        stale: false,
+        lastRefreshedAt: new Date().toISOString(),
         ...overrides,
       },
     },
@@ -46,7 +45,26 @@ describe("Maintenance", () => {
     render(<Maintenance />);
 
     expect(await screen.findByText("user@example.com")).toBeInTheDocument();
-    expect(screen.getByText("Valid")).toBeInTheDocument();
+    expect(screen.getByText("Healthy")).toBeInTheDocument();
+  });
+
+  it("shows Healthy immediately after regeneration, even though the access token cache expires soon", async () => {
+    // Regression test: a freshly-regenerated token's `expires_at` (the
+    // access token cache marker) is only ~hours out, which used to be
+    // misread as "expiring soon" — it must not be, since that's expected
+    // and unrelated to the refresh token's real (long) lifetime.
+    mockStatus({ stale: false, lastRefreshedAt: new Date().toISOString() });
+    render(<Maintenance />);
+
+    expect(await screen.findByText("Healthy")).toBeInTheDocument();
+    expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
+  });
+
+  it("shows Needs attention when the token is stale", async () => {
+    mockStatus({ stale: true });
+    render(<Maintenance />);
+
+    expect(await screen.findByText("Needs attention")).toBeInTheDocument();
   });
 
   it("shows an error toast when the status fetch fails", async () => {
@@ -62,7 +80,7 @@ describe("Maintenance", () => {
   });
 
   it("opens a confirmation dialog when clicking Generate New Refresh Token", async () => {
-    mockStatus({ hasToken: false, expiresAt: null });
+    mockStatus({ hasToken: false, stale: false, lastRefreshedAt: null });
     const user = userEvent.setup();
     render(<Maintenance />);
 
@@ -77,7 +95,7 @@ describe("Maintenance", () => {
   });
 
   it("starts the OAuth flow by opening a new tab with the authorize URL on confirm", async () => {
-    mockStatus({ hasToken: false, expiresAt: null });
+    mockStatus({ hasToken: false, stale: false, lastRefreshedAt: null });
     mockPost.mockResolvedValue({
       data: {
         success: true,
@@ -106,7 +124,7 @@ describe("Maintenance", () => {
   });
 
   it("shows an error toast when the popup is blocked", async () => {
-    mockStatus({ hasToken: false, expiresAt: null });
+    mockStatus({ hasToken: false, stale: false, lastRefreshedAt: null });
     mockPost.mockResolvedValue({
       data: {
         success: true,
@@ -169,7 +187,7 @@ describe("Maintenance", () => {
   });
 
   it("maps a known error code to a readable message on a postMessage error event", async () => {
-    mockStatus({ hasToken: false, expiresAt: null });
+    mockStatus({ hasToken: false, stale: false, lastRefreshedAt: null });
     render(<Maintenance />);
     await screen.findByText("user@example.com");
 

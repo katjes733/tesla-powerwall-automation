@@ -50,6 +50,7 @@ export async function exchangeAndSaveToken(opts: {
   saveToken: (_opts: {
     email: string;
     refreshToken: string;
+    expiresAt?: Date;
   }) => Promise<unknown>;
   onError: (_code: OAuthExchangeError, _error: unknown) => void;
 }): Promise<OAuthExchangeResult> {
@@ -68,9 +69,13 @@ export async function exchangeAndSaveToken(opts: {
   }
 
   try {
+    // Mirrors Fleet.doTokenRefresh(): `expires_at` tracks the access
+    // token's own lifetime, not the (much longer-lived) refresh token's —
+    // it's an internal staleness marker, not a user-facing expiry.
     await opts.saveToken({
       email: opts.email,
       refreshToken: tokenData.refresh_token,
+      expiresAt: new Date(Date.now() + tokenData.expires_in * 1000),
     });
   } catch (error) {
     opts.onError("save_failed", error);

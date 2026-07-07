@@ -134,27 +134,38 @@ describe("exchangeAndSaveToken", () => {
     expect(onError).toHaveBeenCalledWith("save_failed", expect.any(Error));
   });
 
-  it("returns ok and saves the refresh token on success", async () => {
+  it("returns ok and saves the refresh token with an expiresAt derived from expires_in", async () => {
     const getToken = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ refresh_token: "new-refresh-token" }),
+      json: async () => ({
+        refresh_token: "new-refresh-token",
+        expires_in: 28800, // 8 hours, Tesla's typical access token TTL
+      }),
     } as unknown as Response);
     const saveToken = vi.fn().mockResolvedValue(undefined);
     const onError = vi.fn();
 
+    const before = Date.now();
     const result = await exchangeAndSaveToken({
       ...baseOpts,
       getToken,
       saveToken,
       onError,
     });
+    const after = Date.now();
 
     expect(result).toEqual({ ok: true });
     expect(getToken).toHaveBeenCalledWith(baseOpts.code, baseOpts.redirectUri);
-    expect(saveToken).toHaveBeenCalledWith({
-      email: baseOpts.email,
-      refreshToken: "new-refresh-token",
-    });
+    expect(saveToken).toHaveBeenCalledTimes(1);
+    const savedArg = saveToken.mock.calls[0][0];
+    expect(savedArg.email).toBe(baseOpts.email);
+    expect(savedArg.refreshToken).toBe("new-refresh-token");
+    expect(savedArg.expiresAt.getTime()).toBeGreaterThanOrEqual(
+      before + 28800 * 1000,
+    );
+    expect(savedArg.expiresAt.getTime()).toBeLessThanOrEqual(
+      after + 28800 * 1000,
+    );
     expect(onError).not.toHaveBeenCalled();
   });
 });

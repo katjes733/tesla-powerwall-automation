@@ -60,17 +60,23 @@ describe("maintenance routes", () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
         success: true,
-        data: { email: "user@example.com", hasToken: false, expiresAt: null },
+        data: {
+          email: "user@example.com",
+          hasToken: false,
+          stale: false,
+          lastRefreshedAt: null,
+        },
       });
     });
 
-    it("returns token info without exposing the raw refresh token", async () => {
-      const expiresAt = new Date("2026-01-01T00:00:00.000Z");
+    it("returns stale:false and lastRefreshedAt when the access token is fresh", async () => {
+      const modifiedTime = new Date("2026-01-01T00:00:00.000Z");
       mockedGetByEmail.mockResolvedValue({
         id: "id-1",
         email: "user@example.com",
         refreshToken: "super-secret-token",
-        expiresAt,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1h in the future
+        modifiedTime,
       });
       const app = buildApp(await loadRouter(), "user@example.com");
       const res = await request(app).get(
@@ -80,9 +86,27 @@ describe("maintenance routes", () => {
       expect(res.body.data).toEqual({
         email: "user@example.com",
         hasToken: true,
-        expiresAt: expiresAt.toISOString(),
+        stale: false,
+        lastRefreshedAt: modifiedTime.toISOString(),
       });
       expect(JSON.stringify(res.body)).not.toContain("super-secret-token");
+    });
+
+    it("returns stale:true when the access token expired more than 2 hours ago", async () => {
+      const modifiedTime = new Date("2026-01-01T00:00:00.000Z");
+      mockedGetByEmail.mockResolvedValue({
+        id: "id-1",
+        email: "user@example.com",
+        refreshToken: "super-secret-token",
+        expiresAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3h in the past
+        modifiedTime,
+      });
+      const app = buildApp(await loadRouter(), "user@example.com");
+      const res = await request(app).get(
+        "/api/maintenance/refresh-token/status",
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.stale).toBe(true);
     });
 
     it("returns 500 when the lookup throws", async () => {
