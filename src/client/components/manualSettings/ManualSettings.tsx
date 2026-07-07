@@ -2,11 +2,7 @@ import {
   Box,
   Button,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
   DialogContentText,
-  DialogTitle,
   FormControl,
   FormControlLabel,
   InputAdornment,
@@ -21,6 +17,7 @@ import { useCallback, useEffect, useState } from "react";
 import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
+import ConfirmDialog from "../shared/ConfirmDialog";
 
 interface SiteSettings {
   backupReserve: number;
@@ -479,29 +476,26 @@ export default function ManualSettings() {
         </>
       )}
 
-      <Dialog open={smartChargingConflict} onClose={cancelGridChargingOverride}>
-        <DialogTitle>Smart Charging Active</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            A smart charging schedule is active for this site and may re-enable
-            grid charging during its next charging window. Disabling it now will
-            only persist until the schedule enables it again.
-          </DialogContentText>
-          <DialogContentText sx={{ mt: 1 }}>
-            Do you want to disable grid charging anyway?
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={cancelGridChargingOverride}>Cancel</Button>
-          <Button
-            onClick={confirmGridChargingOverride}
-            color="warning"
-            variant="contained"
-          >
-            Disable anyway
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={smartChargingConflict}
+        title="Smart Charging Active"
+        description={
+          <>
+            <DialogContentText>
+              A smart charging schedule is active for this site and may
+              re-enable grid charging during its next charging window. Disabling
+              it now will only persist until the schedule enables it again.
+            </DialogContentText>
+            <DialogContentText sx={{ mt: 1 }}>
+              Do you want to disable grid charging anyway?
+            </DialogContentText>
+          </>
+        }
+        onCancel={cancelGridChargingOverride}
+        onConfirm={confirmGridChargingOverride}
+        confirmLabel="Disable anyway"
+        confirmColor="warning"
+      />
     </Box>
   );
 }

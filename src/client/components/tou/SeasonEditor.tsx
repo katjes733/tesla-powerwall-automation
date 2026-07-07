@@ -3,11 +3,7 @@ import Alert from "@mui/material/Alert";
 import AlertTitle from "@mui/material/AlertTitle";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Dialog from "@mui/material/Dialog";
 import TextField from "@mui/material/TextField";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogTitle from "@mui/material/DialogTitle";
 import Divider from "@mui/material/Divider";
 import FormControl from "@mui/material/FormControl";
 import FormControlLabel from "@mui/material/FormControlLabel";
@@ -22,6 +18,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import TouTimeline from "./TouTimeline";
 import TouPeriodList from "./TouPeriodList";
 import TouRateTable from "./TouRateTable";
+import ConfirmDialog from "../shared/ConfirmDialog";
 import type { TouSeason, TouTimeBlock } from "~/shared/types/tou";
 import {
   validateSeason,
@@ -341,31 +338,17 @@ export default function SeasonEditor({ season, onChange }: Props) {
       />
 
       {/* Precision downgrade warning */}
-      <Dialog
+      <ConfirmDialog
         open={showPrecisionWarning}
-        onClose={() => setShowPrecisionWarning(false)}
+        title="Reduce time precision?"
+        description="Some periods have times that are not on 30-minute boundaries. Switching to 30-minute precision will round them to the nearest 30 minutes."
+        onCancel={() => setShowPrecisionWarning(false)}
+        onConfirm={confirmDowngrade}
+        confirmLabel="Round and switch"
+        confirmColor="warning"
         maxWidth="xs"
         fullWidth
-      >
-        <DialogTitle>Reduce time precision?</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Some periods have times that are not on 30-minute boundaries.
-            Switching to 30-minute precision will round them to the nearest 30
-            minutes.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setShowPrecisionWarning(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="warning"
-            onClick={confirmDowngrade}
-          >
-            Round and switch
-          </Button>
-        </DialogActions>
-      </Dialog>
+      />
     </Box>
   );
 }

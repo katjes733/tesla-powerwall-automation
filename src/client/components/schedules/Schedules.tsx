@@ -10,6 +10,7 @@ import DialogTitle from "@mui/material/DialogTitle";
 import DialogContent from "@mui/material/DialogContent";
 import DialogActions from "@mui/material/DialogActions";
 import Button from "@mui/material/Button";
+import ConfirmDialog from "../shared/ConfirmDialog";
 import Tabs from "@mui/material/Tabs";
 import Tab from "@mui/material/Tab";
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
@@ -3861,24 +3862,15 @@ export default function Schedules() {
         setSchedule={setSchedule}
         schedule={schedule}
       />
-      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>Confirm Delete</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to delete this schedule?
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfirmOpen(false)}>Cancel</Button>
-          <Button
-            variant="contained"
-            color="error"
-            onClick={handleDeleteSchedule}
-          >
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Confirm Delete"
+        description="Are you sure you want to delete this schedule?"
+        onCancel={() => setConfirmOpen(false)}
+        onConfirm={handleDeleteSchedule}
+        confirmLabel="Delete"
+        confirmColor="error"
+      />
     </Box>
   );
 }

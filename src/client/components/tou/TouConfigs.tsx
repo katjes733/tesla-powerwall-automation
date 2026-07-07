@@ -2,10 +2,6 @@ import { useState, useEffect, useCallback } from "react";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
-import Dialog from "@mui/material/Dialog";
-import DialogActions from "@mui/material/DialogActions";
-import DialogContent from "@mui/material/DialogContent";
-import DialogTitle from "@mui/material/DialogTitle";
 import FormControlLabel from "@mui/material/FormControlLabel";
 import IconButton from "@mui/material/IconButton";
 import Switch from "@mui/material/Switch";
@@ -25,6 +21,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import TouEditorDialog from "./TouEditorDialog";
+import ConfirmDialog from "../shared/ConfirmDialog";
 import {
   tariffV2ToEditorState,
   editorStateToTariffV2,
@@ -587,53 +584,41 @@ export default function TouConfigs() {
       />
 
       {/* Apply confirmation dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!pendingApply}
-        onClose={() => setPendingApply(null)}
+        onCancel={() => setPendingApply(null)}
+        title="Apply Schedule to Tesla?"
+        description={
+          <>
+            <Typography>
+              Apply <strong>{pendingApply?.config.schedule_name}</strong> to{" "}
+              <strong>{pendingApply?.siteName}</strong>?
+            </Typography>
+            {autoBackup ? (
+              <Typography variant="body2" color="text.secondary" mt={1}>
+                The current Tesla schedule will be automatically backed up
+                before applying.
+              </Typography>
+            ) : (
+              <Typography variant="body2" color="text.secondary" mt={1}>
+                No backup will be created. Use &ldquo;Backup &amp;
+                Confirm&rdquo; to save a backup of the current schedule before
+                applying.
+              </Typography>
+            )}
+          </>
+        }
+        secondaryAction={
+          autoBackup
+            ? undefined
+            : { label: "Backup & Confirm", onClick: () => confirmApply(true) }
+        }
+        onConfirm={() => confirmApply(autoBackup)}
+        confirmLabel="Confirm"
+        confirmLoading={applying}
         maxWidth="xs"
         fullWidth
-      >
-        <DialogTitle>Apply Schedule to Tesla?</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Apply <strong>{pendingApply?.config.schedule_name}</strong> to{" "}
-            <strong>{pendingApply?.siteName}</strong>?
-          </Typography>
-          {autoBackup ? (
-            <Typography variant="body2" color="text.secondary" mt={1}>
-              The current Tesla schedule will be automatically backed up before
-              applying.
-            </Typography>
-          ) : (
-            <Typography variant="body2" color="text.secondary" mt={1}>
-              No backup will be created. Use &ldquo;Backup &amp; Confirm&rdquo;
-              to save a backup of the current schedule before applying.
-            </Typography>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setPendingApply(null)} disabled={applying}>
-            Cancel
-          </Button>
-          {!autoBackup && (
-            <Button
-              variant="outlined"
-              onClick={() => confirmApply(true)}
-              disabled={applying}
-            >
-              {applying ? "Applying…" : "Backup & Confirm"}
-            </Button>
-          )}
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => confirmApply(autoBackup)}
-            disabled={applying}
-          >
-            {applying ? "Applying…" : "Confirm"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      />
     </Box>
   );
 }
