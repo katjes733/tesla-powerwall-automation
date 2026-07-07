@@ -16,6 +16,7 @@ export interface RefreshTokenData {
   email: string;
   refreshToken: string;
   expiresAt: Date;
+  modifiedTime: Date;
 }
 
 export interface Product {

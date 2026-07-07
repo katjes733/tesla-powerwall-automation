@@ -5,6 +5,7 @@ import { getCurrentAccountEmail } from "~/server/util/currentAccount";
 import { getByEmail } from "~/server/util/routes/refreshToken";
 import { buildTeslaAuthorizeUrl } from "~/server/util/oauthCallback";
 import { getPublicOrigin } from "~/server/util/requestOrigin";
+import { isTokenStale } from "~/server/util/notificationDedup";
 
 const clientId = process.env.TESLA_CLIENT_ID;
 const baseAuthUrl =
@@ -27,7 +28,13 @@ router.get("/refresh-token/status", async (req, res, next) => {
       data: {
         email,
         hasToken: !!record,
-        expiresAt: record?.expiresAt ?? null,
+        // `stale` mirrors the same isTokenStale() check the daily token-
+        // staleness cron uses — the DB's `expires_at` is the access token's
+        // own cache expiry (refreshed automatically), not the refresh
+        // token's lifetime, so "stale" (not "expiring soon") is the
+        // meaningful signal here.
+        stale: record ? isTokenStale(record.expiresAt) : false,
+        lastRefreshedAt: record?.modifiedTime ?? null,
       },
     });
   } catch (error: any) {

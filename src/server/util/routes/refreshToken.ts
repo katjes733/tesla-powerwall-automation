@@ -50,6 +50,7 @@ export async function upsert({
       email,
       refreshToken,
       expiresAt: expiresAtDate,
+      modifiedTime: newDate,
     } as RefreshTokenData,
   };
 }
@@ -61,7 +62,7 @@ export async function getByEmail(email: string) {
   return await tokenRepo
     .findOne({
       where: { email },
-      select: ["id", "email", "refresh_token", "expires_at"],
+      select: ["id", "email", "refresh_token", "expires_at", "modified_time"],
     })
     .then((record) => {
       if (record) {
@@ -70,6 +71,7 @@ export async function getByEmail(email: string) {
           email: record.email,
           refreshToken: decryptIfEncrypted(record.refresh_token),
           expiresAt: record.expires_at,
+          modifiedTime: record.modified_time,
         } as RefreshTokenData;
       }
       return null;
