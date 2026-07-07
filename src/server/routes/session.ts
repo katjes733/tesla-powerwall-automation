@@ -50,6 +50,7 @@ declare module "express-session" {
   interface SessionData {
     expiry?: number;
     user?: any;
+    oauthState?: { value: string; email: string; expiresAt: number };
   }
 }
 

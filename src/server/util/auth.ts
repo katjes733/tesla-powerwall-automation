@@ -6,7 +6,10 @@ const baseAuthUrl =
   process.env.TESLA_AUTH_BASE_URL ||
   "https://fleet-auth.prd.vn.cloud.tesla.com";
 
-export async function getNewTokenWithCode(code: string) {
+export async function getNewTokenWithCode(
+  code: string,
+  redirectUriOverride?: string,
+) {
   if (!clientId || !clientSecret) {
     throw new Error(
       "Missing required environment variables: TESLA_CLIENT_ID or TESLA_CLIENT_SECRET",
@@ -18,7 +21,7 @@ export async function getNewTokenWithCode(code: string) {
   params.append("client_id", clientId);
   params.append("client_secret", clientSecret);
   params.append("code", code);
-  params.append("redirect_uri", redirectUri);
+  params.append("redirect_uri", redirectUriOverride || redirectUri);
 
   return fetch(tokenEndpoint, {
     method: "POST",

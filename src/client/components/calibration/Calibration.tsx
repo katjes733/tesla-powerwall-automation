@@ -2,11 +2,6 @@ import {
   Box,
   Button,
   CircularProgress,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
   FormControlLabel,
   Paper,
   Switch,
@@ -20,6 +15,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
+import ConfirmDialog from "../shared/ConfirmDialog";
 import ChargeCurveChart from "./ChargeCurveChart";
 import ScheduleCalibrationDialog from "./ScheduleCalibrationDialog";
 
@@ -1105,87 +1101,46 @@ export default function Calibration() {
       {/* right spacer — yields space to content when viewport is narrow */}
       <Box sx={{ flex: "1 1 20%", minWidth: 0 }} />
 
-      <Dialog open={clearDialogOpen} onClose={() => setClearDialogOpen(false)}>
-        <DialogTitle>Clear Calibration</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This will delete all calibration data for this site. Smart charging
-            will fall back to the component-counting formula until a new
-            calibration is run.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setClearDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={handleClearCalibration}
-            color="error"
-            variant="contained"
-          >
-            Clear
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDialog
+        open={clearDialogOpen}
+        title="Clear Calibration"
+        description="This will delete all calibration data for this site. Smart charging will fall back to the component-counting formula until a new calibration is run."
+        onCancel={() => setClearDialogOpen(false)}
+        onConfirm={handleClearCalibration}
+        confirmLabel="Clear"
+        confirmColor="error"
+      />
 
-      <Dialog
+      <ConfirmDialog
         open={curveClearDialogOpen}
-        onClose={() => setCurveClearDialogOpen(false)}
-      >
-        <DialogTitle>Clear Curve Data</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Choose how much curve data to remove. Removing the last session
-            keeps all earlier sessions and rebuilds the curve from them.
-            Clearing all data resets completely — smart charging will fall back
-            to default estimates until a new calibration is run.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCurveClearDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={() => handleClearCurveCalibration("last-session")}
-            color="error"
-            variant="outlined"
-          >
-            Remove Last Session
-          </Button>
-          <Button
-            onClick={() => handleClearCurveCalibration("all")}
-            color="error"
-            variant="contained"
-          >
-            Clear All Data
-          </Button>
-        </DialogActions>
-      </Dialog>
+        title="Clear Curve Data"
+        description="Choose how much curve data to remove. Removing the last session keeps all earlier sessions and rebuilds the curve from them. Clearing all data resets completely — smart charging will fall back to default estimates until a new calibration is run."
+        onCancel={() => setCurveClearDialogOpen(false)}
+        secondaryAction={{
+          label: "Remove Last Session",
+          onClick: () => handleClearCurveCalibration("last-session"),
+          color: "error",
+          variant: "outlined",
+        }}
+        onConfirm={() => handleClearCurveCalibration("all")}
+        confirmLabel="Clear All Data"
+        confirmColor="error"
+      />
 
-      <Dialog
+      <ConfirmDialog
         open={curveStartDialogOpen}
-        onClose={() => setCurveStartDialogOpen(false)}
-      >
-        <DialogTitle>Start Curve Calibration</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            Add samples to the existing pool to refine the curve, or start fresh
-            by clearing all previous samples first.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setCurveStartDialogOpen(false)}>Cancel</Button>
-          <Button
-            onClick={() => handleStartCurveCalibration("fresh")}
-            color="error"
-            variant="outlined"
-          >
-            Start Fresh
-          </Button>
-          <Button
-            onClick={() => handleStartCurveCalibration("add")}
-            variant="contained"
-          >
-            Add Samples
-          </Button>
-        </DialogActions>
-      </Dialog>
+        title="Start Curve Calibration"
+        description="Add samples to the existing pool to refine the curve, or start fresh by clearing all previous samples first."
+        onCancel={() => setCurveStartDialogOpen(false)}
+        secondaryAction={{
+          label: "Start Fresh",
+          onClick: () => handleStartCurveCalibration("fresh"),
+          color: "error",
+          variant: "outlined",
+        }}
+        onConfirm={() => handleStartCurveCalibration("add")}
+        confirmLabel="Add Samples"
+      />
 
       <ScheduleCalibrationDialog
         open={scheduleDialogOpen}

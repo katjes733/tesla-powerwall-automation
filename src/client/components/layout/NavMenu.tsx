@@ -19,6 +19,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/settings": "Manual Settings",
   "/calibration": "Calibration",
   "/history": "Energy History",
+  "/maintenance": "Maintenance",
 };
 
 export default function NavMenu() {
@@ -97,6 +98,11 @@ export default function NavMenu() {
     navigate("/history");
   }, [navigate]);
 
+  const handleNavigateToMaintenance = useCallback(() => {
+    handleMainMenuClose();
+    navigate("/maintenance");
+  }, [navigate]);
+
   return (
     <AppBar
       position="fixed"
@@ -152,6 +158,9 @@ export default function NavMenu() {
                 </MenuItem>
                 <MenuItem onClick={handleNavigateToHistory}>
                   Energy History
+                </MenuItem>
+                <MenuItem onClick={handleNavigateToMaintenance}>
+                  Maintenance
                 </MenuItem>
               </Menu>
             </>

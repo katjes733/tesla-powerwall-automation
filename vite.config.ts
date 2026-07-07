@@ -37,6 +37,10 @@ export default defineConfig(({ mode }) => {
             ? "https://localhost:3001"
             : "http://localhost:3001",
           secure: false, // allow self-signed cert on the backend
+          // Rewrite the Host header to the backend's so req.get("host") on
+          // the server reflects localhost:3001 (where /callback lives),
+          // not the Vite dev server's own port.
+          changeOrigin: true,
         },
       },
     },

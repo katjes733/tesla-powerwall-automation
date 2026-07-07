@@ -16,13 +16,19 @@ import {
   recoverCurveCalibrations,
 } from "~/server/routes/calibration";
 import { router as SiteSettingsRouter } from "~/server/routes/siteSettings";
+import { router as MaintenanceRouter } from "~/server/routes/maintenance";
 import { RedisStore } from "connect-redis";
 import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
+import { getNewTokenWithCode } from "~/server/util/auth";
+import { upsert as upsertRefreshToken } from "~/server/util/routes/refreshToken";
+import type { TokenData } from "~/server/types/common";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
 import path from "path";
+import dedent from "dedent";
+import { randomBytes } from "crypto";
 
 // connect-redis v9 expects node-redis v4 API ({ EX: ttl }); ioredis v5 uses
 // positional args ('EX', ttl). This adapter bridges the two.
@@ -117,7 +123,11 @@ app.use(
     cookie: {
       httpOnly: true,
       secure: sslEnabled,
-      sameSite: "strict",
+      // "lax" (not "strict") is required so the session cookie is still sent
+      // on Tesla's top-level cross-site redirect back to /callback during the
+      // OAuth flow; CSRF protection there comes from the explicit `state`
+      // param, not from SameSite.
+      sameSite: "lax",
       maxAge: 4 * 60 * 60 * 1000, // 4 hours
     },
   }),
@@ -147,6 +157,184 @@ app.use("/api/auth", SignupVerificationRouter);
 app.use("/api/tou-config", TouConfigRouter);
 app.use("/api/calibration", CalibrationRouter);
 app.use("/api/site-settings", SiteSettingsRouter);
+app.use("/api/maintenance", MaintenanceRouter);
+
+const oauthCallbackLog = logger.child({ service: "oauth-callback" });
+
+const OAUTH_ERROR_MESSAGES: Record<string, string> = {
+  missing_params: "Tesla did not return the expected authorization code.",
+  session_expired:
+    "Your session expired before authorization completed. Please try again.",
+  invalid_state:
+    "This authorization link is no longer valid. Please try again.",
+  expired:
+    "This authorization attempt took too long and expired. Please try again.",
+  exchange_failed: "Tesla rejected the authorization code. Please try again.",
+  save_failed:
+    "The new refresh token could not be saved. Please try again or contact support.",
+};
+
+function renderOAuthCallbackPage(opts: {
+  success: boolean;
+  code?: string;
+  nonce: string;
+}) {
+  const heading = opts.success
+    ? "Authorization Successful"
+    : "Authorization Failed";
+  const message = opts.success
+    ? "Your Tesla refresh token has been updated. This tab will close automatically."
+    : (OAUTH_ERROR_MESSAGES[opts.code || ""] ??
+      "Something went wrong during authorization.");
+  const script = opts.success
+    ? `window.opener && window.opener.postMessage({ source: "tesla-oauth", status: "success" }, window.location.origin);
+        setTimeout(function () { window.close(); }, 1500);`
+    : `window.opener && window.opener.postMessage({ source: "tesla-oauth", status: "error", code: ${JSON.stringify(opts.code || "unknown")} }, window.location.origin);`;
+
+  return dedent`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>${heading}</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        :root {
+          --bg-color: #ffffff;
+          --text-color: #333;
+          --accent-color: #007acc;
+          color-scheme: light dark;
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --bg-color: #121212;
+            --text-color: #e4e6eb;
+            --accent-color: #58a6ff;
+          }
+        }
+        body {
+          margin: 0;
+          padding: 2rem;
+          background-color: var(--bg-color);
+          color: var(--text-color);
+          font-family: system-ui, sans-serif;
+          text-align: center;
+        }
+        h1 { margin-top: 0; font-size: 2rem; }
+        p { font-size: 1rem; }
+        button {
+          margin-top: 1rem;
+          padding: 0.5rem 1.5rem;
+          font-size: 1rem;
+          border-radius: 6px;
+          border: 1px solid var(--accent-color);
+          background: transparent;
+          color: var(--accent-color);
+          cursor: pointer;
+        }
+      </style>
+      <script nonce="${opts.nonce}">
+        window.addEventListener('load', function() {
+          ${script}
+          document.getElementById('oauth-close-btn').addEventListener('click', function () {
+            window.close();
+          });
+        });
+      </script>
+    </head>
+    <body>
+      <h1>${heading}</h1>
+      <p>${message}</p>
+      <button id="oauth-close-btn">Close this tab</button>
+    </body>
+    </html>`;
+}
+
+app.get("/callback", async (req, res) => {
+  // This page is fully self-contained (no external resources), so it gets
+  // its own tight, per-response CSP with a nonce for its inline <script>,
+  // rather than relaxing the app-wide helmet policy.
+  const nonce = randomBytes(16).toString("base64");
+  res.setHeader(
+    "Content-Security-Policy",
+    `default-src 'none'; script-src 'nonce-${nonce}'; style-src 'unsafe-inline'`,
+  );
+
+  const code = req.query.code as string | undefined;
+  const state = req.query.state as string | undefined;
+  const stored = req.session.oauthState;
+  req.session.oauthState = undefined; // single-use, regardless of outcome
+
+  const fail = (errorCode: string) => {
+    res.type("html").send(
+      renderOAuthCallbackPage({
+        success: false,
+        code: errorCode,
+        nonce,
+      }),
+    );
+  };
+
+  if (!code || !state) {
+    fail("missing_params");
+    return;
+  }
+  if (!stored) {
+    fail("session_expired");
+    return;
+  }
+  if (stored.value !== state) {
+    fail("invalid_state");
+    return;
+  }
+  if (stored.expiresAt < Date.now()) {
+    fail("expired");
+    return;
+  }
+
+  const redirectUri = `${req.protocol}://${req.get("host")}/callback`;
+  let tokenData: TokenData;
+  try {
+    const tokenResponse = await getNewTokenWithCode(code, redirectUri);
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      oauthCallbackLog.error(
+        { err: errorText, email: stored.email },
+        "Tesla token exchange failed",
+      );
+      fail("exchange_failed");
+      return;
+    }
+    tokenData = (await tokenResponse.json()) as TokenData;
+  } catch (error) {
+    oauthCallbackLog.error(
+      { err: error, email: stored.email },
+      "Error exchanging Tesla authorization code",
+    );
+    fail("exchange_failed");
+    return;
+  }
+
+  try {
+    await upsertRefreshToken({
+      email: stored.email,
+      refreshToken: tokenData.refresh_token,
+    });
+  } catch (error) {
+    oauthCallbackLog.error(
+      { err: error, email: stored.email },
+      "Error saving new Tesla refresh token",
+    );
+    fail("save_failed");
+    return;
+  }
+
+  oauthCallbackLog.info(
+    { event: "oauth.callback.success", email: stored.email },
+    "Tesla refresh token regenerated",
+  );
+  res.type("html").send(renderOAuthCallbackPage({ success: true, nonce }));
+});
 
 if (process.env.NODE_ENV !== "development") {
   startupLog.info("Serving static files from 'public' directory");
