@@ -13,7 +13,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - [Grafana dashboard](#grafana-dashboard)
   - [Testing](#testing)
     - [Test runner](#test-runner)
+    - [Test coverage expectations for new features](#test-coverage-expectations-for-new-features)
     - [Module mocking](#module-mocking)
+    - [HTTP route tests](#http-route-tests)
+    - [Frontend component tests](#frontend-component-tests)
     - [Logger silencing](#logger-silencing)
     - [Environment variables in tests](#environment-variables-in-tests)
   - [Accepted security findings](#accepted-security-findings)
@@ -163,6 +166,20 @@ npx vitest path/to/file.test.ts # single file
 npx vitest --watch              # watch mode
 ```
 
+### Test coverage expectations for new features
+
+Before implementing a new feature, endpoint, or non-trivial UI flow, identify what should be tested and add the tests alongside the implementation — do not treat tests as optional follow-up work. At minimum, consider:
+
+- **Happy path** — the feature does what it's supposed to with valid input.
+- **Auth/permission boundaries** — protected routes reject unauthenticated/unauthorized requests (401/403).
+- **Input validation failures** — missing/malformed params, both client- and server-side.
+- **External dependency failures** — DB down, Tesla API error/timeout, Redis unavailable — assert the code fails closed (or degrades as designed) rather than throwing unhandled.
+- **Edge cases specific to the feature** — empty state, expired/stale data, race conditions (e.g. starting a flow twice), boundary values.
+
+Prefer extracting pure logic (validation, transformation, URL building) out of route handlers and React effects into small standalone functions — see `src/server/util/oauthCallback.ts` for an example (state/expiry validation and token exchange pulled out of the `/callback` route handler in `main.ts`). Pure functions are cheaper to test exhaustively and don't require mocking Express/React plumbing.
+
+If a scenario doesn't fit the existing testing patterns in this repo (e.g. no HTTP-route-level testing existed before the Maintenance feature, no React component testing existed at all), add the missing scaffolding rather than skipping the test — see [HTTP route tests](#http-route-tests) and [Frontend component tests](#frontend-component-tests) below, both added for exactly this reason.
+
 ### Module mocking
 
 Use `vi.mock()` for module-level mocks. Critically, any mock state (functions, maps, objects) referenced inside a `vi.mock()` factory **must** be declared with `vi.hoisted()` — otherwise the factory runs before the variable is initialised (temporal dead zone error).
@@ -195,6 +212,23 @@ await cronCallbacks["0 9 * * *"]();
 ```typescript
 (Scheduler as unknown as { instance: unknown }).instance = undefined;
 ```
+
+### HTTP route tests
+
+Use `supertest` (devDependency) to exercise an Express `Router` in isolation rather than importing the whole `main.ts` app (which has side effects: DB connection, session/Redis setup, HTTPS server, scheduler init). Mount just the router under test in a minimal `express()` app, with a small middleware injecting a fake `req.session`, and `vi.mock()` any DB/util modules it depends on. See `tests/server/routes/maintenance.test.ts` for the full pattern.
+
+If the router (or its module-scope `const`s) reads `process.env` at import time, use `vi.resetModules()` followed by a fresh `await import("~/server/routes/your-router")` per test case so env changes actually take effect — module-scope reads only happen once per module instance.
+
+**Do not** use a cache-busting query string (`import("~/server/routes/foo?cacheBust=...")`) to force a fresh module instance — Vite's oxc transform mis-parses TypeScript non-null assertions (`!`) in `.ts` files loaded with a query string, causing a confusing parse error unrelated to your code. `vi.resetModules()` avoids this entirely.
+
+### Frontend component tests
+
+Component tests live in `tests/client/` (mirroring `tests/server/`) and use `@testing-library/react` + `jsdom` (both devDependencies).
+
+- **Opt into jsdom per file** — add `/** @vitest-environment jsdom */` as the first line of the test file. The project's default Vitest environment is `node` (needed for server tests); Vitest 4 removed `environmentMatchGlobs`, so per-file opt-in via this docblock is the supported mechanism.
+- **Matchers and cleanup are global** — `tests/client/setup.ts` (registered in `vitest.config.ts` `setupFiles`) imports `@testing-library/jest-dom/vitest` and calls `cleanup()` in `afterEach`. No per-file import needed.
+- **Mocking context/hooks** — mock the relevant context module with `vi.mock()` rather than wrapping the component in real providers, e.g. mocking `axiosInstance` from `AuthContext` and `useNotification` from `NotificationContext`. See `tests/client/Maintenance.test.tsx`.
+- **User interaction** — use `@testing-library/user-event`'s `userEvent.setup()` rather than firing raw DOM events.
 
 ### Logger silencing
 
