@@ -4,6 +4,7 @@ import { requireAuth } from "~/server/middleware/auth";
 import { getCurrentAccountEmail } from "~/server/util/currentAccount";
 import { getByEmail } from "~/server/util/routes/refreshToken";
 import { buildTeslaAuthorizeUrl } from "~/server/util/oauthCallback";
+import { getPublicOrigin } from "~/server/util/requestOrigin";
 
 const clientId = process.env.TESLA_CLIENT_ID;
 const baseAuthUrl =
@@ -53,7 +54,7 @@ router.post("/refresh-token/start", (req, res) => {
     expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
   };
 
-  const redirectUri = `${req.protocol}://${req.get("host")}/callback`;
+  const redirectUri = `${getPublicOrigin(req)}/callback`;
   const authorizeUrl = buildTeslaAuthorizeUrl({
     clientId,
     baseAuthUrl,

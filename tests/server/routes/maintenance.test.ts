@@ -130,5 +130,19 @@ describe("maintenance routes", () => {
       );
       expect(url.searchParams.get("state")).toBeTruthy();
     });
+
+    it("prefers X-Forwarded-Host over Host when behind a reverse proxy", async () => {
+      const app = buildApp(await loadRouter(), "user@example.com");
+      const res = await request(app)
+        .post("/api/maintenance/refresh-token/start")
+        .set("Host", "192.168.2.108:3001")
+        .set("X-Forwarded-Host", "powerwall.example.com");
+
+      expect(res.status).toBe(200);
+      const url = new URL(res.body.data.authorizeUrl);
+      expect(url.searchParams.get("redirect_uri")).toBe(
+        "http://powerwall.example.com/callback",
+      );
+    });
   });
 });

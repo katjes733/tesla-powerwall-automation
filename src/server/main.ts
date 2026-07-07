@@ -26,6 +26,7 @@ import {
   validateOAuthState,
   exchangeAndSaveToken,
 } from "~/server/util/oauthCallback";
+import { getPublicOrigin } from "~/server/util/requestOrigin";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -289,7 +290,7 @@ app.get("/callback", async (req, res) => {
     return;
   }
 
-  const redirectUri = `${req.protocol}://${req.get("host")}/callback`;
+  const redirectUri = `${getPublicOrigin(req)}/callback`;
   const result = await exchangeAndSaveToken({
     code: req.query.code as string,
     redirectUri,
