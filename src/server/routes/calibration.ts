@@ -15,6 +15,10 @@ import type { IBasicEntity } from "~/server/types/common";
 import type { ISiteCalibration } from "~/server/database/models/siteCalibration";
 import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
 import {
+  resolveScheduleOptions,
+  type ISchedule,
+} from "~/server/database/models/schedule";
+import {
   CalibrationStartSchema,
   CalibrationClearSchema,
   CurveClearSchema,
@@ -46,10 +50,23 @@ import {
   runCurveCalibration,
   finalizeCurveCalibration,
   isCalibrationRunningForSite,
+  computeOneTimeSchedulePhase,
+  computeOneTimeScheduleNextRun,
   type CalibrationJob,
   type CurveCalibrationJob,
   type CurveCalibrationRedisPayload,
+  type OneTimeSchedulePhase,
 } from "~/server/util/calibrationService";
+
+interface OneTimeScheduleStatus {
+  id: string;
+  phase: OneTimeSchedulePhase;
+  nextRunAt?: string;
+  timezone: string;
+  lastError?: string;
+  lastErrorTime?: string;
+  lastSuccessTime?: string;
+}
 
 const calibLog = logger.child({ service: "calibration" });
 
@@ -756,6 +773,76 @@ router.get(
       res.json({ success: true, data: { hasTouData: tariffHasData, inPeak } });
     } catch (error: any) {
       calibLog.error({ err: error }, "Error checking peak status");
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/schedule-status",
+  requirePermission("calibration.access"),
+  requireSiteScope({ queryKey: "siteId" }),
+  async (req, res, next) => {
+    const email = getCurrentAccountEmail(req)!;
+    const siteId = req.query.siteId as string | undefined;
+    if (!siteId) {
+      res
+        .status(400)
+        .json({ success: false, message: "siteId query parameter required" });
+      return;
+    }
+    try {
+      const repo = (await AppDataSource.getInstance()).getRepository<
+        IBasicEntity & ISchedule
+      >("Schedule");
+      // Small per-account dataset (see scheduling.ts's GET /all for the same
+      // reasoning) — filter in memory rather than push a jsonb containment
+      // query into the DB layer.
+      const schedules = await repo.findBy({ email });
+      const oneTimeSchedules = schedules.filter(
+        (s) =>
+          resolveScheduleOptions(s.options).runOnce &&
+          (s.site_ids as string[]).includes(siteId),
+      );
+
+      function latestFor(action: string): OneTimeScheduleStatus | null {
+        const matches = oneTimeSchedules
+          .filter((s) => (s.actions ?? []).some((a) => a.action === action))
+          .sort(
+            (a, b) => b.creation_time.getTime() - a.creation_time.getTime(),
+          );
+        const schedule = matches[0];
+        if (!schedule) return null;
+        const phase = computeOneTimeSchedulePhase(schedule);
+        return {
+          id: schedule.id,
+          phase,
+          timezone: schedule.timezone,
+          ...(phase === "pending" && {
+            nextRunAt: computeOneTimeScheduleNextRun(
+              schedule.cron,
+              schedule.timezone,
+            ).toISOString(),
+          }),
+          ...(schedule.last_error && { lastError: schedule.last_error }),
+          ...(schedule.last_error_time && {
+            lastErrorTime: new Date(schedule.last_error_time).toISOString(),
+          }),
+          ...(schedule.last_success_time && {
+            lastSuccessTime: new Date(schedule.last_success_time).toISOString(),
+          }),
+        };
+      }
+
+      res.json({
+        success: true,
+        data: {
+          gridChargeRate: latestFor("calibrate_grid_charge_rate"),
+          curve: latestFor("calibrate_charge_curve"),
+        },
+      });
+    } catch (error: any) {
+      calibLog.error({ err: error }, "Error fetching schedule status");
       next(error);
     }
   },

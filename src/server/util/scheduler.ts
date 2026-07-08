@@ -251,6 +251,18 @@ export class Scheduler {
             ),
           redis,
         );
+        // A one-time schedule that never got the chance to fire (e.g. the
+        // server was down at the target time) still needs to be marked
+        // disabled — otherwise it stays "pending" forever from the
+        // Calibration tab's perspective, since the success/error branches
+        // below (the only other places that disable a runOnce schedule)
+        // never run for a schedule that expires before ever executing.
+        if (resolveScheduleOptions(schedule.options).runOnce) {
+          schedLog.info(
+            "One-time schedule expired without running — disabling",
+          );
+          await upsertScheduleInDb({ id: schedule.id, enabled: false });
+        }
       }
       return;
     }

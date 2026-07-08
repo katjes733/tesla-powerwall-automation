@@ -1,4 +1,5 @@
 import express from "express";
+import { Raw } from "typeorm";
 import { validate as validateCron } from "node-cron";
 import { Scheduler } from "~/server/util/scheduler";
 import AppDataSource from "../database/datasource";
@@ -12,6 +13,7 @@ import {
   isWithinSiteScope,
 } from "~/server/middleware/requirePermission";
 import { getCurrentAccountEmail } from "~/server/util/currentAccount";
+import { resolveScheduleOptions } from "~/server/database/models/schedule";
 import {
   ScheduleUpsertSchema,
   ScheduleDeleteSchema,
@@ -150,10 +152,21 @@ router.get(
     const email = getCurrentAccountEmail(req) as string;
     const actor = req.actor!;
 
+    // This page is for recurring automations only — one-time calibration runs
+    // (options.runOnce: true) are managed from the Calibration tab instead
+    // (see GET /api/calibration/schedule-status) and must never show up here,
+    // regardless of enabled state. A recurring schedule that happens to have
+    // a calibration action attached via this page's own ActionList is a
+    // different thing (runOnce is false/unset for it) and still belongs here.
     if (actor.siteIds === "*") {
       repo
         .findAndCount({
-          where: { email },
+          where: {
+            email,
+            options: Raw(
+              (alias) => `(${alias}->>'runOnce') IS DISTINCT FROM 'true'`,
+            ),
+          },
           take: pageSize,
           skip: (page - 1) * pageSize,
         })
@@ -171,8 +184,10 @@ router.get(
     repo
       .findBy({ email })
       .then((all) => {
-        const visible = all.filter((s) =>
-          isWithinSiteScope(s.site_ids as string[], actor.siteIds),
+        const visible = all.filter(
+          (s) =>
+            isWithinSiteScope(s.site_ids as string[], actor.siteIds) &&
+            !resolveScheduleOptions(s.options).runOnce,
         );
         const total = visible.length;
         const start = (page - 1) * pageSize;

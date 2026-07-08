@@ -65,7 +65,10 @@ import {
   MAX_GRID_RATE_SOC_PERCENT,
   MAX_CURVE_CALIBRATION_SOC_PERCENT,
   MAX_SOLAR_KW,
+  computeOneTimeSchedulePhase,
+  computeOneTimeScheduleNextRun,
 } from "~/server/util/calibrationService";
+import type { ISchedule } from "~/server/database/models/schedule";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -314,5 +317,76 @@ describe("triggerChargeCurveCalibration — success", () => {
 
   afterEach(() => {
     curveJobBySite.clear();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// computeOneTimeSchedulePhase / computeOneTimeScheduleNextRun
+// ---------------------------------------------------------------------------
+
+function makeOneTimeSchedule(overrides: Partial<ISchedule> = {}): ISchedule {
+  return {
+    email: "user@example.com",
+    site_ids: ["1"],
+    cron: "0 12 1 1 *",
+    timezone: "UTC",
+    enabled: false,
+    ...overrides,
+  };
+}
+
+describe("computeOneTimeSchedulePhase", () => {
+  it("returns pending while still enabled (hasn't fired yet)", () => {
+    expect(
+      computeOneTimeSchedulePhase(makeOneTimeSchedule({ enabled: true })),
+    ).toBe("pending");
+  });
+
+  it("returns succeeded when disabled with a last_success_time", () => {
+    expect(
+      computeOneTimeSchedulePhase(
+        makeOneTimeSchedule({ enabled: false, last_success_time: new Date() }),
+      ),
+    ).toBe("succeeded");
+  });
+
+  it("returns failed when disabled with a last_error and no last_success_time", () => {
+    expect(
+      computeOneTimeSchedulePhase(
+        makeOneTimeSchedule({ enabled: false, last_error: "boom" }),
+      ),
+    ).toBe("failed");
+  });
+
+  it("returns expired when disabled with neither a success nor an error recorded", () => {
+    expect(
+      computeOneTimeSchedulePhase(makeOneTimeSchedule({ enabled: false })),
+    ).toBe("expired");
+  });
+});
+
+describe("computeOneTimeScheduleNextRun", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("constructs the target date within the current year", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-06-01T00:00:00Z"));
+    const result = computeOneTimeScheduleNextRun("30 14 12 8 *", "UTC");
+    expect(result.getUTCFullYear()).toBe(2026);
+    expect(result.getUTCMonth()).toBe(7); // August, 0-indexed
+    expect(result.getUTCDate()).toBe(12);
+    expect(result.getUTCHours()).toBe(14);
+    expect(result.getUTCMinutes()).toBe(30);
+  });
+
+  it("rolls over to next year when the target date has already passed this year", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-12-15T00:00:00Z"));
+    const result = computeOneTimeScheduleNextRun("0 9 1 1 *", "UTC");
+    expect(result.getUTCFullYear()).toBe(2027);
+    expect(result.getUTCMonth()).toBe(0);
+    expect(result.getUTCDate()).toBe(1);
   });
 });

@@ -528,4 +528,32 @@ describe("runEvaluation — runOnce cleanup", () => {
     );
     expect(disableCalls).toHaveLength(0);
   });
+
+  it("disables the schedule when it expires unfired and runOnce is true", async () => {
+    mockRedis.exists.mockResolvedValue(0);
+
+    await runEval(freshScheduler(), {
+      ...withOptions({ runOnce: true }),
+      expires_at: new Date(Date.now() - 1000),
+    });
+
+    const disableCalls = upsertCalls().filter(
+      (call) => call[0]?.id === "sched-1" && call[0]?.enabled === false,
+    );
+    expect(disableCalls).toHaveLength(1);
+  });
+
+  it("does not disable the schedule when it expires unfired and runOnce is false", async () => {
+    mockRedis.exists.mockResolvedValue(0);
+
+    await runEval(freshScheduler(), {
+      ...withOptions({ runOnce: false }),
+      expires_at: new Date(Date.now() - 1000),
+    });
+
+    const disableCalls = upsertCalls().filter(
+      (call) => call[0]?.enabled === false,
+    );
+    expect(disableCalls).toHaveLength(0);
+  });
 });

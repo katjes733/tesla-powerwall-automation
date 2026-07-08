@@ -100,6 +100,18 @@ interface CurveStatusResponse {
   socBinCount: number;
 }
 
+type OneTimeSchedulePhase = "pending" | "succeeded" | "failed" | "expired";
+
+interface OneTimeScheduleStatus {
+  id: string;
+  phase: OneTimeSchedulePhase;
+  nextRunAt?: string;
+  timezone: string;
+  lastError?: string;
+  lastErrorTime?: string;
+  lastSuccessTime?: string;
+}
+
 function jobStorageKey(siteId: string) {
   return `calibration_job_${siteId}`;
 }
@@ -113,6 +125,96 @@ function SettingCard({ children }: { children: React.ReactNode }) {
     <Paper variant="outlined" sx={{ p: 3, mb: 2 }}>
       {children}
     </Paper>
+  );
+}
+
+function formatDateTime(iso: string, timezone: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: timezone,
+  }).format(new Date(iso));
+}
+
+// Inline status + Cancel next to a "Schedule" button, reflecting the latest
+// one-time schedule for that site+action — see Calibration.tsx's
+// fetchScheduleStatus and GET /api/calibration/schedule-status. Cancel only
+// applies to a still-pending run; a completed one just shows its outcome
+// (as plain inline text, not a hover tooltip, so it's visible on mobile too)
+// until superseded by scheduling a new run.
+function OneTimeScheduleIndicator({
+  status,
+  permissionAction,
+  onCancelled,
+}: {
+  status: OneTimeScheduleStatus | null;
+  permissionAction:
+    | "calibration.gridChargeRate.scheduleRunOnce"
+    | "calibration.curve.scheduleRunOnce";
+  onCancelled: () => void;
+}) {
+  const { showNotification } = useNotification();
+  const [cancelling, setCancelling] = useState(false);
+
+  if (!status) return null;
+
+  if (status.phase === "pending") {
+    const handleCancel = async () => {
+      setCancelling(true);
+      try {
+        await axiosInstance.post("/api/schedule/delete", { id: status.id });
+        onCancelled();
+      } catch {
+        showNotification("Failed to cancel scheduled run", "error");
+      } finally {
+        setCancelling(false);
+      }
+    };
+    return (
+      <>
+        <Typography variant="body2" color="text.secondary">
+          Next run:{" "}
+          {status.nextRunAt
+            ? formatDateTime(status.nextRunAt, status.timezone)
+            : "unknown"}
+        </Typography>
+        <PermissionButton
+          permissionAction={permissionAction}
+          size="small"
+          color="warning"
+          onClick={handleCancel}
+          disabled={cancelling}
+          startIcon={cancelling ? <CircularProgress size={14} /> : undefined}
+        >
+          Cancel
+        </PermissionButton>
+      </>
+    );
+  }
+
+  if (status.phase === "succeeded") {
+    return (
+      <Typography variant="body2" color="text.secondary">
+        Last run succeeded
+        {status.lastSuccessTime
+          ? ` at ${formatDateTime(status.lastSuccessTime, status.timezone)}`
+          : ""}
+      </Typography>
+    );
+  }
+
+  if (status.phase === "failed") {
+    return (
+      <Typography variant="body2" color="error">
+        Last run failed: {status.lastError ?? "Unknown error"}
+      </Typography>
+    );
+  }
+
+  return (
+    <Typography variant="body2" color="text.secondary">
+      Scheduled run expired without executing
+    </Typography>
   );
 }
 
@@ -179,6 +281,11 @@ export default function Calibration() {
     null,
   );
 
+  const [gridScheduleStatus, setGridScheduleStatus] =
+    useState<OneTimeScheduleStatus | null>(null);
+  const [curveScheduleStatus, setCurveScheduleStatus] =
+    useState<OneTimeScheduleStatus | null>(null);
+
   const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const mainPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const curvePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -229,6 +336,25 @@ export default function Calibration() {
       .catch(() => {});
   }, []);
 
+  const fetchScheduleStatus = useCallback((siteId: string) => {
+    if (!siteId) return;
+    axiosInstance
+      .get<{
+        success: boolean;
+        data: {
+          gridChargeRate: OneTimeScheduleStatus | null;
+          curve: OneTimeScheduleStatus | null;
+        };
+      }>(
+        `/api/calibration/schedule-status?siteId=${encodeURIComponent(siteId)}`,
+      )
+      .then((res) => {
+        setGridScheduleStatus(res.data.data.gridChargeRate);
+        setCurveScheduleStatus(res.data.data.curve);
+      })
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     if (!selectedSiteId) return;
     setLoadingData(true);
@@ -240,6 +366,8 @@ export default function Calibration() {
     setJobStatus(null);
     setCurveJobStatus(null);
     setCurveStatus(null);
+    setGridScheduleStatus(null);
+    setCurveScheduleStatus(null);
 
     const storedJobId = localStorage.getItem(jobStorageKey(selectedSiteId));
     if (storedJobId) {
@@ -287,16 +415,22 @@ export default function Calibration() {
       .catch(() => {});
 
     fetchCurveStatus(selectedSiteId);
+    fetchScheduleStatus(selectedSiteId);
 
     if (mainPollRef.current) clearInterval(mainPollRef.current);
-    mainPollRef.current = setInterval(
-      () => fetchCalibrationData(selectedSiteId),
-      30_000,
-    );
+    mainPollRef.current = setInterval(() => {
+      fetchCalibrationData(selectedSiteId);
+      fetchScheduleStatus(selectedSiteId);
+    }, 30_000);
     return () => {
       if (mainPollRef.current) clearInterval(mainPollRef.current);
     };
-  }, [selectedSiteId, fetchCalibrationData, fetchCurveStatus]);
+  }, [
+    selectedSiteId,
+    fetchCalibrationData,
+    fetchCurveStatus,
+    fetchScheduleStatus,
+  ]);
 
   const pollJob = useCallback(
     (id: string) => {
@@ -679,7 +813,14 @@ export default function Calibration() {
                 </Box>
               )}
 
-              <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  flexWrap: "wrap",
+                }}
+              >
                 <PermissionButton
                   permissionAction="calibration.gridChargeRate.start"
                   variant="contained"
@@ -701,6 +842,11 @@ export default function Calibration() {
                 >
                   Schedule
                 </Button>
+                <OneTimeScheduleIndicator
+                  status={gridScheduleStatus}
+                  permissionAction="calibration.gridChargeRate.scheduleRunOnce"
+                  onCancelled={() => fetchScheduleStatus(selectedSiteId)}
+                />
               </Box>
             </SettingCard>
 
@@ -898,7 +1044,14 @@ export default function Calibration() {
                   </Box>
                 )}
 
-                <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
+                <Box
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 1,
+                    flexWrap: "wrap",
+                  }}
+                >
                   <PermissionButton
                     permissionAction="calibration.curve.start"
                     variant="contained"
@@ -942,6 +1095,11 @@ export default function Calibration() {
                   >
                     Schedule
                   </Button>
+                  <OneTimeScheduleIndicator
+                    status={curveScheduleStatus}
+                    permissionAction="calibration.curve.scheduleRunOnce"
+                    onCancelled={() => fetchScheduleStatus(selectedSiteId)}
+                  />
                 </Box>
               </Paper>
 
@@ -1162,7 +1320,12 @@ export default function Calibration() {
 
       <ScheduleCalibrationDialog
         open={scheduleDialogOpen}
-        onClose={() => setScheduleDialogOpen(false)}
+        onClose={() => {
+          setScheduleDialogOpen(false);
+          // Covers both "saved a new one" and "closed without saving" — a
+          // harmless extra request when nothing changed.
+          fetchScheduleStatus(selectedSiteId);
+        }}
         calibrationType={scheduleDialogType}
         siteId={selectedSiteId}
         siteName={
@@ -1170,6 +1333,11 @@ export default function Calibration() {
           selectedSiteId
         }
         siteTimezone={safeguards?.siteTimezone ?? "UTC"}
+        existingScheduleId={
+          scheduleDialogType === "calibrate_charge_curve"
+            ? curveScheduleStatus?.id
+            : gridScheduleStatus?.id
+        }
         readOnly={scheduleDialogReadOnly}
       />
     </Box>
