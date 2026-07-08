@@ -10,11 +10,16 @@ import {
   type DelegationGrant,
 } from "~/shared/schemas/delegation";
 import { generateAndSendCode } from "~/server/routes/signupVerification";
-import { sendEmail } from "~/server/util/mailing";
+import { sendEmail, escapeHtml } from "~/server/util/mailing";
 import { maskEmail } from "~/server/util/maskEmail";
-import { getPublicOrigin } from "~/server/util/requestOrigin";
+import { getAppUrl } from "~/server/util/requestOrigin";
 
 const apiLog = logger.child({ service: "userAdmin" });
+
+// Longer than the self-signup default (15 min, see signupVerification.ts) —
+// a delegate has to notice the invite email first, possibly much later,
+// whereas a self-signup user is already on the login page waiting for it.
+const DELEGATE_INVITE_CODE_TTL_HOURS = 24;
 
 export const router = express.Router();
 
@@ -143,26 +148,43 @@ router.post(
       );
       const hasCompletedSignup = !!existingRow[0]?.password_hash;
 
-      const loginUrl = `${getPublicOrigin(req)}/login`;
+      const loginUrl = `${getAppUrl(req)}/login`;
+      // Pre-fills the email on the plain login form (no signup) — see
+      // Login.tsx's ?email=... handling.
+      const loginUrlWithEmail = `${loginUrl}?email=${encodeURIComponent(delegate_email)}`;
+      // Deep-links straight to the "enter code + password" step, pre-filled
+      // with the invitee's email — see Login.tsx's ?signup=1&email=... handling.
+      const signupUrl = `${loginUrl}?signup=1&email=${encodeURIComponent(delegate_email)}`;
 
       if (!hasCompletedSignup) {
-        await generateAndSendCode(delegate_email, (code) => ({
-          subject: "You've been invited to manage a Tesla Powerwall account",
-          text: `You've been invited by ${grantedBy} to manage the ${accountEmail} Powerwall account with ${profile} access.
+        await generateAndSendCode(
+          delegate_email,
+          (code) => ({
+            subject: "You've been invited to manage a Tesla Powerwall account",
+            text: `You've been invited by ${grantedBy} to manage the ${accountEmail} Powerwall account with ${profile} access.
 
-To accept, go to ${loginUrl} and click "Sign up". Enter this email address (${delegate_email}) and the verification code below, then choose a password to finish creating your account.
+To accept, go to ${signupUrl} and enter the verification code below, then choose a password to finish creating your account.
 
 Your verification code is: ${code}
 
-This code is valid for 15 minutes.`,
-        }));
+This code is valid for ${DELEGATE_INVITE_CODE_TTL_HOURS} hours.`,
+            html: `<p>You've been invited by ${escapeHtml(grantedBy)} to manage the ${escapeHtml(accountEmail)} Powerwall account with ${escapeHtml(profile)} access.</p>
+<p>To accept, <a href="${escapeHtml(signupUrl)}">click here</a> and enter the verification code below, then choose a password to finish creating your account.</p>
+<p>Your verification code is: <strong>${code}</strong></p>
+<p>This code is valid for ${DELEGATE_INVITE_CODE_TTL_HOURS} hours.</p>`,
+          }),
+          DELEGATE_INVITE_CODE_TTL_HOURS * 60,
+        );
       } else {
         await sendEmail(
           "You've been granted access to a Tesla Powerwall account",
           `You've been granted ${profile} access to the ${accountEmail} Powerwall account by ${grantedBy}.
 
-Log in at ${loginUrl} with your existing account to see it.`,
+Log in at ${loginUrlWithEmail} with your existing account to see it.`,
           delegate_email,
+          true,
+          `<p>You've been granted ${escapeHtml(profile)} access to the ${escapeHtml(accountEmail)} Powerwall account by ${escapeHtml(grantedBy)}.</p>
+<p><a href="${escapeHtml(loginUrlWithEmail)}">Log in</a> with your existing account to see it.</p>`,
         );
       }
 

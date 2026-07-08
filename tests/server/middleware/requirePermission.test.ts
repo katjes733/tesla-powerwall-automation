@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import {
   requirePermission,
   requireSiteScope,
+  isWithinSiteScope,
 } from "~/server/middleware/requirePermission";
 import type { Actor } from "~/server/util/actor";
 
@@ -152,5 +153,38 @@ describe("requireSiteScope", () => {
     const next = vi.fn();
     requireSiteScope({ bodyKey: "siteId" })(req, res, next);
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("isWithinSiteScope", () => {
+  // Regression coverage for a real bug: a delegate scoped to a single site
+  // still saw every site, because powerwall.ts's GET /sites and GET /status
+  // (and scheduling.ts's GET /all) never filtered their response by the
+  // actor's siteIds at all — requireSiteScope only guards a single requested
+  // id, it doesn't filter a list. This is the helper that closes that gap.
+  it("passes everything when the actor has wildcard access", () => {
+    expect(isWithinSiteScope(["site-1", "site-2"], "*")).toBe(true);
+    expect(isWithinSiteScope([], "*")).toBe(true);
+  });
+
+  it("passes when every id is within the actor's granted sites", () => {
+    expect(isWithinSiteScope(["site-1"], ["site-1", "site-2"])).toBe(true);
+    expect(isWithinSiteScope([], ["site-1"])).toBe(true);
+  });
+
+  it("fails when any id falls outside the actor's granted sites", () => {
+    expect(isWithinSiteScope(["site-1", "site-3"], ["site-1"])).toBe(false);
+    expect(isWithinSiteScope(["site-2"], ["site-1"])).toBe(false);
+  });
+
+  it("fails for a delegate scoped to one site when checking a different site", () => {
+    // The exact real-world shape of the reported bug: a delegate granted
+    // exactly one site must not appear "in scope" for any other site id.
+    expect(isWithinSiteScope(["2252499435259085"], ["9999999999999999"])).toBe(
+      false,
+    );
+    expect(isWithinSiteScope(["2252499435259085"], ["2252499435259085"])).toBe(
+      true,
+    );
   });
 });

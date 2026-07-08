@@ -30,6 +30,7 @@ vi.mock("~/server/routes/signupVerification", () => ({
 const mockSendEmail = vi.fn();
 vi.mock("~/server/util/mailing", () => ({
   sendEmail: (...args: unknown[]) => mockSendEmail(...args),
+  escapeHtml: (value: string) => value,
 }));
 
 // Imported dynamically (after resetModules, inside buildApp) rather than
@@ -189,6 +190,9 @@ describe("POST /delegates/invite", () => {
     expect(mockGenerateAndSendCode.mock.calls[0][0]).toBe(
       "new-delegate@example.com",
     );
+    // Longer than the self-signup default (15 min) — an invitee has to
+    // notice the email first, possibly much later.
+    expect(mockGenerateAndSendCode.mock.calls[0][2]).toBe(24 * 60);
     expect(mockSendEmail).not.toHaveBeenCalled();
     expect(res.body.data).toMatchObject({
       tesla_account_email: "owner@example.com",

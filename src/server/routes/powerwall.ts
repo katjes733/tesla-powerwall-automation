@@ -12,6 +12,7 @@ import { resolveActorMiddleware } from "~/server/middleware/resolveActorMiddlewa
 import {
   requirePermission,
   requireSiteScope,
+  isWithinSiteScope,
 } from "~/server/middleware/requirePermission";
 
 const MANUAL_ACTIONS = new Set([
@@ -42,7 +43,10 @@ router.get(
         throwOnError: false,
         mailOnError: false,
       });
-      const products = await fleet.getEnergyProducts();
+      const allProducts = await fleet.getEnergyProducts();
+      const products = allProducts.filter((p) =>
+        isWithinSiteScope([String(p.energy_site_id)], req.actor!.siteIds),
+      );
       const [statuses, siteInfos] = await Promise.all([
         Promise.all(products.map((p) => fleet.getLiveStatus(p))),
         Promise.all(
@@ -112,10 +116,13 @@ router.get(
         throwOnError: false,
         mailOnError: false,
       });
-      const [products, schedules] = await Promise.all([
+      const [allProducts, schedules] = await Promise.all([
         fleet.getEnergyProducts(),
         getByEmail(email),
       ]);
+      const products = allProducts.filter((p) =>
+        isWithinSiteScope([String(p.energy_site_id)], req.actor!.siteIds),
+      );
       const holidaySchedules = schedules.filter((s) =>
         (s.actions ?? []).some((a) => a.action === "setTouHolidayOverride"),
       );

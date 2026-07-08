@@ -70,11 +70,7 @@ export default function SiteMultiSelect({
         </MenuItem>
         <Divider />
         {sites.map((site) => (
-          <MenuItem
-            key={site.id}
-            value={site.id}
-            disabled={selected.includes(ALL_SITES)}
-          >
+          <MenuItem key={site.id} value={site.id}>
             <Checkbox checked={selected.includes(site.id)} size="small" />
             <Box display="flex" alignItems="center" gap={1}>
               <Box

@@ -35,13 +35,16 @@ export default function InviteDelegateDialog({
   const { showNotification } = useNotification();
   const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<ProfileName>("read");
-  const [siteIds, setSiteIds] = useState<string[] | "*">("*");
+  // No default access — forces an explicit choice (a specific site or
+  // deliberately "All sites") rather than silently granting everything if
+  // the admin doesn't touch the selector.
+  const [siteIds, setSiteIds] = useState<string[] | "*">([]);
   const [saving, setSaving] = useState(false);
 
   const reset = () => {
     setEmail("");
     setProfile("read");
-    setSiteIds("*");
+    setSiteIds([]);
   };
 
   const handleClose = () => {
@@ -72,6 +75,7 @@ export default function InviteDelegateDialog({
   };
 
   const isValidEmail = /\S+@\S+\.\S+/.test(email);
+  const hasSiteSelection = siteIds === "*" || siteIds.length > 0;
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
@@ -120,7 +124,7 @@ export default function InviteDelegateDialog({
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={saving || !isValidEmail}
+          disabled={saving || !isValidEmail || !hasSiteSelection}
           startIcon={saving ? <CircularProgress size={16} /> : undefined}
         >
           Send Invite

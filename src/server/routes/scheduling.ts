@@ -9,6 +9,7 @@ import { resolveActorMiddleware } from "~/server/middleware/resolveActorMiddlewa
 import {
   requirePermission,
   requireSiteScope,
+  isWithinSiteScope,
 } from "~/server/middleware/requirePermission";
 import { getCurrentAccountEmail } from "~/server/util/currentAccount";
 import {
@@ -147,16 +148,37 @@ router.get(
 
     const repo = (await AppDataSource.getInstance()).getRepository("Schedule");
     const email = getCurrentAccountEmail(req) as string;
+    const actor = req.actor!;
+
+    if (actor.siteIds === "*") {
+      repo
+        .findAndCount({
+          where: { email },
+          take: pageSize,
+          skip: (page - 1) * pageSize,
+        })
+        .then(([schedules, total]) => {
+          res.json({ success: true, data: schedules, total, page, pageSize });
+        })
+        .catch(next);
+      return;
+    }
+
+    // A site-scoped delegate's visible set depends on each schedule's own
+    // site_ids (jsonb, not a simple column filter) — paginate in memory over
+    // the account's full schedule list rather than push a jsonb containment
+    // query into the DB layer for what's realistically a small list.
     repo
-      .findAndCount({
-        where: { email },
-        take: pageSize,
-        skip: (page - 1) * pageSize,
-      })
-      .then(([schedules, total]) => {
+      .findBy({ email })
+      .then((all) => {
+        const visible = all.filter((s) =>
+          isWithinSiteScope(s.site_ids as string[], actor.siteIds),
+        );
+        const total = visible.length;
+        const start = (page - 1) * pageSize;
         res.json({
           success: true,
-          data: schedules,
+          data: visible.slice(start, start + pageSize),
           total,
           page,
           pageSize,

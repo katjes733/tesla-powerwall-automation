@@ -62,3 +62,15 @@ export function requireSiteScope(opts: {
     next();
   };
 }
+
+// Whether every one of siteIds falls within the actor's granted scope ("*"
+// always passes). Used to filter list endpoints (site lists, schedule lists)
+// down to what a scoped delegate should actually see — requireSiteScope only
+// guards a single requested site/body field, it doesn't filter a response.
+export function isWithinSiteScope(
+  siteIds: string[],
+  actorSiteIds: string[] | "*",
+): boolean {
+  if (actorSiteIds === "*") return true;
+  return siteIds.every((id) => actorSiteIds.includes(id));
+}

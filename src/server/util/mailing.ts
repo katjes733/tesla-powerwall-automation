@@ -29,11 +29,24 @@ function getMailTransporter(): Transporter | null {
 
 const RECIPIENT_EMAIL = process.env.RECIPIENT_EMAIL || "recipient@example.com";
 
+// For interpolating untrusted-ish values (emails, names) into an HTML email
+// body — email clients render HTML, so an unescaped value could inject markup
+// or a spoofed link, not just break layout.
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 export async function sendEmail(
   subject: string,
   text: string,
   recipient = RECIPIENT_EMAIL,
   sendEmail = true,
+  html?: string,
 ): Promise<void> {
   if (!sendEmail) {
     return;
@@ -46,6 +59,7 @@ export async function sendEmail(
         to: recipient,
         subject: subject,
         text: text,
+        ...(html ? { html } : {}),
       });
       mailLog.info(
         { messageId: info.messageId, recipient: maskEmail(recipient) },
