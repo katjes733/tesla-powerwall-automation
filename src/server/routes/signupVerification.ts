@@ -18,6 +18,21 @@ const authLog = logger.child({ service: "auth" });
 
 export const router = express.Router();
 
+// Generates a verification code, stores it, and emails it — shared by the
+// public self-signup /send-code endpoint and the User Admin delegate invite
+// flow (see src/server/routes/userAdmin.ts), which only differs in wording.
+export async function generateAndSendCode(
+  email: string,
+  buildEmail: (_code: string) => { subject: string; text: string },
+): Promise<void> {
+  const secret = generateKey(randomBytes, 20);
+  const code = await totp(hmac, { secret });
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes from now
+  await upsert({ email, code: await argon2.hash(code), expires_at: expiresAt });
+  const { subject, text } = buildEmail(code);
+  await sendEmail(subject, text, email);
+}
+
 router.post(
   "/send-code",
   sendCodeLimiter,
@@ -27,40 +42,27 @@ router.post(
 
     const repo = (await AppDataSource.getInstance()).getRepository("User");
     const existingUser = await repo.findOneBy({ email });
-    if (existingUser) {
+    // A placeholder row (created by a pending delegate invite) has an empty
+    // password_hash sentinel — only a REAL completed signup should block a
+    // resend, otherwise a pending invite could never receive its code.
+    if (existingUser && existingUser.password_hash !== "") {
       res.json({ message: "Verification code sent" });
       return;
     }
 
-    const secret = generateKey(randomBytes, 20);
-    const code = await totp(hmac, { secret });
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes from now
-
-    upsert({ email, code: await argon2.hash(code), expires_at: expiresAt })
-      .then(() =>
-        sendEmail(
-          "Your Tesla Powerwall Automation verification code",
-          `Your verification code is: ${code}\n\nThis code is valid for 15 minutes.`,
-          email,
-        )
-          .then(() => {
-            res.json({ message: "Verification code sent" });
-          })
-          .catch((error) => {
-            authLog.error(
-              { err: error, email: email },
-              "Sending verification code failed",
-            );
-            next(error);
-          }),
-      )
-      .catch((error) => {
-        authLog.error(
-          { err: error, email: email },
-          "Verification code upsert failed",
-        );
-        next(error);
-      });
+    try {
+      await generateAndSendCode(email, (code) => ({
+        subject: "Your Tesla Powerwall Automation verification code",
+        text: `Your verification code is: ${code}\n\nThis code is valid for 15 minutes.`,
+      }));
+      res.json({ message: "Verification code sent" });
+    } catch (error) {
+      authLog.error(
+        { err: error, email: email },
+        "Sending verification code failed",
+      );
+      next(error);
+    }
   },
 );
 

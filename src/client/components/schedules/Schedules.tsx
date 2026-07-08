@@ -57,6 +57,8 @@ import SwipeToDeleteRow from "../shared/SwipeToDeleteRow";
 import dayjs, { type Dayjs } from "dayjs";
 import ScienceIcon from "@mui/icons-material/Science";
 import ShowChartIcon from "@mui/icons-material/ShowChart";
+import PermissionIconButton from "../shared/PermissionIconButton";
+import { useElementState } from "../auth/usePermission";
 
 type HolidayEntry = {
   name: string;
@@ -333,6 +335,7 @@ type SettingsProps = {
   schedule: any;
   setSchedule: (row: any) => void;
   setTabValid: (valid: boolean) => void;
+  readOnly?: boolean;
 };
 
 function parseCronToTimeAndDays(cron: string) {
@@ -618,6 +621,7 @@ function TimeSettings({
   schedule,
   setSchedule,
   setTabValid,
+  readOnly = false,
 }: TimeSettingsProps) {
   const theme = useTheme();
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
@@ -679,6 +683,7 @@ function TimeSettings({
           <TimePicker
             value={timeOfDay ? dayjs(`2000-01-01T${timeOfDay}`) : null}
             onChange={handleTimeOfDayChange}
+            disabled={readOnly}
             slotProps={{
               textField: { size: "small", sx: { width: 160, mt: 1 } },
             }}
@@ -700,6 +705,7 @@ function TimeSettings({
             onChange={handleDaysChange}
             size="small"
             exclusive={false}
+            disabled={readOnly}
             sx={{ gap: { xs: 0.5, sm: 1 }, mt: 1, flexWrap: "wrap" }}
           >
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
@@ -760,6 +766,7 @@ type DynamicSettingsProps = {
   setValues: (
     updater: (prev: Record<string, number>) => Record<string, number>,
   ) => void;
+  readOnly?: boolean;
 };
 
 const DynamicSettings = memo(function DynamicSettings({
@@ -769,6 +776,7 @@ const DynamicSettings = memo(function DynamicSettings({
   values,
   setValues,
   setSchedule,
+  readOnly = false,
 }: DynamicSettingsProps & { setSchedule: (row: any) => void }) {
   const keys = options.map((opt) => opt.key);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -808,6 +816,7 @@ const DynamicSettings = memo(function DynamicSettings({
             control={<Radio />}
             label={<Typography>{opt.label}</Typography>}
             sx={{ mt: idx > 0 ? 2 : 0 }}
+            disabled={readOnly}
           />
           {opt.min !== undefined &&
             opt.max !== undefined &&
@@ -821,7 +830,7 @@ const DynamicSettings = memo(function DynamicSettings({
                   max={opt.max}
                   step={opt.step}
                   sx={{ width: "100%" }}
-                  disabled={selectedOption !== opt.key}
+                  disabled={selectedOption !== opt.key || readOnly}
                 />
                 <TextField
                   value={values[opt.key]}
@@ -832,7 +841,7 @@ const DynamicSettings = memo(function DynamicSettings({
                   inputProps={{ min: opt.min, max: opt.max, step: opt.step }}
                   size="small"
                   sx={{ width: 100 }}
-                  disabled={selectedOption !== opt.key}
+                  disabled={selectedOption !== opt.key || readOnly}
                   InputProps={{
                     endAdornment: <Typography>{opt.unit}</Typography>,
                   }}
@@ -876,6 +885,7 @@ function PowerwallSettings({
   schedule,
   setSchedule,
   setTabValid,
+  readOnly = false,
 }: PowerwallSettingsProps) {
   const theme = useTheme();
   const keys = options.map((opt) => opt.key);
@@ -928,6 +938,7 @@ function PowerwallSettings({
             )
           }
           setSchedule={setSchedule}
+          readOnly={readOnly}
         />
       </Box>
     </>
@@ -965,6 +976,7 @@ function FlowSettings({
   schedule,
   setSchedule,
   setTabValid,
+  readOnly = false,
 }: FlowSettingsProps) {
   const theme = useTheme();
 
@@ -1015,6 +1027,7 @@ function FlowSettings({
             setFlowOptionValues((prev) => updater(prev) as FlowOptionValuesType)
           }
           setSchedule={setSchedule}
+          readOnly={readOnly}
         />
       </Box>
     </>
@@ -1031,6 +1044,7 @@ type ActionProps = {
   setSchedule: (row: any) => void;
   schedule?: any;
   excludeKeys?: string[];
+  readOnly?: boolean;
 };
 
 function ActionList({
@@ -1160,6 +1174,7 @@ function ActionConfigDialog({
   setActionValues,
   setSchedule,
   schedule,
+  readOnly = false,
 }: ActionProps) {
   const theme = useTheme();
   const actionConfig: {
@@ -1385,6 +1400,7 @@ function ActionConfigDialog({
                   max={config.max}
                   step={config.step}
                   onChange={(_, v) => setTempValue(v as number)}
+                  disabled={readOnly}
                 />
                 <TextField
                   type="number"
@@ -1402,6 +1418,7 @@ function ActionConfigDialog({
                   }}
                   size="small"
                   sx={{ width: 100, mt: 2 }}
+                  disabled={readOnly}
                 />
               </>
             )}
@@ -1412,11 +1429,13 @@ function ActionConfigDialog({
                 return (
                   <Box
                     key={option.key}
-                    onClick={() => setTempValue(option.key)}
+                    onClick={
+                      readOnly ? undefined : () => setTempValue(option.key)
+                    }
                     sx={{
-                      cursor: "pointer",
-                      opacity: 1,
-                      pointerEvents: "auto",
+                      cursor: readOnly ? "default" : "pointer",
+                      opacity: readOnly && !selected ? 0.6 : 1,
+                      pointerEvents: readOnly ? "none" : "auto",
                       flexDirection: "column",
                       alignItems: "center",
                       py: 2,
@@ -1461,6 +1480,7 @@ function ActionConfigDialog({
         {actionValues[selectedAction] != null && (
           <Button
             color="warning"
+            disabled={readOnly}
             onClick={() => {
               setActionValues((prev) => {
                 const updated = { ...prev, [selectedAction]: null };
@@ -1481,6 +1501,7 @@ function ActionConfigDialog({
         <Button
           variant="contained"
           color="primary"
+          disabled={readOnly}
           onClick={() => {
             const serialized = CALIBRATION_ACTIONS.has(selectedAction)
               ? "{}"
@@ -1507,9 +1528,16 @@ function ActionConfigDialog({
   );
 }
 
-type BetweenHoursProps = Pick<SettingsProps, "schedule" | "setSchedule">;
+type BetweenHoursProps = Pick<
+  SettingsProps,
+  "schedule" | "setSchedule" | "readOnly"
+>;
 
-function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
+function BetweenHours({
+  schedule,
+  setSchedule,
+  readOnly = false,
+}: BetweenHoursProps) {
   const theme = useTheme();
   const [betweenHours, setBetweenHours] = useState<{
     from: string;
@@ -1611,6 +1639,7 @@ function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
           onChange={(v: Dayjs | null) =>
             handleFromChange(v ? v.format("HH:mm") : "")
           }
+          disabled={readOnly}
           slotProps={{
             field: { clearable: true },
             textField: { size: "small", sx: { width: 130 } },
@@ -1627,6 +1656,7 @@ function BetweenHours({ schedule, setSchedule }: BetweenHoursProps) {
           onChange={(v: Dayjs | null) =>
             handleToChange(v ? v.format("HH:mm") : "")
           }
+          disabled={readOnly}
           slotProps={{
             field: { clearable: true },
             textField: { size: "small", sx: { width: 130 } },
@@ -1669,6 +1699,7 @@ type SmartSettingsProps = {
   setSmartWindow: (w: { from: string; to: string }) => void;
   smartSeasonalWindows: SeasonalWindow[];
   setSmartSeasonalWindows: (windows: SeasonalWindow[]) => void;
+  readOnly?: boolean;
 };
 
 function SmartSettings({
@@ -1686,6 +1717,7 @@ function SmartSettings({
   setSmartWindow,
   smartSeasonalWindows,
   setSmartSeasonalWindows,
+  readOnly = false,
 }: SmartSettingsProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -1843,11 +1875,13 @@ function SmartSettings({
           value="tou"
           control={<Radio size="small" />}
           label="Follow TOU schedule"
+          disabled={readOnly}
         />
         <FormControlLabel
           value="customDays"
           control={<Radio size="small" />}
           label="Custom days"
+          disabled={readOnly}
         />
       </RadioGroup>
 
@@ -1869,6 +1903,7 @@ function SmartSettings({
             onChange={handleDaysChange}
             size="small"
             exclusive={false}
+            disabled={readOnly}
             sx={{ gap: { xs: 0.5, sm: 1 }, flexWrap: "wrap" }}
           >
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
@@ -1957,6 +1992,7 @@ function SmartSettings({
                             )
                           }
                           minutesStep={15}
+                          disabled={readOnly}
                           slotProps={{
                             field: { clearable: true },
                             textField: {
@@ -1977,6 +2013,7 @@ function SmartSettings({
                             )
                           }
                           minutesStep={15}
+                          disabled={readOnly}
                           slotProps={{
                             field: { clearable: true },
                             textField: {
@@ -2037,6 +2074,7 @@ function SmartSettings({
                             )
                           }
                           minutesStep={15}
+                          disabled={readOnly}
                           slotProps={{
                             field: { clearable: true },
                             textField: {
@@ -2057,6 +2095,7 @@ function SmartSettings({
                             )
                           }
                           minutesStep={15}
+                          disabled={readOnly}
                           slotProps={{
                             field: { clearable: true },
                             textField: {
@@ -2114,6 +2153,7 @@ function SmartSettings({
                   handleWindowChange("from", v ? v.format("HH:mm") : "")
                 }
                 minutesStep={15}
+                disabled={readOnly}
                 slotProps={{
                   field: { clearable: true },
                   textField: {
@@ -2132,6 +2172,7 @@ function SmartSettings({
                   handleWindowChange("to", v ? v.format("HH:mm") : "")
                 }
                 minutesStep={15}
+                disabled={readOnly}
                 slotProps={{
                   field: { clearable: true },
                   textField: {
@@ -2197,10 +2238,12 @@ function SiteSelector({
   schedule,
   setSchedule,
   availableSites,
+  readOnly = false,
 }: {
   schedule: any;
   setSchedule: (s: any) => void;
   availableSites: SiteWithTimezone[];
+  readOnly?: boolean;
 }) {
   const selected: string[] = schedule?.site_ids ?? [];
 
@@ -2234,6 +2277,7 @@ function SiteSelector({
         onChange={handleChange}
         input={<OutlinedInput label="Target Sites" />}
         renderValue={renderValue}
+        disabled={readOnly}
       >
         {availableSites.map((site) => {
           const tzMismatch =
@@ -2293,6 +2337,7 @@ type HolidaysSettingsProps = {
   setNewHolidayDow: (dow: string) => void;
   autoPopulateToolbarSource: string;
   setAutoPopulateToolbarSource: (source: string) => void;
+  readOnly?: boolean;
 };
 
 function HolidaysSettings({
@@ -2322,6 +2367,7 @@ function HolidaysSettings({
   setNewHolidayDow,
   autoPopulateToolbarSource,
   setAutoPopulateToolbarSource,
+  readOnly = false,
 }: HolidaysSettingsProps) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -2415,6 +2461,7 @@ function HolidaysSettings({
             value={autoPopulateToolbarSource}
             label="Source"
             onChange={(e) => setAutoPopulateToolbarSource(e.target.value)}
+            disabled={readOnly}
           >
             {HOLIDAY_SOURCES.map((s) => (
               <MenuItem key={s.value} value={s.value}>
@@ -2427,7 +2474,7 @@ function HolidaysSettings({
           variant="outlined"
           size="small"
           onClick={handleOpenAutoPopulate}
-          disabled={autoPopulateToolbarSource === "CUSTOM"}
+          disabled={readOnly || autoPopulateToolbarSource === "CUSTOM"}
         >
           Populate
         </Button>
@@ -2436,6 +2483,7 @@ function HolidaysSettings({
           size="small"
           startIcon={<AddIcon />}
           onClick={() => setAddHolidayOpen(true)}
+          disabled={readOnly}
         >
           Add custom
         </Button>
@@ -2502,6 +2550,7 @@ function HolidaysSettings({
                 onOpen={() => setOpenSwipeHoliday(idx)}
                 onClose={() => setOpenSwipeHoliday(null)}
                 onDelete={() => handleDeleteEntry(idx)}
+                disabled={readOnly}
               >
                 <Box sx={{ px: 1, py: 0.75 }}>
                   <Typography
@@ -2566,7 +2615,11 @@ function HolidaysSettings({
                 >
                   {entry.source}
                 </Typography>
-                <IconButton size="small" onClick={() => handleDeleteEntry(idx)}>
+                <IconButton
+                  size="small"
+                  onClick={() => handleDeleteEntry(idx)}
+                  disabled={readOnly}
+                >
                   <DeleteIcon fontSize="small" />
                 </IconButton>
               </Box>
@@ -2598,6 +2651,7 @@ function HolidaysSettings({
                   generateHolidayTemplates(e.target.value),
                 );
               }}
+              disabled={readOnly}
             >
               {HOLIDAY_SOURCES.filter((s) => s.value !== "CUSTOM").map((s) => (
                 <MenuItem key={s.value} value={s.value}>
@@ -2609,6 +2663,7 @@ function HolidaysSettings({
           <Box sx={{ display: "flex", gap: 1, mb: 1 }}>
             <Button
               size="small"
+              disabled={readOnly}
               onClick={() =>
                 setAutoPopulateSelected(
                   generateHolidayTemplates(autoPopulateSource),
@@ -2617,7 +2672,11 @@ function HolidaysSettings({
             >
               Select all
             </Button>
-            <Button size="small" onClick={() => setAutoPopulateSelected([])}>
+            <Button
+              size="small"
+              disabled={readOnly}
+              onClick={() => setAutoPopulateSelected([])}
+            >
               Deselect all
             </Button>
           </Box>
@@ -2640,6 +2699,7 @@ function HolidaysSettings({
                 <Checkbox
                   checked={checked}
                   size="small"
+                  disabled={readOnly}
                   onChange={() => {
                     if (checked) {
                       setAutoPopulateSelected(
@@ -2683,7 +2743,7 @@ function HolidaysSettings({
           <Button
             variant="contained"
             onClick={handleAddSelected}
-            disabled={autoPopulateSelected.length === 0}
+            disabled={readOnly || autoPopulateSelected.length === 0}
           >
             Add Selected ({autoPopulateSelected.length})
           </Button>
@@ -2706,6 +2766,7 @@ function HolidaysSettings({
             sx={{ mt: 1, mb: 2 }}
             value={newHolidayName}
             onChange={(e) => setNewHolidayName(e.target.value)}
+            disabled={readOnly}
           />
           <ToggleButtonGroup
             value={newHolidayType}
@@ -2713,6 +2774,7 @@ function HolidaysSettings({
             size="small"
             onChange={(_, v) => v && setNewHolidayType(v)}
             sx={{ mb: 2 }}
+            disabled={readOnly}
           >
             <ToggleButton value="fixed">Fixed date</ToggleButton>
             <ToggleButton value="floating">
@@ -2731,6 +2793,7 @@ function HolidaysSettings({
                     setNewHolidayMonth(Number(e.target.value));
                     setNewHolidayDay(1);
                   }}
+                  disabled={readOnly}
                 >
                   {MONTH_NAMES.map((m, i) => (
                     <MenuItem key={i + 1} value={i + 1}>
@@ -2745,6 +2808,7 @@ function HolidaysSettings({
                   value={newHolidayDay}
                   label="Day"
                   onChange={(e) => setNewHolidayDay(Number(e.target.value))}
+                  disabled={readOnly}
                 >
                   {Array.from(
                     { length: daysInMonth(newHolidayMonth) },
@@ -2765,6 +2829,7 @@ function HolidaysSettings({
                   value={newHolidayOrdinal}
                   label="Ordinal"
                   onChange={(e) => setNewHolidayOrdinal(e.target.value)}
+                  disabled={readOnly}
                 >
                   {["1st", "2nd", "3rd", "4th", "last"].map((o) => (
                     <MenuItem key={o} value={o}>
@@ -2779,6 +2844,7 @@ function HolidaysSettings({
                   value={newHolidayDow}
                   label="Day"
                   onChange={(e) => setNewHolidayDow(e.target.value)}
+                  disabled={readOnly}
                 >
                   {["Mon", "Tue", "Wed", "Thu", "Fri"].map((d) => (
                     <MenuItem key={d} value={d}>
@@ -2796,6 +2862,7 @@ function HolidaysSettings({
                   value={newHolidayMonth}
                   label="Month"
                   onChange={(e) => setNewHolidayMonth(Number(e.target.value))}
+                  disabled={readOnly}
                 >
                   {MONTH_NAMES.map((m, i) => (
                     <MenuItem key={i + 1} value={i + 1}>
@@ -2826,6 +2893,7 @@ function HolidaysSettings({
                       Auto (Sat → Fri, Sun → Mon)
                     </Typography>
                   }
+                  disabled={readOnly}
                 />
                 <FormControlLabel
                   value="none"
@@ -2833,6 +2901,7 @@ function HolidaysSettings({
                   label={
                     <Typography variant="body2">None (exact date)</Typography>
                   }
+                  disabled={readOnly}
                 />
               </RadioGroup>
             </FormControl>
@@ -2843,7 +2912,7 @@ function HolidaysSettings({
           <Button
             variant="contained"
             onClick={handleSaveNewHoliday}
-            disabled={!newHolidayName.trim()}
+            disabled={readOnly || !newHolidayName.trim()}
           >
             Save
           </Button>
@@ -2856,6 +2925,10 @@ function HolidaysSettings({
 export default function Schedules() {
   const { user } = useAuth();
   const { showNotification } = useNotification();
+  const scheduleCreateState = useElementState("schedule.create");
+  const scheduleEditState = useElementState("schedule.edit");
+  const scheduleDeleteState = useElementState("schedule.delete");
+  const scheduleToggleEnabledState = useElementState("schedule.toggleEnabled");
   const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -2941,14 +3014,16 @@ export default function Schedules() {
 
   const loadSchedules = useCallback(async () => {
     setLoading(true);
+    // The server always resolves the account email from the authenticated
+    // actor (owner or delegate) — this query param was never read server-side.
     axios
-      .get(`/api/schedule/all`, { params: { email: user.email } })
+      .get(`/api/schedule/all`)
       .then((res) => {
         setRows(res.data.data || []);
       })
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
-  }, [user.email]);
+  }, []);
 
   useEffect(() => {
     loadSchedules();
@@ -3021,6 +3096,7 @@ export default function Schedules() {
           <Switch
             checked={params.row.enabled ?? true}
             size="small"
+            disabled={scheduleToggleEnabledState !== "write"}
             onClick={(e) => e.stopPropagation()}
             onChange={() => handleToggleEnabled(params.row)}
           />
@@ -3168,25 +3244,28 @@ export default function Schedules() {
             gap: isMobile ? 0.5 : 0,
           }}
         >
-          <IconButton
+          <PermissionIconButton
+            permissionAction="schedule.edit"
+            icon={<EditIcon fontSize={isMobile ? "small" : "medium"} />}
+            swapToViewIcon
+            tooltip="Edit"
             size={isMobile ? "small" : "medium"}
             onClick={(event) => {
               event.stopPropagation();
               openEditDialogForRow(params.row);
             }}
-          >
-            <EditIcon fontSize={isMobile ? "small" : "medium"} />
-          </IconButton>
-          <IconButton
+          />
+          <PermissionIconButton
+            permissionAction="schedule.delete"
+            icon={<DeleteIcon fontSize={isMobile ? "small" : "medium"} />}
+            tooltip="Delete"
             size={isMobile ? "small" : "medium"}
             onClick={(event) => {
               event.stopPropagation();
               setScheduleToDelete(params.row);
               setConfirmOpen(true);
             }}
-          >
-            <DeleteIcon fontSize={isMobile ? "small" : "medium"} />
-          </IconButton>
+          />
         </Box>
       ),
     },
@@ -3457,6 +3536,12 @@ export default function Schedules() {
     });
   }, [smartSeasonalWindows, dialogTab, smartMode]);
 
+  // Same ternary pattern used elsewhere (e.g. TouConfigs' editingId ? touConfigEditState
+  // : touConfigCreateState): an existing schedule (has an id) is gated by "edit",
+  // a brand-new one by "create".
+  const dialogReadOnly =
+    (schedule?.id ? scheduleEditState : scheduleCreateState) === "read";
+
   return (
     <Box
       sx={{
@@ -3479,7 +3564,10 @@ export default function Schedules() {
         <Typography variant="body1" color="text.secondary">
           Manage your schedules here.
         </Typography>
-        <IconButton
+        <PermissionIconButton
+          permissionAction="schedule.create"
+          icon={<AddIcon sx={{ fontSize: 24 }} />}
+          tooltip="New Schedule"
           color="primary"
           size="medium"
           sx={{
@@ -3499,7 +3587,10 @@ export default function Schedules() {
               firstSite?.timezone ??
               Intl.DateTimeFormat().resolvedOptions().timeZone;
             const newSchedule = {
-              email: user,
+              // Inert — the server always resolves the actual account email
+              // server-side from the authenticated actor and ignores this field,
+              // but it's kept populated here for type consistency and display.
+              email: user?.teslaAccountEmail ?? "",
               site_ids: onlineSites.map((s) => s.id),
               cron: null,
               timezone: tz,
@@ -3543,9 +3634,7 @@ export default function Schedules() {
             setSmartWindow({ from: "", to: "" });
             setSmartSeasonalWindows([]);
           }}
-        >
-          <AddIcon sx={{ fontSize: 24 }} />
-        </IconButton>
+        />
       </Box>
       {isMobile ? (
         <Box
@@ -3576,11 +3665,13 @@ export default function Schedules() {
                   setScheduleToDelete(row);
                   setConfirmOpen(true);
                 }}
+                disabled={scheduleDeleteState !== "write"}
               >
                 <Box display="flex" alignItems="center" px={1.5} py={1} gap={1}>
                   <Switch
                     checked={row.enabled ?? true}
                     size="small"
+                    disabled={scheduleToggleEnabledState !== "write"}
                     onChange={() => handleToggleEnabled(row)}
                   />
                   <Typography
@@ -3597,12 +3688,14 @@ export default function Schedules() {
                   >
                     {summarizeSchedule(row)}
                   </Typography>
-                  <IconButton
+                  <PermissionIconButton
+                    permissionAction="schedule.edit"
+                    icon={<EditIcon fontSize="small" />}
+                    swapToViewIcon
+                    tooltip="Edit"
                     size="small"
                     onClick={() => openEditDialogForRow(row)}
-                  >
-                    <EditIcon fontSize="small" />
-                  </IconButton>
+                  />
                 </Box>
               </SwipeToDeleteRow>
             ))
@@ -3638,6 +3731,7 @@ export default function Schedules() {
             schedule={schedule}
             setSchedule={setSchedule}
             availableSites={availableSites}
+            readOnly={dialogReadOnly}
           />
           <Tabs
             value={dialogTab}
@@ -3660,6 +3754,7 @@ export default function Schedules() {
                 setTabValid={(valid) =>
                   setTabValid((v) => ({ ...v, time: valid }))
                 }
+                readOnly={dialogReadOnly}
               />
               <ActionList
                 selectedAction={selectedAction}
@@ -3685,6 +3780,7 @@ export default function Schedules() {
                         options: { ...prev?.options, recovery: e.target.value },
                       }))
                     }
+                    disabled={dialogReadOnly}
                   >
                     <MenuItem value="none">Disabled</MenuItem>
                     <MenuItem value="on_restart">On server restart</MenuItem>
@@ -3706,8 +3802,13 @@ export default function Schedules() {
                 setTabValid={(valid) =>
                   setTabValid((v) => ({ ...v, powerwall: valid }))
                 }
+                readOnly={dialogReadOnly}
               />
-              <BetweenHours schedule={schedule} setSchedule={setSchedule} />
+              <BetweenHours
+                schedule={schedule}
+                setSchedule={setSchedule}
+                readOnly={dialogReadOnly}
+              />
               <ActionList
                 selectedAction={selectedAction}
                 setSelectedAction={setSelectedAction}
@@ -3734,8 +3835,13 @@ export default function Schedules() {
                 setTabValid={(valid) =>
                   setTabValid((v) => ({ ...v, flow: valid }))
                 }
+                readOnly={dialogReadOnly}
               />
-              <BetweenHours schedule={schedule} setSchedule={setSchedule} />
+              <BetweenHours
+                schedule={schedule}
+                setSchedule={setSchedule}
+                readOnly={dialogReadOnly}
+              />
               <ActionList
                 selectedAction={selectedAction}
                 setSelectedAction={setSelectedAction}
@@ -3768,6 +3874,7 @@ export default function Schedules() {
                 setSmartWindow={setSmartWindow}
                 smartSeasonalWindows={smartSeasonalWindows}
                 setSmartSeasonalWindows={setSmartSeasonalWindows}
+                readOnly={dialogReadOnly}
               />
             </Box>
           )}
@@ -3800,6 +3907,7 @@ export default function Schedules() {
                 setNewHolidayDow={setNewHolidayDow}
                 autoPopulateToolbarSource={autoPopulateToolbarSource}
                 setAutoPopulateToolbarSource={setAutoPopulateToolbarSource}
+                readOnly={dialogReadOnly}
               />
               <Tooltip
                 title="Controls missed-run recovery. When set to 'On server restart', the schedule fires immediately on startup if a scheduled run was missed while the server was offline."
@@ -3818,6 +3926,7 @@ export default function Schedules() {
                         options: { ...prev?.options, recovery: e.target.value },
                       }))
                     }
+                    disabled={dialogReadOnly}
                   >
                     <MenuItem value="none">Disabled</MenuItem>
                     <MenuItem value="on_restart">On server restart</MenuItem>
@@ -3833,7 +3942,8 @@ export default function Schedules() {
             color="primary"
             sx={{ borderRadius: "10" }}
             disabled={
-              dialogTab === 4
+              dialogReadOnly ||
+              (dialogTab === 4
                 ? !tabValid.holiday || !schedule?.site_ids?.length
                 : dialogTab === 3
                   ? !tabValid.smart
@@ -3845,7 +3955,7 @@ export default function Schedules() {
                           : "flow"
                     ] ||
                     !tabValid.actions ||
-                    !schedule?.site_ids?.length
+                    !schedule?.site_ids?.length)
             }
             onClick={handleSaveSchedule}
           >
@@ -3861,6 +3971,7 @@ export default function Schedules() {
         setActionValues={setActionValues}
         setSchedule={setSchedule}
         schedule={schedule}
+        readOnly={dialogReadOnly}
       />
       <ConfirmDialog
         open={confirmOpen}

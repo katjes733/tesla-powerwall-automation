@@ -2,8 +2,14 @@ import express from "express";
 import moment from "moment-timezone";
 import { v4 as uuidv4 } from "uuid";
 import { Fleet } from "~/server/util/fleet";
-import { requireAuth } from "~/server/middleware/auth";
 import { validateBody } from "~/server/middleware/validateBody";
+import { resolveActorMiddleware } from "~/server/middleware/resolveActorMiddleware";
+import {
+  requirePermission,
+  requireSiteScope,
+} from "~/server/middleware/requirePermission";
+import { getCurrentAccountEmail } from "~/server/util/currentAccount";
+import { runAsSystemScheduler } from "~/server/util/actorContext";
 import AppDataSource from "~/server/database/datasource";
 import type { IBasicEntity } from "~/server/types/common";
 import type { ISiteCalibration } from "~/server/database/models/siteCalibration";
@@ -49,90 +55,97 @@ const calibLog = logger.child({ service: "calibration" });
 
 export const router = express.Router();
 
-router.use(requireAuth);
+router.use(resolveActorMiddleware);
 
-router.get("/", async (req, res, next) => {
-  const email = req.session.user!;
-  const siteId = req.query.siteId as string | undefined;
-  if (!siteId) {
-    res
-      .status(400)
-      .json({ success: false, message: "siteId query parameter required" });
-    return;
-  }
-  try {
-    const fleet = Fleet.getInstance(email, {
-      throwOnError: false,
-      mailOnError: false,
-    });
-    const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => String(p.energy_site_id) === siteId);
-    if (!product) {
-      res.status(404).json({ success: false, message: "Site not found" });
+router.get(
+  "/",
+  requirePermission("calibration.access"),
+  requireSiteScope({ queryKey: "siteId" }),
+  async (req, res, next) => {
+    const email = getCurrentAccountEmail(req)!;
+    const siteId = req.query.siteId as string | undefined;
+    if (!siteId) {
+      res
+        .status(400)
+        .json({ success: false, message: "siteId query parameter required" });
       return;
     }
-    const energySiteId = String(product.energy_site_id);
-    const [liveStatus, siteInfo, db] = await Promise.all([
-      fleet.getLiveStatus(product),
-      fleet.getSiteInfo(product),
-      AppDataSource.getInstance(),
-    ]);
-    const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
-      "SiteCalibration",
-    );
-    const [calibration, curveCalibration] = await Promise.all([
-      repo.findOne({
-        where: {
-          site_id: energySiteId,
-          calibration_type: CALIBRATION_TYPE,
-        },
-        order: { creation_time: "DESC" },
-      }),
-      repo.findOne({
-        where: {
-          site_id: energySiteId,
-          calibration_type: CURVE_CALIBRATION_TYPE,
-        },
-        order: { creation_time: "DESC" },
-      }),
-    ]);
-    const tariff = parseTariffContent(siteInfo?.tariff_content);
-    const timezone = siteInfo?.installation_time_zone ?? "UTC";
-    const now = moment().tz(timezone);
-    const offPeakOk = !hasTouData(tariff) || !isCurrentlyInPeak(tariff!, now);
-    const safeguards = liveStatus
-      ? {
-          socOkGridRate:
-            liveStatus.percentage_charged < MAX_GRID_RATE_SOC_PERCENT,
-          socOkCurve:
-            liveStatus.percentage_charged < MAX_CURVE_CALIBRATION_SOC_PERCENT,
-          solarOk: liveStatus.solar_power / 1000 < MAX_SOLAR_KW,
-          onGrid: liveStatus.island_status !== "island_mode",
-          offPeakOk,
-          socThresholdGridRate: MAX_GRID_RATE_SOC_PERCENT,
-          socThresholdCurve: MAX_CURVE_CALIBRATION_SOC_PERCENT,
-          socValue: Math.round(liveStatus.percentage_charged * 10) / 10,
-          solarKw: Math.round(liveStatus.solar_power / 10) / 100,
-          batteryKw: Math.round(liveStatus.battery_power / 10) / 100,
-          gridKw: Math.round(liveStatus.grid_power / 10) / 100,
-          siteTimezone: timezone,
-        }
-      : null;
-    res.json({
-      success: true,
-      data: { calibration, curveCalibration, safeguards },
-    });
-  } catch (error: any) {
-    calibLog.error({ err: error }, "Error fetching calibration data");
-    next(error);
-  }
-});
+    try {
+      const fleet = Fleet.getInstance(email, {
+        throwOnError: false,
+        mailOnError: false,
+      });
+      const products = await fleet.getEnergyProducts();
+      const product = products.find((p) => String(p.energy_site_id) === siteId);
+      if (!product) {
+        res.status(404).json({ success: false, message: "Site not found" });
+        return;
+      }
+      const energySiteId = String(product.energy_site_id);
+      const [liveStatus, siteInfo, db] = await Promise.all([
+        fleet.getLiveStatus(product),
+        fleet.getSiteInfo(product),
+        AppDataSource.getInstance(),
+      ]);
+      const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
+        "SiteCalibration",
+      );
+      const [calibration, curveCalibration] = await Promise.all([
+        repo.findOne({
+          where: {
+            site_id: energySiteId,
+            calibration_type: CALIBRATION_TYPE,
+          },
+          order: { creation_time: "DESC" },
+        }),
+        repo.findOne({
+          where: {
+            site_id: energySiteId,
+            calibration_type: CURVE_CALIBRATION_TYPE,
+          },
+          order: { creation_time: "DESC" },
+        }),
+      ]);
+      const tariff = parseTariffContent(siteInfo?.tariff_content);
+      const timezone = siteInfo?.installation_time_zone ?? "UTC";
+      const now = moment().tz(timezone);
+      const offPeakOk = !hasTouData(tariff) || !isCurrentlyInPeak(tariff!, now);
+      const safeguards = liveStatus
+        ? {
+            socOkGridRate:
+              liveStatus.percentage_charged < MAX_GRID_RATE_SOC_PERCENT,
+            socOkCurve:
+              liveStatus.percentage_charged < MAX_CURVE_CALIBRATION_SOC_PERCENT,
+            solarOk: liveStatus.solar_power / 1000 < MAX_SOLAR_KW,
+            onGrid: liveStatus.island_status !== "island_mode",
+            offPeakOk,
+            socThresholdGridRate: MAX_GRID_RATE_SOC_PERCENT,
+            socThresholdCurve: MAX_CURVE_CALIBRATION_SOC_PERCENT,
+            socValue: Math.round(liveStatus.percentage_charged * 10) / 10,
+            solarKw: Math.round(liveStatus.solar_power / 10) / 100,
+            batteryKw: Math.round(liveStatus.battery_power / 10) / 100,
+            gridKw: Math.round(liveStatus.grid_power / 10) / 100,
+            siteTimezone: timezone,
+          }
+        : null;
+      res.json({
+        success: true,
+        data: { calibration, curveCalibration, safeguards },
+      });
+    } catch (error: any) {
+      calibLog.error({ err: error }, "Error fetching calibration data");
+      next(error);
+    }
+  },
+);
 
 router.post(
   "/start",
+  requirePermission("calibration.gridChargeRate.start"),
+  requireSiteScope({ bodyKey: "siteId" }),
   validateBody(CalibrationStartSchema),
   async (req, res, next) => {
-    const email = req.session.user!;
+    const email = getCurrentAccountEmail(req)!;
     const { siteId } = req.body;
     try {
       const fleet = Fleet.getInstance(email, {
@@ -216,7 +229,7 @@ router.post(
         product,
         job,
         previousGridState,
-        req.session.user!,
+        getCurrentAccountEmail(req)!,
       ).catch((err) => {
         calibLog.error(
           { err },
@@ -230,7 +243,7 @@ router.post(
   },
 );
 
-router.get("/job", (req, res) => {
+router.get("/job", requirePermission("calibration.access"), (req, res) => {
   const jobId = req.query.jobId as string | undefined;
   if (!jobId) {
     res
@@ -263,9 +276,11 @@ router.get("/job", (req, res) => {
 
 router.delete(
   "/clear",
+  requirePermission("calibration.gridChargeRate.clear"),
+  requireSiteScope({ bodyKey: "siteId" }),
   validateBody(CalibrationClearSchema),
   async (req, res, next) => {
-    const email = req.session.user!;
+    const email = getCurrentAccountEmail(req)!;
     const { siteId } = req.body;
     try {
       const fleet = Fleet.getInstance(email, {
@@ -298,9 +313,11 @@ router.delete(
 
 router.delete(
   "/curve-clear",
+  requirePermission("calibration.curve.clear"),
+  requireSiteScope({ bodyKey: "siteId" }),
   validateBody(CurveClearSchema),
   async (req, res, next) => {
-    const email = req.session.user!;
+    const email = getCurrentAccountEmail(req)!;
     const { siteId, mode } = req.body;
     try {
       const fleet = Fleet.getInstance(email, {
@@ -393,9 +410,11 @@ router.delete(
 
 router.post(
   "/curve-start",
+  requirePermission("calibration.curve.start"),
+  requireSiteScope({ bodyKey: "siteId" }),
   validateBody(CurveStartSchema),
   async (req, res, next) => {
-    const email = req.session.user!;
+    const email = getCurrentAccountEmail(req)!;
     const { siteId } = req.body;
     try {
       const fleet = Fleet.getInstance(email, {
@@ -515,212 +534,232 @@ router.post(
   },
 );
 
-router.get("/curve-job", (req, res) => {
-  const siteId = req.query.siteId as string | undefined;
-  if (!siteId) {
-    res
-      .status(400)
-      .json({ success: false, message: "siteId query parameter required" });
-    return;
-  }
-
-  const jobId = curveJobBySite.get(siteId);
-  if (!jobId) {
-    res.status(404).json({
-      success: false,
-      message: "No active curve calibration for this site",
-    });
-    return;
-  }
-
-  const job = curveJobs.get(jobId);
-  if (!job) {
-    res.status(404).json({ success: false, message: "Job not found" });
-    return;
-  }
-
-  const elapsed = performance.now() - job.startedAt;
-  if (elapsed > CURVE_JOB_TTL_MS) {
-    curveJobs.delete(jobId);
-    curveJobBySite.delete(siteId);
-    res.status(404).json({ success: false, message: "Job expired" });
-    return;
-  }
-
-  res.json({
-    success: true,
-    data: {
-      status: job.status,
-      phase: job.phase,
-      startSoc: job.startSoc,
-      currentSoc: job.currentSoc,
-      sampleCount: job.sampleCount,
-      error: job.error,
-    },
-  });
-});
-
-router.delete("/curve-stop", async (req, res) => {
-  const siteId = req.query.siteId as string | undefined;
-  if (!siteId) {
-    res
-      .status(400)
-      .json({ success: false, message: "siteId query parameter required" });
-    return;
-  }
-  const jobId = curveJobBySite.get(siteId);
-  if (!jobId) {
-    res.status(404).json({
-      success: false,
-      message: "No active curve calibration for this site",
-    });
-    return;
-  }
-  const job = curveJobs.get(jobId);
-  if (!job) {
-    res.status(404).json({ success: false, message: "Job not found" });
-    return;
-  }
-  job.interruptRequested = true;
-  res.json({ success: true });
-});
-
-router.get("/curve-status", async (req, res, next) => {
-  const email = req.session.user!;
-  const siteId = req.query.siteId as string | undefined;
-  if (!siteId) {
-    res
-      .status(400)
-      .json({ success: false, message: "siteId query parameter required" });
-    return;
-  }
-  try {
-    const fleet = Fleet.getInstance(email, {
-      throwOnError: false,
-      mailOnError: false,
-    });
-    const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => String(p.energy_site_id) === siteId);
-    if (!product) {
-      res.status(404).json({ success: false, message: "Site not found" });
+router.get(
+  "/curve-job",
+  requirePermission("calibration.access"),
+  requireSiteScope({ queryKey: "siteId" }),
+  (req, res) => {
+    const siteId = req.query.siteId as string | undefined;
+    if (!siteId) {
+      res
+        .status(400)
+        .json({ success: false, message: "siteId query parameter required" });
       return;
     }
-    const energySiteId = String(product.energy_site_id);
-    const db = await AppDataSource.getInstance();
-    const repo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
-      "SiteCalibrationSample",
-    );
 
-    const samples = (await (repo as any).find({
-      where: { site_id: energySiteId },
-      order: { creation_time: "ASC" },
-    })) as Array<IBasicEntity & ISiteCalibrationSample>;
-
-    if (samples.length === 0) {
-      res.json({
-        success: true,
-        data: {
-          sampleCount: 0,
-          minSoc: null,
-          maxSoc: null,
-          oldestDate: null,
-          newestDate: null,
-          socBinCount: 0,
-        },
+    const jobId = curveJobBySite.get(siteId);
+    if (!jobId) {
+      res.status(404).json({
+        success: false,
+        message: "No active curve calibration for this site",
       });
       return;
     }
 
-    const socs = samples.map((s) => Number(s.sample_data.soc_percent));
-    const minSoc = Math.min(...socs);
-    const maxSoc = Math.max(...socs);
-
-    const buckets = new Map<number, number>();
-    for (const s of samples) {
-      const b = Math.floor(Number(s.sample_data.soc_percent));
-      buckets.set(b, (buckets.get(b) ?? 0) + 1);
+    const job = curveJobs.get(jobId);
+    if (!job) {
+      res.status(404).json({ success: false, message: "Job not found" });
+      return;
     }
-    const socBinCount = [...buckets.values()].filter((c) => c >= 3).length;
+
+    const elapsed = performance.now() - job.startedAt;
+    if (elapsed > CURVE_JOB_TTL_MS) {
+      curveJobs.delete(jobId);
+      curveJobBySite.delete(siteId);
+      res.status(404).json({ success: false, message: "Job expired" });
+      return;
+    }
 
     res.json({
       success: true,
       data: {
-        sampleCount: samples.length,
-        minSoc,
-        maxSoc,
-        oldestDate: samples[0].creation_time,
-        newestDate: samples[samples.length - 1].creation_time,
-        socBinCount,
+        status: job.status,
+        phase: job.phase,
+        startSoc: job.startSoc,
+        currentSoc: job.currentSoc,
+        sampleCount: job.sampleCount,
+        error: job.error,
       },
     });
-  } catch (error: any) {
-    calibLog.error({ err: error }, "Error fetching curve status");
-    next(error);
-  }
-});
+  },
+);
+
+router.delete(
+  "/curve-stop",
+  requirePermission("calibration.curve.stop"),
+  requireSiteScope({ queryKey: "siteId" }),
+  async (req, res) => {
+    const siteId = req.query.siteId as string | undefined;
+    if (!siteId) {
+      res
+        .status(400)
+        .json({ success: false, message: "siteId query parameter required" });
+      return;
+    }
+    const jobId = curveJobBySite.get(siteId);
+    if (!jobId) {
+      res.status(404).json({
+        success: false,
+        message: "No active curve calibration for this site",
+      });
+      return;
+    }
+    const job = curveJobs.get(jobId);
+    if (!job) {
+      res.status(404).json({ success: false, message: "Job not found" });
+      return;
+    }
+    job.interruptRequested = true;
+    res.json({ success: true });
+  },
+);
+
+router.get(
+  "/curve-status",
+  requirePermission("calibration.access"),
+  requireSiteScope({ queryKey: "siteId" }),
+  async (req, res, next) => {
+    const email = getCurrentAccountEmail(req)!;
+    const siteId = req.query.siteId as string | undefined;
+    if (!siteId) {
+      res
+        .status(400)
+        .json({ success: false, message: "siteId query parameter required" });
+      return;
+    }
+    try {
+      const fleet = Fleet.getInstance(email, {
+        throwOnError: false,
+        mailOnError: false,
+      });
+      const products = await fleet.getEnergyProducts();
+      const product = products.find((p) => String(p.energy_site_id) === siteId);
+      if (!product) {
+        res.status(404).json({ success: false, message: "Site not found" });
+        return;
+      }
+      const energySiteId = String(product.energy_site_id);
+      const db = await AppDataSource.getInstance();
+      const repo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
+        "SiteCalibrationSample",
+      );
+
+      const samples = (await (repo as any).find({
+        where: { site_id: energySiteId },
+        order: { creation_time: "ASC" },
+      })) as Array<IBasicEntity & ISiteCalibrationSample>;
+
+      if (samples.length === 0) {
+        res.json({
+          success: true,
+          data: {
+            sampleCount: 0,
+            minSoc: null,
+            maxSoc: null,
+            oldestDate: null,
+            newestDate: null,
+            socBinCount: 0,
+          },
+        });
+        return;
+      }
+
+      const socs = samples.map((s) => Number(s.sample_data.soc_percent));
+      const minSoc = Math.min(...socs);
+      const maxSoc = Math.max(...socs);
+
+      const buckets = new Map<number, number>();
+      for (const s of samples) {
+        const b = Math.floor(Number(s.sample_data.soc_percent));
+        buckets.set(b, (buckets.get(b) ?? 0) + 1);
+      }
+      const socBinCount = [...buckets.values()].filter((c) => c >= 3).length;
+
+      res.json({
+        success: true,
+        data: {
+          sampleCount: samples.length,
+          minSoc,
+          maxSoc,
+          oldestDate: samples[0].creation_time,
+          newestDate: samples[samples.length - 1].creation_time,
+          socBinCount,
+        },
+      });
+    } catch (error: any) {
+      calibLog.error({ err: error }, "Error fetching curve status");
+      next(error);
+    }
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Peak status check endpoint
 // ---------------------------------------------------------------------------
 
-router.get("/peak-status", async (req, res, next) => {
-  const email = req.session.user!;
-  const siteId = req.query.siteId as string | undefined;
-  const timestamp = req.query.timestamp as string | undefined;
-  const hourParam = req.query.hour as string | undefined;
-  const minuteParam = req.query.minute as string | undefined;
-  const dowParam = req.query.daysOfWeek as string | undefined;
-  if (!siteId) {
-    res
-      .status(400)
-      .json({ success: false, message: "siteId query parameter required" });
-    return;
-  }
-  try {
-    const fleet = Fleet.getInstance(email, {
-      throwOnError: false,
-      mailOnError: false,
-    });
-    const products = await fleet.getEnergyProducts();
-    const product = products.find((p) => String(p.energy_site_id) === siteId);
-    if (!product) {
-      res.status(404).json({ success: false, message: "Site not found" });
+router.get(
+  "/peak-status",
+  requirePermission("calibration.access"),
+  requireSiteScope({ queryKey: "siteId" }),
+  async (req, res, next) => {
+    const email = getCurrentAccountEmail(req)!;
+    const siteId = req.query.siteId as string | undefined;
+    const timestamp = req.query.timestamp as string | undefined;
+    const hourParam = req.query.hour as string | undefined;
+    const minuteParam = req.query.minute as string | undefined;
+    const dowParam = req.query.daysOfWeek as string | undefined;
+    if (!siteId) {
+      res
+        .status(400)
+        .json({ success: false, message: "siteId query parameter required" });
       return;
     }
-    const siteInfo = await fleet.getSiteInfo(product);
-    if (!siteInfo) {
-      res.json({ success: true, data: { hasTouData: false, inPeak: false } });
-      return;
-    }
-    const tariff = parseTariffContent(siteInfo.tariff_content);
-    const tariffHasData = hasTouData(tariff);
-    let inPeak = false;
-    if (tariffHasData && tariff) {
-      if (hourParam !== undefined && minuteParam !== undefined) {
-        // All-seasons check for recurring schedules.
-        const hour = parseInt(hourParam, 10);
-        const minute = parseInt(minuteParam, 10);
-        const teslaDows = dowParam
-          ? dowParam
-              .split(",")
-              .map(Number)
-              .filter((n) => !isNaN(n))
-          : [];
-        inPeak = isInPeakInAnySeasonAtTime(tariff, hour, minute, teslaDows);
-      } else {
-        const timezone = siteInfo.installation_time_zone ?? "UTC";
-        const checkMoment = timestamp
-          ? moment(timestamp).tz(timezone)
-          : moment().tz(timezone);
-        inPeak = isCurrentlyInPeak(tariff, checkMoment);
+    try {
+      const fleet = Fleet.getInstance(email, {
+        throwOnError: false,
+        mailOnError: false,
+      });
+      const products = await fleet.getEnergyProducts();
+      const product = products.find((p) => String(p.energy_site_id) === siteId);
+      if (!product) {
+        res.status(404).json({ success: false, message: "Site not found" });
+        return;
       }
+      const siteInfo = await fleet.getSiteInfo(product);
+      if (!siteInfo) {
+        res.json({ success: true, data: { hasTouData: false, inPeak: false } });
+        return;
+      }
+      const tariff = parseTariffContent(siteInfo.tariff_content);
+      const tariffHasData = hasTouData(tariff);
+      let inPeak = false;
+      if (tariffHasData && tariff) {
+        if (hourParam !== undefined && minuteParam !== undefined) {
+          // All-seasons check for recurring schedules.
+          const hour = parseInt(hourParam, 10);
+          const minute = parseInt(minuteParam, 10);
+          const teslaDows = dowParam
+            ? dowParam
+                .split(",")
+                .map(Number)
+                .filter((n) => !isNaN(n))
+            : [];
+          inPeak = isInPeakInAnySeasonAtTime(tariff, hour, minute, teslaDows);
+        } else {
+          const timezone = siteInfo.installation_time_zone ?? "UTC";
+          const checkMoment = timestamp
+            ? moment(timestamp).tz(timezone)
+            : moment().tz(timezone);
+          inPeak = isCurrentlyInPeak(tariff, checkMoment);
+        }
+      }
+      res.json({ success: true, data: { hasTouData: tariffHasData, inPeak } });
+    } catch (error: any) {
+      calibLog.error({ err: error }, "Error checking peak status");
+      next(error);
     }
-    res.json({ success: true, data: { hasTouData: tariffHasData, inPeak } });
-  } catch (error: any) {
-    calibLog.error({ err: error }, "Error checking peak status");
-    next(error);
-  }
-});
+  },
+);
 
 // ---------------------------------------------------------------------------
 // Server-restart recovery for in-progress curve calibrations
@@ -749,69 +788,84 @@ export async function recoverCurveCalibrations(): Promise<void> {
           continue;
         }
 
-        const fleet = Fleet.getInstance(payload.email, {
-          throwOnError: false,
-          mailOnError: false,
-        });
-        const products = await fleet.getEnergyProducts();
-        const product = products.find(
-          (p) => String(p.energy_site_id) === payload.energySiteId,
+        // No HTTP request or cron tick is active during server-restart recovery,
+        // so there's no ambient actor context — enter one explicitly per account
+        // so these Fleet calls still get an audit trail instead of "unknown".
+        const shouldRecover = await runAsSystemScheduler(
+          payload.email,
+          async () => {
+            const fleet = Fleet.getInstance(payload.email, {
+              throwOnError: false,
+              mailOnError: false,
+            });
+            const products = await fleet.getEnergyProducts();
+            const product = products.find(
+              (p) => String(p.energy_site_id) === payload.energySiteId,
+            );
+            if (!product) {
+              await redis.del(key);
+              calibLog.warn(
+                { energySiteId: payload.energySiteId },
+                "Curve calibration recovery: site not found — restoring grid charging defensively",
+              );
+              sendEmail(
+                "Powerwall Notification",
+                `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (site not found). Please start a new calibration.`,
+                payload.email,
+              );
+              return false;
+            }
+
+            const liveStatus = await fleet.getLiveStatus(product);
+            const job: CurveCalibrationJob = {
+              status: "running",
+              phase: "charging",
+              startSoc: payload.startSoc,
+              currentSoc: liveStatus?.percentage_charged ?? payload.startSoc,
+              sampleCount: 0,
+              interruptRequested: false,
+              startedAt: performance.now() - ageMs,
+            };
+            curveJobs.set(payload.jobId, job);
+            curveJobBySite.set(payload.productSiteId, payload.jobId);
+
+            if (liveStatus && liveStatus.percentage_charged >= 99.5) {
+              job.status = "complete";
+              job.phase = "done";
+              curveJobBySite.delete(payload.productSiteId);
+              await fleet
+                .setGridCharging(product, payload.previousGridState)
+                .catch(() => {});
+              await redis.del(key);
+              await finalizeCurveCalibration(payload.energySiteId).catch(
+                () => {},
+              );
+              calibLog.info(
+                { energySiteId: payload.energySiteId },
+                "Curve calibration recovered: SOC already complete, finalized",
+              );
+            } else {
+              calibLog.info(
+                { energySiteId: payload.energySiteId, jobId: payload.jobId },
+                "Curve calibration recovered: resuming background job",
+              );
+              runCurveCalibration(
+                fleet,
+                product,
+                payload.jobId,
+                payload.previousGridState,
+                payload.email,
+              ).catch((err) =>
+                calibLog.error(
+                  { err },
+                  "Error in recovered curve calibration job",
+                ),
+              );
+            }
+            return true;
+          },
         );
-        if (!product) {
-          await redis.del(key);
-          calibLog.warn(
-            { energySiteId: payload.energySiteId },
-            "Curve calibration recovery: site not found — restoring grid charging defensively",
-          );
-          sendEmail(
-            "Powerwall Notification",
-            `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (site not found). Please start a new calibration.`,
-            payload.email,
-          );
-          continue;
-        }
-
-        const liveStatus = await fleet.getLiveStatus(product);
-        const job: CurveCalibrationJob = {
-          status: "running",
-          phase: "charging",
-          startSoc: payload.startSoc,
-          currentSoc: liveStatus?.percentage_charged ?? payload.startSoc,
-          sampleCount: 0,
-          interruptRequested: false,
-          startedAt: performance.now() - ageMs,
-        };
-        curveJobs.set(payload.jobId, job);
-        curveJobBySite.set(payload.productSiteId, payload.jobId);
-
-        if (liveStatus && liveStatus.percentage_charged >= 99.5) {
-          job.status = "complete";
-          job.phase = "done";
-          curveJobBySite.delete(payload.productSiteId);
-          await fleet
-            .setGridCharging(product, payload.previousGridState)
-            .catch(() => {});
-          await redis.del(key);
-          await finalizeCurveCalibration(payload.energySiteId).catch(() => {});
-          calibLog.info(
-            { energySiteId: payload.energySiteId },
-            "Curve calibration recovered: SOC already complete, finalized",
-          );
-        } else {
-          calibLog.info(
-            { energySiteId: payload.energySiteId, jobId: payload.jobId },
-            "Curve calibration recovered: resuming background job",
-          );
-          runCurveCalibration(
-            fleet,
-            product,
-            payload.jobId,
-            payload.previousGridState,
-            payload.email,
-          ).catch((err) =>
-            calibLog.error({ err }, "Error in recovered curve calibration job"),
-          );
-        }
+        if (!shouldRecover) continue;
       } catch (err: any) {
         calibLog.error({ err, key }, "Curve calibration recovery failed");
       }

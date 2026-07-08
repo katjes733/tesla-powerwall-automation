@@ -7,6 +7,38 @@ import { redis } from "~/server/util/redis";
 import { maskEmail } from "~/server/util/maskEmail";
 import { validateBody } from "~/server/middleware/validateBody";
 import { LoginSchema } from "~/shared/schemas/auth";
+import { resolveActor } from "~/server/util/resolveActor";
+import { getPendingSignup } from "~/server/util/pendingSignup";
+
+// Resolves the extra permission fields the client needs alongside the login
+// identity. A login with no accessible account yet (a brand-new self-signup
+// owner who hasn't completed Tesla OAuth) is a legitimate transient state, not
+// a login failure — it's reported with accountLinked: false so the client
+// restricts them to the Maintenance page until they finish linking. Any other
+// resolution error (ambiguous / not_authorized_for_account) still returns null.
+async function buildSessionUser(loginEmail: string) {
+  const result = await resolveActor(loginEmail);
+  if ("error" in result) {
+    if (result.error !== "no_access") return null;
+    return {
+      loginEmail,
+      teslaAccountEmail: loginEmail,
+      accountType: "owner" as const,
+      profile: "admin" as const,
+      siteIds: "*" as const,
+      accountLinked: false,
+    };
+  }
+  return {
+    loginEmail: result.loginEmail,
+    teslaAccountEmail: result.accountEmail,
+    accountType:
+      result.source === "owner" ? ("owner" as const) : ("delegate" as const),
+    profile: result.profile,
+    siteIds: result.siteIds,
+    accountLinked: true,
+  };
+}
 
 const LOCKOUT_MAX = 5;
 const LOCKOUT_TTL = 15 * 60; // seconds
@@ -85,7 +117,13 @@ router.post(
       const dataSource = await AppDataSource.getInstance();
       const userRepo = dataSource.getRepository<IUser>("User");
       const user = await userRepo.findOneBy({ email });
-      if (!user) {
+      // A login with no users row yet may still be a pending self-signup
+      // (password set, Tesla OAuth not completed) held in Redis — see
+      // src/server/util/pendingSignup.ts. Letting them log in is what lets
+      // them reach Maintenance to actually complete that OAuth flow.
+      const pending = user ? null : await getPendingSignup(email);
+      const passwordHash = user?.password_hash ?? pending?.passwordHash;
+      if (!passwordHash) {
         await recordFailure(email);
         authLog.warn(
           {
@@ -100,13 +138,13 @@ router.post(
         return;
       }
 
-      const isValid = await argon2.verify(user.password_hash, password);
+      const isValid = await argon2.verify(passwordHash, password);
       if (!isValid) {
         await recordFailure(email);
         authLog.warn(
           {
             event: "auth.login.failure",
-            userId: user.id,
+            userId: user?.id,
             email: maskEmail(email),
             ip,
             reason: "invalid_password",
@@ -117,26 +155,8 @@ router.post(
         return;
       }
 
-      if (
-        user.user_permissions?.type &&
-        !["user", "admin"].includes(user.user_permissions?.type)
-      ) {
-        authLog.warn(
-          {
-            event: "auth.login.failure",
-            userId: user.id,
-            email: maskEmail(email),
-            ip,
-            reason: "unknown_permission_type",
-          },
-          "Login failed: unknown permission type",
-        );
-        res.status(403).json({ error: "Unknown permission type" });
-        return;
-      }
-
       await clearLockout(email);
-      req.session.user = user.email;
+      req.session.user = email;
       if (!req.session.expiry) {
         req.session.expiry =
           Date.now() + (req.session.cookie.maxAge || 3600000);
@@ -144,7 +164,7 @@ router.post(
       authLog.info(
         {
           event: "auth.login.success",
-          userId: user.id,
+          userId: user?.id,
           email: maskEmail(email),
           ip,
         },
@@ -152,7 +172,7 @@ router.post(
       );
       res.json({
         message: "Logged in",
-        user: req.session.user,
+        user: await buildSessionUser(email),
         sessionExpiry: req.session.expiry,
       });
       return;
@@ -166,10 +186,10 @@ router.post(
   },
 );
 
-router.get("/me", (req, res) => {
+router.get("/me", async (req, res) => {
   if (req.session?.user) {
     res.json({
-      user: req.session.user,
+      user: await buildSessionUser(req.session.user),
       sessionExpiry: req.session.expiry,
     });
     return;

@@ -34,6 +34,7 @@ interface Props {
   onClose: () => void;
   saving: boolean;
   nameExists?: boolean;
+  readOnly?: boolean;
 }
 
 function fmt12h(totalMinutes: number): string {
@@ -101,6 +102,7 @@ export default function TouEditorDialog({
   onClose,
   saving,
   nameExists = false,
+  readOnly = false,
 }: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -183,6 +185,7 @@ export default function TouEditorDialog({
                 onChange={(e) => onScheduleNameChange(e.target.value)}
                 sx={{ minWidth: 200, flex: 1 }}
                 error={nameExists}
+                disabled={readOnly}
                 helperText={
                   nameExists
                     ? "A config with this name already exists for this site"
@@ -195,6 +198,7 @@ export default function TouEditorDialog({
                 value={state.tariffName}
                 onChange={(e) => patch({ tariffName: e.target.value })}
                 sx={{ minWidth: 160, flex: 1 }}
+                disabled={readOnly}
                 helperText="e.g. E27"
               />
               <TextField
@@ -203,6 +207,7 @@ export default function TouEditorDialog({
                 value={state.utility}
                 onChange={(e) => patch({ utility: e.target.value })}
                 sx={{ minWidth: 140, flex: 1 }}
+                disabled={readOnly}
                 helperText="e.g. SRP"
               />
             </Box>
@@ -224,7 +229,7 @@ export default function TouEditorDialog({
                       <IconButton
                         size="small"
                         onClick={() => setShiftOpen(true)}
-                        disabled={!hasOnPeak}
+                        disabled={!hasOnPeak || readOnly}
                         color="primary"
                       >
                         <AccessTimeIcon fontSize="small" />
@@ -237,7 +242,7 @@ export default function TouEditorDialog({
                     variant="outlined"
                     startIcon={<AccessTimeIcon />}
                     onClick={() => setShiftOpen(true)}
-                    disabled={!hasOnPeak}
+                    disabled={!hasOnPeak || readOnly}
                     sx={{ flexShrink: 0, whiteSpace: "nowrap" }}
                   >
                     Shift On-Peak Start…
@@ -256,6 +261,7 @@ export default function TouEditorDialog({
               <SeasonTabs
                 seasons={state.seasons}
                 onSeasonsChange={(seasons) => patch({ seasons })}
+                readOnly={readOnly}
               />
             </Box>
 
@@ -285,7 +291,7 @@ export default function TouEditorDialog({
               variant="outlined"
               color="warning"
               onClick={onSave}
-              disabled={saving}
+              disabled={saving || readOnly}
             >
               Save Anyway
             </Button>
@@ -293,7 +299,7 @@ export default function TouEditorDialog({
           <Button
             variant="contained"
             onClick={handleSaveClick}
-            disabled={saving || !scheduleName.trim() || nameExists}
+            disabled={saving || !scheduleName.trim() || nameExists || readOnly}
           >
             {saving ? "Saving…" : "Save"}
           </Button>

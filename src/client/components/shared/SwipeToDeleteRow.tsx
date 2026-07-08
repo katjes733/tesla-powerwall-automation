@@ -12,6 +12,13 @@ interface Props {
   isOpen?: boolean;
   onOpen?: () => void;
   onClose?: () => void;
+  /**
+   * When true, suppresses both the swipe handlers and the delete-zone
+   * rendering — the one place permission gating happens structurally rather
+   * than via an icon component, since mobile swipe-to-delete has no visible
+   * icon to individually disable.
+   */
+  disabled?: boolean;
 }
 
 export default function SwipeToDeleteRow({
@@ -20,60 +27,67 @@ export default function SwipeToDeleteRow({
   isOpen = false,
   onOpen,
   onClose,
+  disabled = false,
 }: Props) {
-  const [offset, setOffset] = useState(isOpen ? -DELETE_ZONE_WIDTH : 0);
+  const [offset, setOffset] = useState(
+    isOpen && !disabled ? -DELETE_ZONE_WIDTH : 0,
+  );
   const [transitioning, setTransitioning] = useState(false);
   const swiping = useRef(false);
 
   useEffect(() => {
     if (!swiping.current) {
       setTransitioning(true);
-      setOffset(isOpen ? -DELETE_ZONE_WIDTH : 0);
+      setOffset(isOpen && !disabled ? -DELETE_ZONE_WIDTH : 0);
     }
-  }, [isOpen]);
+  }, [isOpen, disabled]);
 
-  const swipeHandlers = useSwipeable({
-    onSwipeStart: () => {
-      swiping.current = true;
-      setTransitioning(false);
-    },
-    onSwiping: ({ deltaX }) => {
-      const base = isOpen ? -DELETE_ZONE_WIDTH : 0;
-      setOffset(Math.max(-DELETE_ZONE_WIDTH, Math.min(0, base + deltaX)));
-    },
-    onSwipedLeft: () => {
-      swiping.current = false;
-      setTransitioning(true);
-      setOffset(-DELETE_ZONE_WIDTH);
-      onOpen?.();
-    },
-    onSwipedRight: () => {
-      swiping.current = false;
-      setTransitioning(true);
-      setOffset(0);
-      onClose?.();
-    },
-    onSwiped: ({ dir }) => {
-      if (dir !== "Left" && dir !== "Right") {
-        swiping.current = false;
-        setTransitioning(true);
-        setOffset(isOpen ? -DELETE_ZONE_WIDTH : 0);
-      }
-    },
-    onTouchEndOrOnMouseUp: () => {
-      setTimeout(() => {
-        if (swiping.current) {
-          swiping.current = false;
-          setTransitioning(true);
-          setOffset(isOpen ? -DELETE_ZONE_WIDTH : 0);
-        }
-      }, 0);
-    },
-    trackTouch: true,
-    trackMouse: false,
-    delta: 10,
-    preventScrollOnSwipe: true,
-  });
+  const swipeHandlers = useSwipeable(
+    disabled
+      ? {}
+      : {
+          onSwipeStart: () => {
+            swiping.current = true;
+            setTransitioning(false);
+          },
+          onSwiping: ({ deltaX }) => {
+            const base = isOpen ? -DELETE_ZONE_WIDTH : 0;
+            setOffset(Math.max(-DELETE_ZONE_WIDTH, Math.min(0, base + deltaX)));
+          },
+          onSwipedLeft: () => {
+            swiping.current = false;
+            setTransitioning(true);
+            setOffset(-DELETE_ZONE_WIDTH);
+            onOpen?.();
+          },
+          onSwipedRight: () => {
+            swiping.current = false;
+            setTransitioning(true);
+            setOffset(0);
+            onClose?.();
+          },
+          onSwiped: ({ dir }) => {
+            if (dir !== "Left" && dir !== "Right") {
+              swiping.current = false;
+              setTransitioning(true);
+              setOffset(isOpen ? -DELETE_ZONE_WIDTH : 0);
+            }
+          },
+          onTouchEndOrOnMouseUp: () => {
+            setTimeout(() => {
+              if (swiping.current) {
+                swiping.current = false;
+                setTransitioning(true);
+                setOffset(isOpen ? -DELETE_ZONE_WIDTH : 0);
+              }
+            }, 0);
+          },
+          trackTouch: true,
+          trackMouse: false,
+          delta: 10,
+          preventScrollOnSwipe: true,
+        },
+  );
 
   return (
     <Box
@@ -85,23 +99,25 @@ export default function SwipeToDeleteRow({
       }}
     >
       {/* Delete zone revealed as the row slides left */}
-      <Box
-        sx={{
-          position: "absolute",
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: DELETE_ZONE_WIDTH,
-          bgcolor: "error.main",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <IconButton onClick={onDelete} sx={{ color: "white" }} size="small">
-          <DeleteIcon />
-        </IconButton>
-      </Box>
+      {!disabled && (
+        <Box
+          sx={{
+            position: "absolute",
+            right: 0,
+            top: 0,
+            bottom: 0,
+            width: DELETE_ZONE_WIDTH,
+            bgcolor: "error.main",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <IconButton onClick={onDelete} sx={{ color: "white" }} size="small">
+            <DeleteIcon />
+          </IconButton>
+        </Box>
+      )}
 
       {/* Sliding row content */}
       <Box
@@ -116,7 +132,7 @@ export default function SwipeToDeleteRow({
       >
         {children}
         {/* Transparent overlay when open: tapping anywhere on the row closes it */}
-        {isOpen && (
+        {isOpen && !disabled && (
           <Box
             sx={{ position: "absolute", inset: 0, zIndex: 1 }}
             onClick={(e) => {

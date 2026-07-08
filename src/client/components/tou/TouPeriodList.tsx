@@ -31,6 +31,7 @@ interface Props {
   onChange: (periods: TouTimeBlock[]) => void;
   minutePrecision: boolean;
   periodIssues?: PeriodIssue[];
+  readOnly?: boolean;
 }
 
 const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -51,6 +52,7 @@ interface TimeInputProps {
   onChange: (hour: number, minute: number) => void;
   error?: boolean;
   fullWidth?: boolean;
+  disabled?: boolean;
 }
 
 function TimeInput({
@@ -60,6 +62,7 @@ function TimeInput({
   onChange,
   error,
   fullWidth = false,
+  disabled = false,
 }: TimeInputProps) {
   const value: Dayjs = dayjs().hour(hour).minute(minute).second(0);
   return (
@@ -69,6 +72,7 @@ function TimeInput({
         if (v) onChange(v.hour(), v.minute());
       }}
       minutesStep={minutePrecision ? 15 : 30}
+      disabled={disabled}
       slotProps={{
         textField: {
           size: "small",
@@ -94,6 +98,7 @@ export default function TouPeriodList({
   onChange,
   minutePrecision,
   periodIssues,
+  readOnly = false,
 }: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -177,6 +182,7 @@ export default function TouPeriodList({
                   <IconButton
                     size="small"
                     onClick={() => remove(block.id)}
+                    disabled={readOnly}
                     color="error"
                   >
                     <DeleteIcon fontSize="small" />
@@ -187,6 +193,7 @@ export default function TouPeriodList({
                 <Box display="flex" gap={1} mb={1} sx={{ pr: 5 }}>
                   <Select
                     size="small"
+                    disabled={readOnly}
                     value={block.type}
                     onChange={(e) =>
                       update(block.id, {
@@ -203,6 +210,7 @@ export default function TouPeriodList({
                   </Select>
                   <Select
                     size="small"
+                    disabled={readOnly}
                     value={preset}
                     onChange={(e) =>
                       applyPreset(block.id, e.target.value as DayPreset)
@@ -230,6 +238,7 @@ export default function TouPeriodList({
                       }
                       error={fromError}
                       fullWidth
+                      disabled={readOnly}
                     />
                   </Box>
                   <Typography variant="body2" color="text.secondary">
@@ -245,6 +254,7 @@ export default function TouPeriodList({
                       }
                       error={toError}
                       fullWidth
+                      disabled={readOnly}
                     />
                   </Box>
                 </Box>
@@ -279,6 +289,7 @@ export default function TouPeriodList({
                     <TableCell sx={{ py: 0.5, minWidth: 130 }}>
                       <Select
                         size="small"
+                        disabled={readOnly}
                         value={block.type}
                         onChange={(e) =>
                           update(block.id, {
@@ -303,6 +314,7 @@ export default function TouPeriodList({
                           update(block.id, { fromHour: h, fromMinute: m })
                         }
                         error={fromError}
+                        disabled={readOnly}
                       />
                     </TableCell>
                     <TableCell sx={{ py: 0.5 }}>
@@ -314,12 +326,14 @@ export default function TouPeriodList({
                           update(block.id, { toHour: h, toMinute: m })
                         }
                         error={toError}
+                        disabled={readOnly}
                       />
                     </TableCell>
                     <TableCell sx={{ py: 0.5 }}>
                       <Box display="flex" alignItems="center" gap={1}>
                         <Select
                           size="small"
+                          disabled={readOnly}
                           value={preset}
                           onChange={(e) =>
                             applyPreset(block.id, e.target.value as DayPreset)
@@ -346,6 +360,7 @@ export default function TouPeriodList({
                         <IconButton
                           size="small"
                           onClick={() => remove(block.id)}
+                          disabled={readOnly}
                           color="error"
                         >
                           <DeleteIcon fontSize="small" />
@@ -365,6 +380,7 @@ export default function TouPeriodList({
           startIcon={<AddIcon />}
           onClick={add}
           variant="outlined"
+          disabled={readOnly}
         >
           Add Period
         </Button>

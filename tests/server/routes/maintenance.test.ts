@@ -1,9 +1,22 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import express from "express";
 import request from "supertest";
 
 vi.mock("~/server/util/routes/refreshToken", () => ({
   getByEmail: vi.fn(),
+}));
+
+// resolveActor (behind the new permission middleware) additionally looks up
+// the login's own `users` row for delegation grants — mocked here to "no
+// delegations" so these tests exercise a plain owner/bootstrap actor, same as
+// before the permission system existed.
+const mockUserFindOne = vi.fn();
+vi.mock("~/server/database/datasource", () => ({
+  default: {
+    getInstance: async () => ({
+      getRepository: () => ({ findOne: mockUserFindOne }),
+    }),
+  },
 }));
 
 import { getByEmail } from "~/server/util/routes/refreshToken";
@@ -38,8 +51,16 @@ function buildApp(router: express.Router, sessionUser?: string) {
 }
 
 describe("maintenance routes", () => {
+  beforeEach(() => {
+    mockUserFindOne.mockResolvedValue(null);
+  });
+
   afterEach(() => {
-    vi.clearAllMocks();
+    // resetAllMocks (not clearAllMocks) — clearAllMocks only wipes call
+    // history, not configured resolved/rejected values, so a prior test's
+    // mockRejectedValue(...) on getByEmail would otherwise leak into later
+    // tests now that resolveActor() calls it on every request.
+    vi.resetAllMocks();
   });
 
   describe("GET /refresh-token/status", () => {

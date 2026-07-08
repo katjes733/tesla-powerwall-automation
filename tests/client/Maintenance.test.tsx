@@ -12,6 +12,11 @@ vi.mock("~/client/components/auth/AuthContext", () => ({
     get: (...args: unknown[]) => mockGet(...args),
     post: (...args: unknown[]) => mockPost(...args),
   },
+  useAuth: () => ({
+    getElementState: () => "write",
+    hasSiteAccess: () => true,
+    isAdmin: true,
+  }),
 }));
 
 vi.mock("~/client/components/notification/NotificationContext", () => ({

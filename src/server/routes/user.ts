@@ -1,12 +1,12 @@
 import express from "express";
 import argon2 from "argon2";
-import { v4 } from "uuid";
 import AppDataSource from "~/server/database/datasource";
 import { requireAuth } from "~/server/middleware/auth";
 import { encrypt } from "~/server/util/tokenCrypto";
 import { maskEmail } from "~/server/util/maskEmail";
 import { validateBody } from "~/server/middleware/validateBody";
 import { UserUpsertSchema, ChangePasswordSchema } from "~/shared/schemas/user";
+import { storePendingSignup } from "~/server/util/pendingSignup";
 
 const authLog = logger.child({ service: "auth" });
 
@@ -39,28 +39,29 @@ router.post(
         "User",
       );
       const existingUser = await userRepo.findOneBy({ email });
-      const id = existingUser ? existingUser.id : v4();
       const newDate = new Date();
       let status;
       if (!existingUser) {
-        userRepo.insert({
-          id,
-          creation_time: newDate,
-          modified_time: newDate,
-          email,
-          password_hash: await argon2.hash(password),
-          user_details: user_details ?? {},
-          user_permissions: user_permissions ?? {},
+        // No placeholder row => a genuine new self-signup, not a delegate
+        // completing an invite (invited delegates already have a placeholder
+        // row created by userAdmin.ts's invite handler before they ever reach
+        // here). Held in Redis with a TTL instead of Postgres — materialized
+        // into a real users row only once Tesla OAuth completes (see
+        // main.ts's /callback handler); an abandoned signup that never links
+        // just expires on its own, no cleanup job needed.
+        await storePendingSignup(email, {
+          passwordHash: await argon2.hash(password),
+          userDetails: user_details ?? {},
+          userPermissions: user_permissions ?? {},
         });
         status = 200;
         authLog.info(
           {
-            event: "auth.account.created",
-            userId: id,
+            event: "auth.account.pending",
             email: maskEmail(email),
             ip: req.ip,
           },
-          "User account created",
+          "Pending signup stored (awaiting Tesla OAuth)",
         );
       } else {
         // Only include provided fields in the update

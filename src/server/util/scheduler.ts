@@ -28,6 +28,7 @@ import {
   clearNotification,
 } from "./notificationDedup";
 import { maskEmail } from "~/server/util/maskEmail";
+import { runAsSystemScheduler } from "~/server/util/actorContext";
 import AppDataSource from "~/server/database/datasource";
 import type { ISiteCalibration } from "~/server/database/models/siteCalibration";
 import type { ISiteCalibrationSample } from "~/server/database/models/siteCalibrationSample";
@@ -209,7 +210,20 @@ export class Scheduler {
     return true;
   }
 
+  // Cron-triggered Fleet calls run outside any HTTP request lifecycle, so there's
+  // no req.actor to read — this enters the same AsyncLocalStorage context Fleet's
+  // audit logging reads from, with a synthetic "system:scheduler" actor, so these
+  // calls still get an audit trail instead of an "unknown" actor.
   private async runEvaluation(
+    schedule: ISchedule,
+    triggeredPerProduct: Map<string, boolean>,
+  ): Promise<void> {
+    return runAsSystemScheduler(schedule.email, () =>
+      this.runEvaluationInner(schedule, triggeredPerProduct),
+    );
+  }
+
+  private async runEvaluationInner(
     schedule: ISchedule,
     triggeredPerProduct: Map<string, boolean>,
   ): Promise<void> {

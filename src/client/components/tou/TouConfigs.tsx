@@ -1,11 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import Box from "@mui/material/Box";
-import Button from "@mui/material/Button";
 import CircularProgress from "@mui/material/CircularProgress";
 import FormControlLabel from "@mui/material/FormControlLabel";
-import IconButton from "@mui/material/IconButton";
 import Switch from "@mui/material/Switch";
-import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import Divider from "@mui/material/Divider";
@@ -22,6 +19,9 @@ import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import TouEditorDialog from "./TouEditorDialog";
 import ConfirmDialog from "../shared/ConfirmDialog";
+import PermissionButton from "../shared/PermissionButton";
+import PermissionIconButton from "../shared/PermissionIconButton";
+import { useElementState } from "../auth/usePermission";
 import {
   tariffV2ToEditorState,
   editorStateToTariffV2,
@@ -42,9 +42,17 @@ interface RowActionsProps {
   onEdit: () => void;
   onCopy: () => void;
   onDelete: () => void;
+  /** Mobile rows omit the delete icon — swipe-to-delete handles it instead. */
+  showDelete?: boolean;
 }
 
-function RowActions({ onApply, onEdit, onCopy, onDelete }: RowActionsProps) {
+function RowActions({
+  onApply,
+  onEdit,
+  onCopy,
+  onDelete,
+  showDelete = true,
+}: RowActionsProps) {
   return (
     <Box
       display="flex"
@@ -53,54 +61,55 @@ function RowActions({ onApply, onEdit, onCopy, onDelete }: RowActionsProps) {
       height="100%"
       gap={0.5}
     >
-      <Tooltip title="Apply to Tesla">
-        <IconButton
-          size="small"
-          color="primary"
-          onClick={(e) => {
-            e.stopPropagation();
-            onApply();
-          }}
-        >
-          <PublishIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
+      <PermissionIconButton
+        permissionAction="touConfig.apply"
+        icon={<PublishIcon fontSize="small" />}
+        tooltip="Apply to Tesla"
+        size="small"
+        color="primary"
+        onClick={(e) => {
+          e.stopPropagation();
+          onApply();
+        }}
+      />
       <Divider
         orientation="vertical"
         sx={{ height: 18, mx: 0.5, borderRightWidth: 2 }}
       />
-      <IconButton
+      <PermissionIconButton
+        permissionAction="touConfig.edit"
+        icon={<EditIcon fontSize="small" />}
+        swapToViewIcon
+        tooltip="Edit"
         size="small"
         onClick={(e) => {
           e.stopPropagation();
           onEdit();
         }}
-        title="Edit"
-      >
-        <EditIcon fontSize="small" />
-      </IconButton>
-      <Tooltip title="Copy config">
-        <IconButton
-          size="small"
-          onClick={(e) => {
-            e.stopPropagation();
-            onCopy();
-          }}
-        >
-          <ContentCopyIcon fontSize="small" />
-        </IconButton>
-      </Tooltip>
-      <IconButton
+      />
+      <PermissionIconButton
+        permissionAction="touConfig.copy"
+        icon={<ContentCopyIcon fontSize="small" />}
+        tooltip="Copy config"
         size="small"
-        color="error"
         onClick={(e) => {
           e.stopPropagation();
-          onDelete();
+          onCopy();
         }}
-        title="Delete"
-      >
-        <DeleteIcon fontSize="small" />
-      </IconButton>
+      />
+      {showDelete && (
+        <PermissionIconButton
+          permissionAction="touConfig.delete"
+          icon={<DeleteIcon fontSize="small" />}
+          tooltip="Delete"
+          size="small"
+          color="error"
+          onClick={(e) => {
+            e.stopPropagation();
+            onDelete();
+          }}
+        />
+      )}
     </Box>
   );
 }
@@ -109,6 +118,9 @@ export default function TouConfigs() {
   const { showNotification } = useNotification();
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const touConfigDeleteState = useElementState("touConfig.delete");
+  const touConfigEditState = useElementState("touConfig.edit");
+  const touConfigCreateState = useElementState("touConfig.create");
 
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
@@ -386,44 +398,42 @@ export default function TouConfigs() {
         />
         {isMobile ? (
           <Box display="flex" gap={1}>
-            <Tooltip title="New Config">
-              <span>
-                <IconButton
-                  onClick={openNewEditor}
-                  disabled={!selectedSiteId}
-                  color="primary"
-                >
-                  <AddIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
-            <Tooltip title="Load from Tesla">
-              <span>
-                <IconButton
-                  onClick={loadFromTesla}
-                  disabled={!selectedSiteId || loadingTesla}
-                  color="primary"
-                >
-                  {loadingTesla ? (
-                    <CircularProgress size={20} />
-                  ) : (
-                    <CloudDownloadIcon />
-                  )}
-                </IconButton>
-              </span>
-            </Tooltip>
+            <PermissionIconButton
+              permissionAction="touConfig.create"
+              icon={<AddIcon />}
+              tooltip="New Config"
+              onClick={openNewEditor}
+              extraDisabledCondition={!selectedSiteId}
+              color="primary"
+            />
+            <PermissionIconButton
+              permissionAction="touConfig.create"
+              icon={
+                loadingTesla ? (
+                  <CircularProgress size={20} />
+                ) : (
+                  <CloudDownloadIcon />
+                )
+              }
+              tooltip="Load from Tesla"
+              onClick={loadFromTesla}
+              extraDisabledCondition={!selectedSiteId || loadingTesla}
+              color="primary"
+            />
           </Box>
         ) : (
           <Box display="flex" gap={1}>
-            <Button
+            <PermissionButton
+              permissionAction="touConfig.create"
               variant="outlined"
               startIcon={<AddIcon />}
               onClick={openNewEditor}
               disabled={!selectedSiteId}
             >
               New Config
-            </Button>
-            <Button
+            </PermissionButton>
+            <PermissionButton
+              permissionAction="touConfig.create"
               variant="outlined"
               startIcon={
                 loadingTesla ? (
@@ -436,7 +446,7 @@ export default function TouConfigs() {
               disabled={!selectedSiteId || loadingTesla}
             >
               Load from Tesla
-            </Button>
+            </PermissionButton>
           </Box>
         )}
         <FormControlLabel
@@ -484,6 +494,7 @@ export default function TouConfigs() {
                   onOpen={() => setOpenSwipeRow(config.id)}
                   onClose={() => setOpenSwipeRow(null)}
                   onDelete={() => handleDelete(config.id)}
+                  disabled={touConfigDeleteState !== "write"}
                 >
                   <Box
                     display="flex"
@@ -512,36 +523,18 @@ export default function TouConfigs() {
                         {config.schedule_name}
                       </Typography>
                     </Box>
-                    <Box display="flex" alignItems="center" gap={0.5}>
-                      <Tooltip title="Apply to Tesla">
-                        <IconButton
-                          size="small"
-                          color="primary"
-                          onClick={() =>
-                            setPendingApply({
-                              config,
-                              siteName: site?.site_name ?? selectedSiteId,
-                            })
-                          }
-                        >
-                          <PublishIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                      <IconButton
-                        size="small"
-                        onClick={() => openEditEditor(config)}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <Tooltip title="Copy config">
-                        <IconButton
-                          size="small"
-                          onClick={() => handleCopy(config)}
-                        >
-                          <ContentCopyIcon fontSize="small" />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
+                    <RowActions
+                      showDelete={false}
+                      onApply={() =>
+                        setPendingApply({
+                          config,
+                          siteName: site?.site_name ?? selectedSiteId,
+                        })
+                      }
+                      onEdit={() => openEditEditor(config)}
+                      onCopy={() => handleCopy(config)}
+                      onDelete={() => handleDelete(config.id)}
+                    />
                   </Box>
                 </SwipeToDeleteRow>
               );
@@ -578,6 +571,9 @@ export default function TouConfigs() {
         onSave={handleSave}
         onClose={() => setEditorOpen(false)}
         saving={saving}
+        readOnly={
+          (editingId ? touConfigEditState : touConfigCreateState) === "read"
+        }
         nameExists={configs.some(
           (c) => c.schedule_name === scheduleName.trim() && c.id !== editingId,
         )}

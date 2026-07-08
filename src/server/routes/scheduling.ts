@@ -2,10 +2,15 @@ import express from "express";
 import { validate as validateCron } from "node-cron";
 import { Scheduler } from "~/server/util/scheduler";
 import AppDataSource from "../database/datasource";
-import { requireAuth } from "~/server/middleware/auth";
 import { ALLOWED_ACTIONS } from "~/server/util/fleet";
 import { CALIBRATION_SCHEDULE_ACTIONS } from "~/server/util/calibrationService";
 import { validateBody } from "~/server/middleware/validateBody";
+import { resolveActorMiddleware } from "~/server/middleware/resolveActorMiddleware";
+import {
+  requirePermission,
+  requireSiteScope,
+} from "~/server/middleware/requirePermission";
+import { getCurrentAccountEmail } from "~/server/util/currentAccount";
 import {
   ScheduleUpsertSchema,
   ScheduleDeleteSchema,
@@ -13,46 +18,19 @@ import {
 
 export const router = express.Router();
 
-router.use(requireAuth);
+router.use(resolveActorMiddleware);
 
-router.post("/initialize", function (_req, res, next) {
-  Scheduler.getInstance()
-    .initialize()
-    .then(() => {
-      res.json({
-        success: true,
-        message: "Scheduler initialized successfully",
-      });
-    })
-    .catch(next);
-});
-
-router.post("/stop-all", function (_req, res, next) {
-  Scheduler.getInstance()
-    .stopAll()
-    .then(() => {
-      res.json({
-        success: true,
-        message: "All scheduled tasks stopped successfully",
-      });
-    })
-    .catch(next);
-});
-
-router.post("/start-all", function (_req, res, next) {
-  Scheduler.getInstance()
-    .startAll()
-    .then(() => {
-      res.json({
-        success: true,
-        message: "All scheduled tasks started successfully",
-      });
-    })
-    .catch(next);
-});
+// /initialize, /stop-all, /start-all were removed: they control the single
+// process-wide cron scheduler for every Tesla account on this instance, not one
+// account, so no per-account permission is the right trust boundary for them.
+// They had zero real usage anywhere (no UI, no tests, no scripts) — initialize()
+// already runs automatically at server boot via a direct method call in main.ts,
+// which is unaffected by this removal.
 
 router.post(
   "/upsert",
+  requirePermission("schedule.edit"),
+  requireSiteScope({ bodyKey: "site_ids" }),
   validateBody(ScheduleUpsertSchema),
   function (req, res, next) {
     const { id, cron, timezone, site_ids, actions } = req.body;
@@ -100,7 +78,10 @@ router.post(
       }
     }
 
-    const scheduleData = { ...req.body, email: req.session.user as string };
+    const scheduleData = {
+      ...req.body,
+      email: getCurrentAccountEmail(req) as string,
+    };
     Scheduler.getInstance()
       .upsert(scheduleData)
       .then((result) => {
@@ -116,45 +97,71 @@ router.post(
 
 router.post(
   "/delete",
+  requirePermission("schedule.delete"),
   validateBody(ScheduleDeleteSchema),
-  function (req, res, next) {
+  async function (req, res, next) {
     const { id } = req.body;
-    Scheduler.getInstance()
-      .delete(id)
-      .then((result) => {
-        res.status(result?.status || 204).json({
+    const actor = req.actor!;
+    try {
+      const repo = (await AppDataSource.getInstance()).getRepository(
+        "Schedule",
+      );
+      const schedule = await repo.findOneBy({ id });
+      if (!schedule || schedule.email !== actor.accountEmail) {
+        res.status(404).json({ success: false, message: "Schedule not found" });
+        return;
+      }
+      if (
+        actor.siteIds !== "*" &&
+        !(schedule.site_ids as string[]).every((siteId) =>
+          (actor.siteIds as string[]).includes(siteId),
+        )
+      ) {
+        res.status(403).json({
+          success: false,
+          message: "Not authorized for this schedule's site(s)",
+        });
+        return;
+      }
+      const result = await Scheduler.getInstance().delete(id);
+      res.status(result?.status || 204).json({
+        success: true,
+        message: "Schedule deleted successfully",
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.get(
+  "/all",
+  requirePermission("schedule.access"),
+  async function (req, res, next) {
+    const PAGE_SIZE_MAX = 100;
+    const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
+    const pageSize = Math.min(
+      PAGE_SIZE_MAX,
+      Math.max(1, parseInt((req.query.pageSize as string) || "100", 10)),
+    );
+
+    const repo = (await AppDataSource.getInstance()).getRepository("Schedule");
+    const email = getCurrentAccountEmail(req) as string;
+    repo
+      .findAndCount({
+        where: { email },
+        take: pageSize,
+        skip: (page - 1) * pageSize,
+      })
+      .then(([schedules, total]) => {
+        res.json({
           success: true,
-          message: "Schedule deleted successfully",
+          data: schedules,
+          total,
+          page,
+          pageSize,
         });
       })
       .catch(next);
   },
 );
-
-router.get("/all", async function (req, res, next) {
-  const PAGE_SIZE_MAX = 100;
-  const page = Math.max(1, parseInt((req.query.page as string) || "1", 10));
-  const pageSize = Math.min(
-    PAGE_SIZE_MAX,
-    Math.max(1, parseInt((req.query.pageSize as string) || "100", 10)),
-  );
-
-  const repo = (await AppDataSource.getInstance()).getRepository("Schedule");
-  const email = req.session.user as string;
-  repo
-    .findAndCount({
-      where: { email },
-      take: pageSize,
-      skip: (page - 1) * pageSize,
-    })
-    .then(([schedules, total]) => {
-      res.json({
-        success: true,
-        data: schedules,
-        total,
-        page,
-        pageSize,
-      });
-    })
-    .catch(next);
-});

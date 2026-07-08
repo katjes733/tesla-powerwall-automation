@@ -87,6 +87,15 @@ class AppDataSource {
         log("✅ Database schema ensured successfully.");
         await dataSource.synchronize();
         log("✅ Database schema synchronised successfully.");
+        // Accelerates resolving "which account(s) can this delegate act on" (looked up
+        // on every authenticated request) and "list delegates for this account" (the
+        // User Admin page) — both are jsonb containment queries against
+        // users.user_permissions.delegations. jsonb_path_ops is smaller/faster than the
+        // default jsonb_ops since only `@>` containment lookups are ever used here.
+        await dataSource.query(
+          `CREATE INDEX IF NOT EXISTS idx_users_user_permissions_gin ON "${schema}".users USING GIN (user_permissions jsonb_path_ops);`,
+        );
+        log("✅ Delegation permission index ensured successfully.");
         await migrateTokenEncryption(dataSource);
         log("✅ Token encryption migration completed.");
         AppDataSource.instance = dataSource;

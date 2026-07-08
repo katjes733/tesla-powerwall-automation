@@ -17,6 +17,7 @@ import {
 } from "~/server/routes/calibration";
 import { router as SiteSettingsRouter } from "~/server/routes/siteSettings";
 import { router as MaintenanceRouter } from "~/server/routes/maintenance";
+import { router as UserAdminRouter } from "~/server/routes/userAdmin";
 import { RedisStore } from "connect-redis";
 import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
@@ -27,6 +28,7 @@ import {
   exchangeAndSaveToken,
 } from "~/server/util/oauthCallback";
 import { getPublicOrigin } from "~/server/util/requestOrigin";
+import { materializePendingSignupIfAny } from "~/server/util/pendingSignup";
 import cors from "cors";
 import helmet from "helmet";
 import http from "http";
@@ -162,6 +164,7 @@ app.use("/api/tou-config", TouConfigRouter);
 app.use("/api/calibration", CalibrationRouter);
 app.use("/api/site-settings", SiteSettingsRouter);
 app.use("/api/maintenance", MaintenanceRouter);
+app.use("/api/user-admin", UserAdminRouter);
 
 const oauthCallbackLog = logger.child({ service: "oauth-callback" });
 
@@ -309,6 +312,11 @@ app.get("/callback", async (req, res) => {
     fail(result.code);
     return;
   }
+
+  // If this login was a pending (Redis-only) self-signup, completing Tesla
+  // OAuth is what makes it a real, permanent account — materialize it now.
+  // No-ops for every other callback (an existing owner's routine refresh).
+  await materializePendingSignupIfAny(validation.email);
 
   oauthCallbackLog.info(
     { event: "oauth.callback.success", email: validation.email },

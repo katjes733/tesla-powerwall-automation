@@ -21,9 +21,15 @@ interface Props {
   periods: TouTimeBlock[];
   rates: TouSeasonRates;
   onChange: (rates: TouSeasonRates) => void;
+  readOnly?: boolean;
 }
 
-export default function TouRateTable({ periods, rates, onChange }: Props) {
+export default function TouRateTable({
+  periods,
+  rates,
+  onChange,
+  readOnly = false,
+}: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
   const fieldWidth = isMobile ? 95 : 110;
@@ -84,6 +90,7 @@ export default function TouRateTable({ periods, rates, onChange }: Props) {
                       },
                     }}
                     onChange={(e) => setRate("buy", type, e.target.value)}
+                    disabled={readOnly}
                     sx={{ width: fieldWidth }}
                   />
                 </TableCell>
@@ -101,6 +108,7 @@ export default function TouRateTable({ periods, rates, onChange }: Props) {
                       },
                     }}
                     onChange={(e) => setRate("sell", type, e.target.value)}
+                    disabled={readOnly}
                     sx={{ width: fieldWidth }}
                   />
                 </TableCell>
