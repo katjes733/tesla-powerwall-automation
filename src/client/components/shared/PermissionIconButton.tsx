@@ -20,6 +20,8 @@ interface PermissionIconButtonProps extends Omit<IconButtonProps, "disabled"> {
   swapToViewIcon?: boolean;
   tooltip?: string;
   disabledTooltip?: string;
+  /** Tooltip shown instead when swapped to the view icon. Defaults to "View". */
+  viewTooltip?: string;
   /** Composes with the permission check, same as the existing disabled={...} idiom. */
   extraDisabledCondition?: boolean;
 }
@@ -31,6 +33,7 @@ export default function PermissionIconButton({
   swapToViewIcon = false,
   tooltip,
   disabledTooltip,
+  viewTooltip = "View",
   extraDisabledCondition,
   onClick,
   ...iconButtonProps
@@ -41,7 +44,11 @@ export default function PermissionIconButton({
   const isReadOnly = state === "read";
   const showView = swapToViewIcon && isReadOnly;
   const disabled = (isReadOnly && !swapToViewIcon) || !!extraDisabledCondition;
-  const title = disabled ? (disabledTooltip ?? tooltip) : tooltip;
+  const title = showView
+    ? viewTooltip
+    : disabled
+      ? (disabledTooltip ?? tooltip)
+      : tooltip;
 
   const button = (
     <IconButton

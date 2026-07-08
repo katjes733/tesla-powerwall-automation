@@ -89,7 +89,16 @@ export default function InviteDelegateDialog({
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           fullWidth
+          size="small"
           autoFocus
+          // DialogContent's own default padding (a shorthand) overrides a
+          // plain sx={{ pt }} on the container regardless of value, so the
+          // clearance the floating label needs above the field has to come
+          // from the field's own margin instead — this is the first field in
+          // the dialog (and autoFocus shrinks its label immediately), so
+          // it's the only one close enough to the container's top edge for
+          // the label to get clipped by DialogContent's overflow.
+          sx={{ mt: 1.5 }}
         />
         <FormControl fullWidth size="small">
           <InputLabel id="invite-profile-label">Permission Level</InputLabel>

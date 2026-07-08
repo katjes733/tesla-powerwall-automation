@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Box,
   Chip,
-  IconButton,
+  FormControlLabel,
   List,
   ListItem,
   ListItemText,
   Paper,
+  Switch,
   Typography,
   useMediaQuery,
 } from "@mui/material";
@@ -26,10 +27,33 @@ import type { DelegationGrant } from "~/shared/schemas/delegation";
 
 export interface Delegate extends DelegationGrant {
   delegate_email: string;
+  // Whether the invitee has actually completed signup (set a password) yet —
+  // a grant's own `status` is "active" from the moment it's created, so this
+  // is what distinguishes "invited, awaiting signup" from genuinely active.
+  signup_completed: boolean;
 }
 
-function statusColor(status: Delegate["status"]) {
-  return status === "active" ? "success" : "default";
+type DisplayStatus = "active" | "invited" | "revoked";
+
+function displayStatus(delegate: Delegate): DisplayStatus {
+  if (delegate.status === "revoked") return "revoked";
+  if (!delegate.signup_completed) return "invited";
+  return "active";
+}
+
+function statusLabel(status: DisplayStatus): string {
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function statusColor(status: DisplayStatus) {
+  switch (status) {
+    case "active":
+      return "success";
+    case "invited":
+      return "warning";
+    default:
+      return "default";
+  }
 }
 
 function siteLabel(delegate: Delegate, sites: SiteOption[]) {
@@ -54,6 +78,16 @@ export default function UserAdmin() {
   const [editing, setEditing] = useState<Delegate | null>(null);
   const [revoking, setRevoking] = useState<Delegate | null>(null);
   const [revokeLoading, setRevokeLoading] = useState(false);
+  // The server always returns the account's full grant history (including
+  // revoked entries) — this toggle is purely a client-side display filter,
+  // off by default so the common case matches today's list exactly.
+  const [showRevoked, setShowRevoked] = useState(false);
+
+  const visibleDelegates = useMemo(
+    () =>
+      showRevoked ? delegates : delegates.filter((d) => d.status !== "revoked"),
+    [delegates, showRevoked],
+  );
 
   const loadDelegates = useCallback(() => {
     setLoading(true);
@@ -114,13 +148,16 @@ export default function UserAdmin() {
       field: "status",
       headerName: "Status",
       width: 110,
-      renderCell: (params) => (
-        <Chip
-          label={params.value}
-          size="small"
-          color={statusColor(params.value)}
-        />
-      ),
+      renderCell: (params) => {
+        const status = displayStatus(params.row as Delegate);
+        return (
+          <Chip
+            label={statusLabel(status)}
+            size="small"
+            color={statusColor(status)}
+          />
+        );
+      },
     },
     {
       field: "actions",
@@ -130,6 +167,9 @@ export default function UserAdmin() {
       align: "right",
       renderCell: (params) => {
         const row = params.row as Delegate;
+        // Revoked entries are shown only for audit purposes — there's
+        // nothing left to edit or revoke on a grant that's already revoked.
+        if (row.status === "revoked") return null;
         return (
           <Box display="flex" gap={0.5}>
             <PermissionIconButton
@@ -169,40 +209,58 @@ export default function UserAdmin() {
             level.
           </Typography>
         </Box>
-        <PermissionButton
-          permissionAction="userAdmin.invite"
-          variant="contained"
-          onClick={() => setInviteOpen(true)}
-        >
-          Invite Delegate
-        </PermissionButton>
+        <Box display="flex" alignItems="center" gap={2}>
+          <FormControlLabel
+            control={
+              <Switch
+                size="small"
+                checked={showRevoked}
+                onChange={(e) => setShowRevoked(e.target.checked)}
+              />
+            }
+            label={
+              <Typography variant="body2" color="text.secondary">
+                Show revoked
+              </Typography>
+            }
+          />
+          <PermissionButton
+            permissionAction="userAdmin.invite"
+            variant="contained"
+            onClick={() => setInviteOpen(true)}
+          >
+            Invite Delegate
+          </PermissionButton>
+        </Box>
       </Box>
 
       {isMobile ? (
         <Paper variant="outlined">
           <List disablePadding>
-            {delegates.map((delegate) => (
+            {visibleDelegates.map((delegate) => (
               <ListItem
                 key={delegate.delegate_email}
                 divider
                 secondaryAction={
-                  <Box display="flex" gap={0.5}>
-                    <PermissionIconButton
-                      permissionAction="userAdmin.update"
-                      icon={<EditIcon fontSize="small" />}
-                      tooltip="Edit"
-                      size="small"
-                      onClick={() => setEditing(delegate)}
-                    />
-                    <PermissionIconButton
-                      permissionAction="userAdmin.revoke"
-                      icon={<DeleteIcon fontSize="small" />}
-                      tooltip="Revoke access"
-                      size="small"
-                      color="error"
-                      onClick={() => setRevoking(delegate)}
-                    />
-                  </Box>
+                  delegate.status === "revoked" ? undefined : (
+                    <Box display="flex" gap={0.5}>
+                      <PermissionIconButton
+                        permissionAction="userAdmin.update"
+                        icon={<EditIcon fontSize="small" />}
+                        tooltip="Edit"
+                        size="small"
+                        onClick={() => setEditing(delegate)}
+                      />
+                      <PermissionIconButton
+                        permissionAction="userAdmin.revoke"
+                        icon={<DeleteIcon fontSize="small" />}
+                        tooltip="Revoke access"
+                        size="small"
+                        color="error"
+                        onClick={() => setRevoking(delegate)}
+                      />
+                    </Box>
+                  )
                 }
               >
                 <ListItemText
@@ -215,9 +273,9 @@ export default function UserAdmin() {
                         sx={{ textTransform: "capitalize", mr: 1 }}
                       />
                       <Chip
-                        label={delegate.status}
+                        label={statusLabel(displayStatus(delegate))}
                         size="small"
-                        color={statusColor(delegate.status)}
+                        color={statusColor(displayStatus(delegate))}
                       />
                       <Typography
                         variant="caption"
@@ -231,7 +289,7 @@ export default function UserAdmin() {
                 />
               </ListItem>
             ))}
-            {delegates.length === 0 && !loading && (
+            {visibleDelegates.length === 0 && !loading && (
               <ListItem>
                 <ListItemText primary="No delegates yet" />
               </ListItem>
@@ -241,7 +299,7 @@ export default function UserAdmin() {
       ) : (
         <Box sx={{ height: 480 }}>
           <DataGrid
-            rows={delegates}
+            rows={visibleDelegates}
             columns={columns}
             getRowId={(row) => row.delegate_email}
             loading={loading}

@@ -80,6 +80,7 @@ describe("GET /delegates", () => {
     mockQuery.mockResolvedValueOnce([
       {
         email: "delegate-a@example.com",
+        password_hash: "some-real-hash",
         user_permissions: {
           delegations: [
             {
@@ -106,6 +107,7 @@ describe("GET /delegates", () => {
     expect(res.body.data).toEqual([
       {
         delegate_email: "delegate-a@example.com",
+        signup_completed: true,
         tesla_account_email: "owner@example.com",
         profile: "write",
         site_ids: "*",
@@ -114,10 +116,40 @@ describe("GET /delegates", () => {
     ]);
   });
 
-  it("excludes revoked grants for the account", async () => {
+  it("reports signup_completed: false for an invited delegate who hasn't signed up yet", async () => {
+    // Regression coverage: a grant's own status is "active" from the moment
+    // it's created (see delegation.ts) regardless of whether the invitee has
+    // actually completed signup — the UI needs this separate flag to show
+    // "Invited" instead of misleadingly showing "Active" too early.
+    mockQuery.mockResolvedValueOnce([
+      {
+        email: "pending-delegate@example.com",
+        password_hash: "", // placeholder row — signup not completed
+        user_permissions: {
+          delegations: [
+            {
+              tesla_account_email: "owner@example.com",
+              profile: "read",
+              site_ids: ["site-1"],
+              status: "active",
+            },
+          ],
+        },
+      },
+    ]);
+    const app = await buildApp();
+    const res = await request(app).get("/api/user-admin/delegates");
+    expect(res.body.data[0]).toMatchObject({
+      signup_completed: false,
+      status: "active",
+    });
+  });
+
+  it("includes revoked grants — filtering them out is a client-side audit-toggle concern, not a server one", async () => {
     mockQuery.mockResolvedValueOnce([
       {
         email: "delegate-a@example.com",
+        password_hash: "some-real-hash",
         user_permissions: {
           delegations: [
             {
@@ -132,7 +164,16 @@ describe("GET /delegates", () => {
     ]);
     const app = await buildApp();
     const res = await request(app).get("/api/user-admin/delegates");
-    expect(res.body.data).toEqual([]);
+    expect(res.body.data).toEqual([
+      {
+        delegate_email: "delegate-a@example.com",
+        signup_completed: true,
+        tesla_account_email: "owner@example.com",
+        profile: "write",
+        site_ids: "*",
+        status: "revoked",
+      },
+    ]);
   });
 });
 
@@ -238,6 +279,33 @@ describe("POST /delegates/invite", () => {
     // account, not any account the delegate might already have a grant for.
     const existingActiveCall = mockQuery.mock.calls[0];
     expect(existingActiveCall[1][1]).toContain("owner-b@example.com");
+  });
+
+  it("replaces (not appends alongside) a prior revoked entry for the same delegate/account pair", async () => {
+    // Regression coverage: re-inviting a previously-revoked delegate is a
+    // clean slate, not one more entry in an ever-growing history — the
+    // existingActive check only ever blocks an *active* duplicate, so this
+    // is the step that must drop the old revoked entry before appending.
+    mockQuery
+      .mockResolvedValueOnce([]) // existingActive check: none (old entry is revoked, not active)
+      .mockResolvedValueOnce(undefined) // placeholder insert (no-op, row exists)
+      .mockResolvedValueOnce(undefined) // replace grant
+      .mockResolvedValueOnce([{ password_hash: "already-hashed" }]);
+
+    const app = await buildApp();
+    const res = await request(app)
+      .post("/api/user-admin/delegates/invite")
+      .send(validBody);
+
+    expect(res.status).toBe(201);
+    const replaceCall = mockQuery.mock.calls[2];
+    const [delegateEmail, accountEmail, newGrantJson] = replaceCall[1];
+    expect(delegateEmail).toBe("new-delegate@example.com");
+    expect(accountEmail).toBe("owner@example.com");
+    expect(JSON.parse(newGrantJson)[0]).toMatchObject({
+      tesla_account_email: "owner@example.com",
+      status: "active",
+    });
   });
 });
 

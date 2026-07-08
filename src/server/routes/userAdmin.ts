@@ -34,25 +34,35 @@ router.get(
       const db = await AppDataSource.getInstance();
       // Cross-table containment scan — the cold path, only hit when an Admin opens
       // this page — accelerated by idx_users_user_permissions_gin (see datasource.ts).
+      // password_hash is only ever used here to derive a boolean — it never leaves
+      // this handler. A grant's own status is "active" from the moment it's created
+      // (see delegation.ts), regardless of whether the invitee has actually signed
+      // up yet — signup_completed is what the UI needs to tell "invited, awaiting
+      // signup" apart from "genuinely active" instead of showing both as "active".
       const rows: {
         email: string;
+        password_hash: string;
         user_permissions: { delegations?: DelegationGrant[] };
       }[] = await db.query(
-        `SELECT email, user_permissions FROM ${qualifiedTable("users")} WHERE user_permissions @> $1::jsonb`,
+        `SELECT email, password_hash, user_permissions FROM ${qualifiedTable("users")} WHERE user_permissions @> $1::jsonb`,
         [
           JSON.stringify({
             delegations: [{ tesla_account_email: accountEmail }],
           }),
         ],
       );
+      // Includes revoked grants — the client filters them out by default and
+      // shows them only via its "show revoked" audit toggle, but the server
+      // doesn't need to know about that UI concern, it just returns the
+      // account's full (still cross-account-isolated) grant history.
       const delegates = rows.flatMap((row) =>
         (row.user_permissions?.delegations ?? [])
-          .filter(
-            (grant) =>
-              grant.tesla_account_email === accountEmail &&
-              grant.status !== "revoked",
-          )
-          .map((grant) => ({ delegate_email: row.email, ...grant })),
+          .filter((grant) => grant.tesla_account_email === accountEmail)
+          .map((grant) => ({
+            delegate_email: row.email,
+            signup_completed: !!row.password_hash,
+            ...grant,
+          })),
       );
       res.json({ success: true, data: delegates });
     } catch (error) {
@@ -129,17 +139,28 @@ router.post(
         [delegate_email, JSON.stringify({ delegations: [] })],
       );
 
-      // Atomic single-statement append — no read-modify-write race between
-      // concurrent admins editing the same delegate's grants.
+      // Atomic single-statement replace — no read-modify-write race between
+      // concurrent admins editing the same delegate's grants. A re-invite is
+      // treated as a clean slate: any prior entry for this exact
+      // (delegate, account) pair is dropped first (the existingActive check
+      // above already guarantees it can only be a revoked one, never an
+      // active one) before the fresh grant is appended, rather than piling
+      // up one array entry per invite/revoke cycle over the delegate's
+      // lifetime.
       await db.query(
         `UPDATE ${qualifiedTable("users")}
          SET user_permissions = jsonb_set(
            coalesce(user_permissions, '{}'::jsonb),
            '{delegations}',
-           coalesce(user_permissions->'delegations', '[]'::jsonb) || $2::jsonb
+           coalesce(
+             (SELECT jsonb_agg(elem)
+              FROM jsonb_array_elements(coalesce(user_permissions->'delegations', '[]'::jsonb)) elem
+              WHERE elem->>'tesla_account_email' != $2),
+             '[]'::jsonb
+           ) || $3::jsonb
          ), modified_time = now()
          WHERE email = $1`,
-        [delegate_email, JSON.stringify([newGrant])],
+        [delegate_email, accountEmail, JSON.stringify([newGrant])],
       );
 
       const existingRow: { password_hash: string }[] = await db.query(

@@ -121,6 +121,7 @@ export default function TouConfigs() {
   const touConfigDeleteState = useElementState("touConfig.delete");
   const touConfigEditState = useElementState("touConfig.edit");
   const touConfigCreateState = useElementState("touConfig.create");
+  const touConfigApplyState = useElementState("touConfig.apply");
 
   const [sites, setSites] = useState<SiteOption[]>([]);
   const [selectedSiteId, setSelectedSiteId] = useState<string>("");
@@ -455,6 +456,7 @@ export default function TouConfigs() {
               size="small"
               checked={autoBackup}
               onChange={(e) => toggleAutoBackup(e.target.checked)}
+              disabled={touConfigApplyState !== "write"}
             />
           }
           label={
