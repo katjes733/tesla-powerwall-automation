@@ -16,6 +16,8 @@ import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
 import ConfirmDialog from "../shared/ConfirmDialog";
+import PermissionButton from "../shared/PermissionButton";
+import { useElementState } from "../auth/usePermission";
 import ChargeCurveChart from "./ChargeCurveChart";
 import ScheduleCalibrationDialog from "./ScheduleCalibrationDialog";
 
@@ -157,6 +159,15 @@ export default function Calibration() {
   const [scheduleDialogType, setScheduleDialogType] = useState<
     "calibrate_grid_charge_rate" | "calibrate_charge_curve"
   >("calibrate_grid_charge_rate");
+  const autoCurveToggleState = useElementState("calibration.curve.toggleAuto");
+  // Both "Schedule" buttons stay enabled for read users (opening = viewing an
+  // existing scheduled run); the dialog itself is opened read-only instead.
+  const scheduleDialogReadOnly =
+    useElementState(
+      scheduleDialogType === "calibrate_charge_curve"
+        ? "calibration.curve.scheduleRunOnce"
+        : "calibration.gridChargeRate.scheduleRunOnce",
+    ) === "read";
 
   // Curve tab state
   const [curveJobStatus, setCurveJobStatus] = useState<CurveJobResponse | null>(
@@ -669,7 +680,8 @@ export default function Calibration() {
               )}
 
               <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                <Button
+                <PermissionButton
+                  permissionAction="calibration.gridChargeRate.start"
                   variant="contained"
                   onClick={handleStartCalibration}
                   disabled={!allSafeguardsOk || jobRunning || starting}
@@ -678,7 +690,7 @@ export default function Calibration() {
                   }
                 >
                   {starting ? "Starting…" : "Start Calibration"}
-                </Button>
+                </PermissionButton>
                 <Button
                   variant="outlined"
                   size="small"
@@ -739,7 +751,8 @@ export default function Calibration() {
                     Recorded:{" "}
                     {new Date(calibration.creation_time).toLocaleString()}
                   </Typography>
-                  <Button
+                  <PermissionButton
+                    permissionAction="calibration.gridChargeRate.clear"
                     variant="outlined"
                     color="error"
                     size="small"
@@ -751,7 +764,7 @@ export default function Calibration() {
                     }
                   >
                     {clearing ? "Clearing…" : "Clear Calibration"}
-                  </Button>
+                  </PermissionButton>
                 </>
               ) : (
                 <Typography variant="body2" color="text.secondary">
@@ -886,7 +899,8 @@ export default function Calibration() {
                 )}
 
                 <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
-                  <Button
+                  <PermissionButton
+                    permissionAction="calibration.curve.start"
                     variant="contained"
                     onClick={() => setCurveStartDialogOpen(true)}
                     disabled={
@@ -899,10 +913,11 @@ export default function Calibration() {
                     }
                   >
                     {curveStarting ? "Starting…" : "Start Curve Calibration"}
-                  </Button>
+                  </PermissionButton>
 
                   {curveJobStatus?.status === "running" && (
-                    <Button
+                    <PermissionButton
+                      permissionAction="calibration.curve.stop"
                       variant="outlined"
                       color="warning"
                       onClick={handleStopCurveCalibration}
@@ -914,7 +929,7 @@ export default function Calibration() {
                       }
                     >
                       {curveStopping ? "Stopping…" : "Stop"}
-                    </Button>
+                    </PermissionButton>
                   )}
 
                   <Button
@@ -942,7 +957,9 @@ export default function Calibration() {
                   control={
                     <Switch
                       checked={autoCurveEnabled}
-                      disabled={autoCurveLoading}
+                      disabled={
+                        autoCurveLoading || autoCurveToggleState !== "write"
+                      }
                       onChange={(e) => handleToggleAutoCurve(e.target.checked)}
                     />
                   }
@@ -1050,7 +1067,8 @@ export default function Calibration() {
                               ).toLocaleString()}
                             </Typography>
                           </Box>
-                          <Button
+                          <PermissionButton
+                            permissionAction="calibration.curve.clear"
                             variant="outlined"
                             color="error"
                             size="small"
@@ -1064,7 +1082,7 @@ export default function Calibration() {
                             }
                           >
                             {curveClearing ? "Clearing…" : "Clear Curve Data"}
-                          </Button>
+                          </PermissionButton>
                         </Box>
                         <Box
                           sx={{
@@ -1152,6 +1170,7 @@ export default function Calibration() {
           selectedSiteId
         }
         siteTimezone={safeguards?.siteTimezone ?? "UTC"}
+        readOnly={scheduleDialogReadOnly}
       />
     </Box>
   );

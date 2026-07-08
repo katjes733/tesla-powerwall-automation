@@ -1,7 +1,6 @@
 import {
   Alert,
   Box,
-  Button,
   Chip,
   CircularProgress,
   Paper,
@@ -12,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import ConfirmDialog from "../shared/ConfirmDialog";
+import PermissionButton from "../shared/PermissionButton";
 
 interface RefreshTokenStatus {
   email: string;
@@ -171,7 +171,8 @@ export default function Maintenance() {
         )}
 
         <Box sx={{ display: "flex", justifyContent: "flex-end" }}>
-          <Button
+          <PermissionButton
+            permissionAction="maintenance.refreshToken"
             variant="contained"
             onClick={() => setConfirmOpen(true)}
             disabled={starting}
@@ -181,7 +182,7 @@ export default function Maintenance() {
             ) : (
               "Generate New Refresh Token"
             )}
-          </Button>
+          </PermissionButton>
         </Box>
       </SettingCard>
 

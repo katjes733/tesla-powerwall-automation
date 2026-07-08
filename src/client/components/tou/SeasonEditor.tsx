@@ -65,9 +65,14 @@ function roundToNearest30(
 interface Props {
   season: TouSeason;
   onChange: (season: TouSeason) => void;
+  readOnly?: boolean;
 }
 
-export default function SeasonEditor({ season, onChange }: Props) {
+export default function SeasonEditor({
+  season,
+  onChange,
+  readOnly = false,
+}: Props) {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
 
@@ -125,6 +130,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
         size="small"
         value={season.name}
         onChange={(e) => patch({ name: e.target.value })}
+        disabled={readOnly}
         sx={{ maxWidth: 280 }}
       />
 
@@ -143,6 +149,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
                 size="small"
                 checked={showDays}
                 onChange={(e) => setShowDays(e.target.checked)}
+                disabled={readOnly}
               />
             }
             label={
@@ -168,6 +175,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
                 <InputLabel>From</InputLabel>
                 <Select
                   label="From"
+                  disabled={readOnly}
                   value={season.fromMonth}
                   onChange={(e) => patch({ fromMonth: Number(e.target.value) })}
                   sx={{ minWidth: 130 }}
@@ -182,6 +190,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
             ) : (
               <Select
                 size="small"
+                disabled={readOnly}
                 value={season.fromMonth}
                 onChange={(e) => patch({ fromMonth: Number(e.target.value) })}
                 sx={{ minWidth: 120 }}
@@ -198,6 +207,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
             <Grid size="auto">
               <Select
                 size="small"
+                disabled={readOnly}
                 value={season.fromDay}
                 onChange={(e) => patch({ fromDay: Number(e.target.value) })}
                 sx={{ minWidth: 70 }}
@@ -223,6 +233,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
                 <InputLabel>To</InputLabel>
                 <Select
                   label="To"
+                  disabled={readOnly}
                   value={season.toMonth}
                   onChange={(e) => patch({ toMonth: Number(e.target.value) })}
                   sx={{ minWidth: 130 }}
@@ -237,6 +248,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
             ) : (
               <Select
                 size="small"
+                disabled={readOnly}
                 value={season.toMonth}
                 onChange={(e) => patch({ toMonth: Number(e.target.value) })}
                 sx={{ minWidth: 120 }}
@@ -253,6 +265,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
             <Grid size="auto">
               <Select
                 size="small"
+                disabled={readOnly}
                 value={season.toDay}
                 onChange={(e) => patch({ toDay: Number(e.target.value) })}
                 sx={{ minWidth: 70 }}
@@ -300,6 +313,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
                 size="small"
                 checked={minutePrecision}
                 onChange={(e) => handleToggleMinutePrecision(e.target.checked)}
+                disabled={readOnly}
               />
             }
             label={
@@ -316,6 +330,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
           onChange={(periods) => patch({ periods })}
           minutePrecision={minutePrecision}
           periodIssues={validation.periodIssues}
+          readOnly={readOnly}
         />
         {validation.coverageIssues.length > 0 && (
           <Alert severity="error" sx={{ mt: 1.5 }}>
@@ -335,6 +350,7 @@ export default function SeasonEditor({ season, onChange }: Props) {
         periods={season.periods}
         rates={season.rates}
         onChange={(rates) => patch({ rates })}
+        readOnly={readOnly}
       />
 
       {/* Precision downgrade warning */}

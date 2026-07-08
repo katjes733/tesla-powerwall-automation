@@ -63,6 +63,7 @@ import {
   type SolarForecastResult,
 } from "~/server/util/solarForecast";
 import { maskEmail } from "~/server/util/maskEmail";
+import { getCurrentActor } from "~/server/util/actorContext";
 
 export interface SmartChargingData {
   desired: "enabled" | "disabled";
@@ -103,6 +104,14 @@ interface OperationalModeData {
 
 const SITE_INFO_CACHE_TTL_MS = 5 * 60 * 1000;
 const siteInfoCache = new Map<number, { info: SiteInfo; at: number }>();
+
+// getEnergyProducts() rarely changes and is called on nearly every request that
+// needs a site's identity (permission-gated UI site pickers, User Admin's site
+// multi-select, every route resolving a siteId to a Product). Since Fleet is
+// already a singleton per Tesla account email, a per-instance cache is
+// naturally shared by every login acting on that account (owner and every
+// delegate alike) — no session/user keying needed.
+const PRODUCTS_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const LIVE_STATUS_CACHE_TTL_MS = 30 * 1000;
 const liveStatusCache = new Map<number, { status: LiveStatus; at: number }>();
@@ -193,6 +202,7 @@ export class Fleet {
   private readonly log: ReturnType<typeof logger.child>;
 
   private energyProducts: Product[] = [];
+  private productsCache: { products: Product[]; at: number } | null = null;
   private _actionMap: Record<string, Function>;
 
   private constructor(email: string, options?: FleetOptionsInput) {
@@ -204,7 +214,15 @@ export class Fleet {
     };
     this._actionMap = {};
     for (const key of ALLOWED_ACTIONS) {
-      this._actionMap[key] = (this as any)[key].bind(this);
+      const fn = (this as any)[key].bind(this);
+      // This map is the single chokepoint both the manual "apply settings"
+      // endpoint and the cron scheduler invoke actions through, so wrapping
+      // the binding here gives every ALLOWED_ACTIONS call an audit trail
+      // without touching each action method's own implementation.
+      this._actionMap[key] = (product: Product, ...rest: any[]) =>
+        this.auditedCall(key, product?.energy_site_id, () =>
+          fn(product, ...rest),
+        );
     }
   }
 
@@ -217,6 +235,35 @@ export class Fleet {
 
   public getActionMap() {
     return this._actionMap;
+  }
+
+  // Logs who (actor, resolved via AsyncLocalStorage — see actorContext.ts) did what
+  // (actionName) to which Tesla account (this.email) and site, for every mutating
+  // Fleet call. Actor context is read here rather than stored on `this` because
+  // Fleet instances are singletons shared across concurrent requests from
+  // different actors.
+  private async auditedCall<T>(
+    actionName: string,
+    siteId: string | number | undefined,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const actor = getCurrentActor();
+    const callLog = this.log.child({
+      event: `fleet.call.${actionName}`,
+      actionName,
+      siteId: siteId != null ? String(siteId) : undefined,
+      actorLoginEmail: actor ? maskEmail(actor.loginEmail) : "unknown",
+      actorSource: actor?.source ?? "unknown",
+    });
+    callLog.info("Fleet API call start");
+    try {
+      const result = await fn();
+      callLog.info("Fleet API call succeeded");
+      return result;
+    } catch (err) {
+      callLog.error({ err }, "Fleet API call failed");
+      throw err;
+    }
   }
 
   async getToken(): Promise<string> {
@@ -303,6 +350,12 @@ export class Fleet {
   }
 
   async getEnergyProducts(): Promise<Product[]> {
+    if (
+      this.productsCache &&
+      Date.now() - this.productsCache.at < PRODUCTS_CACHE_TTL_MS
+    ) {
+      return this.productsCache.products;
+    }
     const url = new URL("/api/1/products", baseApiUrl).toString();
     const options = await this.getDefaultGetOptions();
     try {
@@ -324,6 +377,7 @@ export class Fleet {
       this.energyProducts = products.filter(
         (product) => product.energy_site_id,
       );
+      this.productsCache = { products: this.energyProducts, at: Date.now() };
       return this.energyProducts;
     } catch (error: any) {
       const errorMsg = `Error getting Energy Products after retries: ${error.message}`;
@@ -1831,13 +1885,19 @@ export class Fleet {
     product: Product,
     tariffV2: Record<string, any>,
   ): Promise<void> {
-    const siteLog = this.log.child({
-      siteId: String(product.energy_site_id),
-      siteName: product.site_name,
-    });
-    await this.postTouSettings(product, tariffV2);
-    siteInfoCache.delete(product.energy_site_id);
-    siteLog.info("TOU schedule applied");
+    return this.auditedCall(
+      "setTouSchedule",
+      product.energy_site_id,
+      async () => {
+        const siteLog = this.log.child({
+          siteId: String(product.energy_site_id),
+          siteName: product.site_name,
+        });
+        await this.postTouSettings(product, tariffV2);
+        siteInfoCache.delete(product.energy_site_id);
+        siteLog.info("TOU schedule applied");
+      },
+    );
   }
 
   async detectCalibration(product: Product): Promise<void> {

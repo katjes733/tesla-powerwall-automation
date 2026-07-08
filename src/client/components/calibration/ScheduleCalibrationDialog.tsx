@@ -24,6 +24,7 @@ interface Props {
   siteId: string;
   siteName: string;
   siteTimezone: string;
+  readOnly?: boolean;
 }
 
 const LABELS: Record<CalibrationType, string> = {
@@ -44,6 +45,7 @@ export default function ScheduleCalibrationDialog({
   siteId,
   siteName,
   siteTimezone,
+  readOnly = false,
 }: Props) {
   const [selectedDateTime, setSelectedDateTime] = useState<Dayjs | null>(null);
   const [saving, setSaving] = useState(false);
@@ -214,7 +216,7 @@ export default function ScheduleCalibrationDialog({
               size="small"
               color="warning"
               onClick={handleCancel}
-              disabled={cancelling}
+              disabled={cancelling || readOnly}
             >
               {cancelling ? <CircularProgress size={14} /> : "Cancel run"}
             </Button>
@@ -226,6 +228,7 @@ export default function ScheduleCalibrationDialog({
           value={selectedDateTime}
           onChange={handleDateTimeChange}
           disablePast
+          disabled={readOnly}
           slotProps={{ textField: { size: "small", fullWidth: true } }}
         />
 
@@ -270,7 +273,7 @@ export default function ScheduleCalibrationDialog({
         <Button
           variant="contained"
           onClick={handleSave}
-          disabled={!canSave || saving}
+          disabled={!canSave || saving || readOnly}
           startIcon={saving ? <CircularProgress size={16} /> : undefined}
         >
           {saving ? "Scheduling…" : "Schedule"}

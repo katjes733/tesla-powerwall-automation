@@ -36,6 +36,7 @@ const MONTHS = [
 interface Props {
   seasons: TouSeason[];
   onSeasonsChange: (seasons: TouSeason[]) => void;
+  readOnly?: boolean;
 }
 
 interface NewSeasonForm {
@@ -46,7 +47,11 @@ interface NewSeasonForm {
   toDay: number;
 }
 
-export default function SeasonTabs({ seasons, onSeasonsChange }: Props) {
+export default function SeasonTabs({
+  seasons,
+  onSeasonsChange,
+  readOnly = false,
+}: Props) {
   const [activeTab, setActiveTab] = useState(0);
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState<NewSeasonForm>({
@@ -102,6 +107,7 @@ export default function SeasonTabs({ seasons, onSeasonsChange }: Props) {
           variant="outlined"
           startIcon={<AddIcon />}
           onClick={() => setAddOpen(true)}
+          disabled={readOnly}
         >
           Add Season
         </Button>
@@ -132,16 +138,18 @@ export default function SeasonTabs({ seasons, onSeasonsChange }: Props) {
               label={
                 <Box display="flex" alignItems="center" gap={0.5}>
                   <span>{s.name}</span>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeSeason(i);
-                    }}
-                    sx={{ p: 0.25, ml: 0.25 }}
-                  >
-                    <CloseIcon sx={{ fontSize: 14 }} />
-                  </IconButton>
+                  {!readOnly && (
+                    <IconButton
+                      size="small"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeSeason(i);
+                      }}
+                      sx={{ p: 0.25, ml: 0.25 }}
+                    >
+                      <CloseIcon sx={{ fontSize: 14 }} />
+                    </IconButton>
+                  )}
                 </Box>
               }
             />
@@ -151,6 +159,7 @@ export default function SeasonTabs({ seasons, onSeasonsChange }: Props) {
           size="small"
           onClick={() => setAddOpen(true)}
           title="Add season"
+          disabled={readOnly}
           sx={{ ml: 1 }}
         >
           <AddIcon />
@@ -168,6 +177,7 @@ export default function SeasonTabs({ seasons, onSeasonsChange }: Props) {
             <SeasonEditor
               season={season}
               onChange={(updated) => updateSeason(i, updated)}
+              readOnly={readOnly}
             />
           )}
         </Box>

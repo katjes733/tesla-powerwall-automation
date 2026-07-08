@@ -13,6 +13,18 @@ import { SiteCalibrationSample } from "~/server/database/models/siteCalibrationS
 import { SiteSettings } from "~/server/database/models/siteSettings";
 import { migrateTokenEncryption } from "~/server/database/migrateTokenEncryption";
 
+// TypeORM's own repository/query-builder APIs apply the DataSource's configured
+// `schema` automatically, but raw dataSource.query() calls bypass that entirely
+// and resolve unqualified table names via Postgres's session search_path —
+// which won't include a non-"public" DB_SCHEMA unless explicitly qualified.
+// Callers writing raw SQL against a schema-managed table must use this rather
+// than the bare table name. Safe to interpolate directly (not a bind param —
+// Postgres doesn't support parameterized identifiers): DB_SCHEMA is a
+// startup-time env var validated by getInstance() below, never user input.
+export function qualifiedTable(table: string): string {
+  return `"${process.env.DB_SCHEMA || "public"}".${table}`;
+}
+
 class AppDataSource {
   private static instance: DataSource | null = null;
   private static initializing: Promise<DataSource> | null = null;
@@ -87,6 +99,15 @@ class AppDataSource {
         log("✅ Database schema ensured successfully.");
         await dataSource.synchronize();
         log("✅ Database schema synchronised successfully.");
+        // Accelerates resolving "which account(s) can this delegate act on" (looked up
+        // on every authenticated request) and "list delegates for this account" (the
+        // User Admin page) — both are jsonb containment queries against
+        // users.user_permissions.delegations. jsonb_path_ops is smaller/faster than the
+        // default jsonb_ops since only `@>` containment lookups are ever used here.
+        await dataSource.query(
+          `CREATE INDEX IF NOT EXISTS idx_users_user_permissions_gin ON ${qualifiedTable("users")} USING GIN (user_permissions jsonb_path_ops);`,
+        );
+        log("✅ Delegation permission index ensured successfully.");
         await migrateTokenEncryption(dataSource);
         log("✅ Token encryption migration completed.");
         AppDataSource.instance = dataSource;

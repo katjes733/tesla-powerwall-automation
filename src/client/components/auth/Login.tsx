@@ -6,7 +6,7 @@ import Button from "@mui/material/Button";
 import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
 import React from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useNotification } from "../notification/NotificationContext";
 import axios from "axios";
 
@@ -242,12 +242,29 @@ export default function Login() {
   });
   const [signupEmailExistsError, setSignupEmailExistsError] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   useEffect(() => {
     if (user) {
       navigate("/");
     }
   }, [user, navigate]);
+
+  // Deep link from an email: ?signup=1&email=... (a signup/invite code
+  // waiting to be entered) jumps straight to the "enter code + password"
+  // step; plain ?email=... (an already-registered delegate's "you've been
+  // granted access" notification) just pre-fills the login form. Either way,
+  // avoids making the recipient retype their own email address.
+  useEffect(() => {
+    const emailParam = searchParams.get("email");
+    if (searchParams.get("signup") === "1") {
+      setSignup(true);
+      setSignupStep(2);
+      if (emailParam) setEmail(emailParam);
+    } else if (emailParam) {
+      setEmail(emailParam);
+    }
+  }, [searchParams]);
 
   const handleLogin = useCallback(
     async (e: React.FormEvent) => {

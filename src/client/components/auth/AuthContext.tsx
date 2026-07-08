@@ -7,14 +7,29 @@ import {
   useContext,
   useCallback,
   useRef,
+  useMemo,
 } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from "react-router-dom";
+import { getElementState } from "~/shared/permissions/profile";
+import type { AccessLevel, ActionKey } from "~/shared/permissions/schema";
+import type { ProfileName } from "~/shared/permissions/profile";
 
 export const axiosInstance = axios.create({ timeout: 5000 });
 
+export interface SessionUser {
+  loginEmail: string;
+  teslaAccountEmail: string;
+  accountType: "owner" | "delegate";
+  profile: ProfileName;
+  siteIds: string[] | "*";
+  // False for a brand-new self-signup owner who hasn't completed Tesla OAuth
+  // yet — App.tsx/NavMenu restrict them to the Maintenance page until they do.
+  accountLinked: boolean;
+}
+
 interface AuthContextType {
-  user: any;
+  user: SessionUser | null;
   login: (username: string, password: string) => Promise<void>;
   extendSession: () => Promise<void>;
   logout: () => Promise<void>;
@@ -23,6 +38,9 @@ interface AuthContextType {
   sessionExpiry: any;
   sessionId: string | null;
   setSessionExpiry: (expiry: any) => void;
+  getElementState: (action: ActionKey) => AccessLevel;
+  hasSiteAccess: (siteId: string | null | undefined) => boolean;
+  isAdmin: boolean;
 }
 
 export const AuthContext = createContext<AuthContextType>({
@@ -35,11 +53,14 @@ export const AuthContext = createContext<AuthContextType>({
   sessionExpiry: null,
   sessionId: null,
   setSessionExpiry: () => {},
+  getElementState: () => "none",
+  hasSiteAccess: () => false,
+  isAdmin: false,
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const [sessionExpiry, setSessionExpiry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [authPending, setAuthPending] = useState(false);
@@ -308,6 +329,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [user]);
 
+  const getElementStateForUser = useCallback(
+    (action: ActionKey): AccessLevel =>
+      user ? getElementState(user.profile, action) : "none",
+    [user],
+  );
+
+  const hasSiteAccess = useCallback(
+    (siteId: string | null | undefined): boolean => {
+      if (!user || !siteId) return false;
+      return user.siteIds === "*" || user.siteIds.includes(siteId);
+    },
+    [user],
+  );
+
+  const isAdmin = useMemo(() => user?.profile === "admin", [user]);
+
   return (
     <>
       <AuthContext.Provider
@@ -321,6 +358,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           sessionExpiry,
           sessionId,
           setSessionExpiry,
+          getElementState: getElementStateForUser,
+          hasSiteAccess,
+          isAdmin,
         }}
       >
         {children}

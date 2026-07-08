@@ -10,22 +10,41 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { useAuth } from "../auth/AuthContext";
 import { useCallback, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import type { ActionKey } from "~/shared/permissions/schema";
 
-const PAGE_TITLES: Record<string, string> = {
-  "/": "Powerwall",
-  "/health": "App Health",
-  "/schedules": "Schedules",
-  "/tou-configs": "TOU Configs",
-  "/settings": "Manual Settings",
-  "/calibration": "Calibration",
-  "/history": "Energy History",
-  "/maintenance": "Maintenance",
-};
+interface NavItem {
+  path: string;
+  label: string;
+  action: ActionKey;
+}
+
+// One array drives both the page title lookup, the nav menu's visibility, and
+// (via App.tsx's route table using the same action keys) the route gates — so
+// nav and routes can't drift apart.
+const NAV_ITEMS: NavItem[] = [
+  { path: "/", label: "Powerwall", action: "powerwall.access" },
+  { path: "/health", label: "App Health", action: "health.access" },
+  { path: "/schedules", label: "Schedules", action: "schedule.access" },
+  { path: "/tou-configs", label: "TOU Configs", action: "touConfig.access" },
+  {
+    path: "/settings",
+    label: "Manual Settings",
+    action: "siteSettings.access",
+  },
+  { path: "/calibration", label: "Calibration", action: "calibration.access" },
+  { path: "/history", label: "Energy History", action: "powerwall.access" },
+  { path: "/maintenance", label: "Maintenance", action: "maintenance.access" },
+  { path: "/user-admin", label: "User Admin", action: "userAdmin.access" },
+];
+
+const PAGE_TITLES: Record<string, string> = Object.fromEntries(
+  NAV_ITEMS.map((item) => [item.path, item.label]),
+);
 
 export default function NavMenu() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, getElementState } = useAuth();
   const theme = useTheme();
   const pageTitle = PAGE_TITLES[location.pathname] ?? "";
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -34,6 +53,14 @@ export default function NavMenu() {
     null,
   );
   const avatarRef = useRef<HTMLDivElement>(null);
+
+  // Hasn't completed Tesla OAuth yet — only Maintenance (where they can link
+  // their account) is reachable, regardless of what their admin profile would
+  // otherwise unlock.
+  const visibleNavItems =
+    user && !user.accountLinked
+      ? NAV_ITEMS.filter((item) => item.path === "/maintenance")
+      : NAV_ITEMS.filter((item) => getElementState(item.action) !== "none");
 
   const handleUserMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget);
@@ -63,45 +90,13 @@ export default function NavMenu() {
       });
   }, [handleUserMenuClose, logout, navigate]);
 
-  const handleNavigateToPowerwall = useCallback(() => {
-    handleMainMenuClose();
-    navigate("/");
-  }, [navigate]);
-
-  const handleNavigateToHealth = useCallback(() => {
-    handleMainMenuClose();
-    navigate("/health");
-  }, [navigate]);
-
-  const handleNavigateToSchedules = useCallback(() => {
-    handleMainMenuClose();
-    navigate("/schedules");
-  }, [navigate]);
-
-  const handleNavigateToTouConfigs = useCallback(() => {
-    handleMainMenuClose();
-    navigate("/tou-configs");
-  }, [navigate]);
-
-  const handleNavigateToSettings = useCallback(() => {
-    handleMainMenuClose();
-    navigate("/settings");
-  }, [navigate]);
-
-  const handleNavigateToCalibration = useCallback(() => {
-    handleMainMenuClose();
-    navigate("/calibration");
-  }, [navigate]);
-
-  const handleNavigateToHistory = useCallback(() => {
-    handleMainMenuClose();
-    navigate("/history");
-  }, [navigate]);
-
-  const handleNavigateToMaintenance = useCallback(() => {
-    handleMainMenuClose();
-    navigate("/maintenance");
-  }, [navigate]);
+  const handleNavigate = useCallback(
+    (path: string) => {
+      handleMainMenuClose();
+      navigate(path);
+    },
+    [navigate],
+  );
 
   return (
     <AppBar
@@ -140,28 +135,14 @@ export default function NavMenu() {
                 open={Boolean(mainMenuAnchor)}
                 onClose={handleMainMenuClose}
               >
-                <MenuItem onClick={handleNavigateToPowerwall}>
-                  Powerwall
-                </MenuItem>
-                <MenuItem onClick={handleNavigateToHealth}>App Health</MenuItem>
-                <MenuItem onClick={handleNavigateToSchedules}>
-                  Schedules
-                </MenuItem>
-                <MenuItem onClick={handleNavigateToTouConfigs}>
-                  TOU Configs
-                </MenuItem>
-                <MenuItem onClick={handleNavigateToSettings}>
-                  Manual Settings
-                </MenuItem>
-                <MenuItem onClick={handleNavigateToCalibration}>
-                  Calibration
-                </MenuItem>
-                <MenuItem onClick={handleNavigateToHistory}>
-                  Energy History
-                </MenuItem>
-                <MenuItem onClick={handleNavigateToMaintenance}>
-                  Maintenance
-                </MenuItem>
+                {visibleNavItems.map((item) => (
+                  <MenuItem
+                    key={item.path}
+                    onClick={() => handleNavigate(item.path)}
+                  >
+                    {item.label}
+                  </MenuItem>
+                ))}
               </Menu>
             </>
           )}
@@ -234,9 +215,18 @@ export default function NavMenu() {
                   disableRipple
                   disableTouchRipple
                   tabIndex={-1}
-                  sx={{ pointerEvents: "none" }}
+                  sx={{
+                    pointerEvents: "none",
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                  }}
                 >
-                  {user}
+                  <Typography variant="body2">{user?.loginEmail}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {user?.profile}{" "}
+                    {user?.accountType === "delegate" &&
+                      `· Managing ${user.teslaAccountEmail}`}
+                  </Typography>
                 </MenuItem>
                 <Divider />
                 <MenuItem onClick={handleLogout}>Logout</MenuItem>
