@@ -52,6 +52,13 @@ export function estimateSolarKwhFromHistory(
   timezone: string,
 ): SolarForecastResult | null {
   if (dataPoints.length === 0) return null;
+  // peakStart no longer being after now means the window has already elapsed
+  // (e.g. now has ticked past the caller's peak-minus-buffer cutoff but not
+  // yet past the real peak) rather than a genuine overnight wrap — comparing
+  // only time-of-day minutes below can't tell those apart, since a same-day
+  // "already passed" case and a next-day wrap look identical once the date is
+  // dropped. Deciding it here, with full date info, avoids that ambiguity.
+  if (!peakStart.isAfter(now)) return null;
 
   const nowMins = now.hours() * 60 + now.minutes();
   const peakMins = peakStart.hours() * 60 + peakStart.minutes();

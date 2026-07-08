@@ -176,6 +176,48 @@ describe("estimateSolarKwhFromHistory", () => {
       expect(estimateSolarKwhFromHistory(data, now, peak, TZ)).toBeNull();
     });
 
+    it("returns null when now is at or after peakStart on the same day, instead of wrapping to a near-full-day window", () => {
+      // Regression: peakStart 1 minute in the past used to be misread as an
+      // overnight wrap (now > peakStart time-of-day), summing nearly the
+      // entire day's historical solar instead of recognizing the window has
+      // already elapsed.
+      const now = moment.tz("2026-06-08 13:41", TZ);
+      const peak = moment.tz("2026-06-08 13:40", TZ);
+      expect(
+        estimateSolarKwhFromHistory(
+          [...sunnySeven(), ...makeToday(1000)],
+          now,
+          peak,
+          TZ,
+        ),
+      ).toBeNull();
+    });
+
+    it("returns null when now equals peakStart exactly", () => {
+      const now = moment.tz("2026-06-08 13:40", TZ);
+      const peak = moment.tz("2026-06-08 13:40", TZ);
+      expect(
+        estimateSolarKwhFromHistory(
+          [...sunnySeven(), ...makeToday(1000)],
+          now,
+          peak,
+          TZ,
+        ),
+      ).toBeNull();
+    });
+
+    it("still computes a genuine overnight wrap when peakStart is tomorrow", () => {
+      // now = 23:00 today, peak = 09:00 tomorrow — a real cross-midnight
+      // window (overlapping the 08:00 solar hour), not an elapsed one; must
+      // not be short-circuited to null just because peakStart's time-of-day
+      // (09:00) is numerically before now's (23:00).
+      const now = moment.tz("2026-06-07 23:00", TZ);
+      const peak = moment.tz("2026-06-08 09:00", TZ);
+      const result = estimateSolarKwhFromHistory(sunnySeven(), now, peak, TZ);
+      expect(result).not.toBeNull();
+      expect(result!.daysUsed).toBe(6);
+    });
+
     it("uses only days that have readings in the window", () => {
       // 5 days with readings 10:00–14:00, plus 2 days with no readings in that window.
       const goodDays = sunnySeven().filter((p) => {
