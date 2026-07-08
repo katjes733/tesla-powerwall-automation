@@ -265,6 +265,7 @@ export default function UserAdmin() {
               >
                 <ListItemText
                   primary={delegate.delegate_email}
+                  slotProps={{ secondary: { component: "div" } }}
                   secondary={
                     <>
                       <Chip
