@@ -1,5 +1,5 @@
 import express from "express";
-import AppDataSource from "~/server/database/datasource";
+import AppDataSource, { qualifiedTable } from "~/server/database/datasource";
 import { resolveActorMiddleware } from "~/server/middleware/resolveActorMiddleware";
 import { requirePermission } from "~/server/middleware/requirePermission";
 import { validateBody } from "~/server/middleware/validateBody";
@@ -12,6 +12,7 @@ import {
 import { generateAndSendCode } from "~/server/routes/signupVerification";
 import { sendEmail } from "~/server/util/mailing";
 import { maskEmail } from "~/server/util/maskEmail";
+import { getPublicOrigin } from "~/server/util/requestOrigin";
 
 const apiLog = logger.child({ service: "userAdmin" });
 
@@ -32,7 +33,7 @@ router.get(
         email: string;
         user_permissions: { delegations?: DelegationGrant[] };
       }[] = await db.query(
-        `SELECT email, user_permissions FROM users WHERE user_permissions @> $1::jsonb`,
+        `SELECT email, user_permissions FROM ${qualifiedTable("users")} WHERE user_permissions @> $1::jsonb`,
         [
           JSON.stringify({
             delegations: [{ tesla_account_email: accountEmail }],
@@ -84,7 +85,7 @@ router.post(
       const db = await AppDataSource.getInstance();
 
       const existingActive: unknown[] = await db.query(
-        `SELECT 1 FROM users WHERE email = $1 AND user_permissions @> $2::jsonb`,
+        `SELECT 1 FROM ${qualifiedTable("users")} WHERE email = $1 AND user_permissions @> $2::jsonb`,
         [
           delegate_email,
           JSON.stringify({
@@ -117,7 +118,7 @@ router.post(
       // disturbing it if it already does — this is what lets a pending invite
       // exist before the invitee is a real user.
       await db.query(
-        `INSERT INTO users (creation_time, modified_time, email, password_hash, user_permissions)
+        `INSERT INTO ${qualifiedTable("users")} (creation_time, modified_time, email, password_hash, user_permissions)
          VALUES (now(), now(), $1, '', $2::jsonb)
          ON CONFLICT (email) DO NOTHING`,
         [delegate_email, JSON.stringify({ delegations: [] })],
@@ -126,7 +127,7 @@ router.post(
       // Atomic single-statement append — no read-modify-write race between
       // concurrent admins editing the same delegate's grants.
       await db.query(
-        `UPDATE users
+        `UPDATE ${qualifiedTable("users")}
          SET user_permissions = jsonb_set(
            coalesce(user_permissions, '{}'::jsonb),
            '{delegations}',
@@ -137,20 +138,30 @@ router.post(
       );
 
       const existingRow: { password_hash: string }[] = await db.query(
-        `SELECT password_hash FROM users WHERE email = $1`,
+        `SELECT password_hash FROM ${qualifiedTable("users")} WHERE email = $1`,
         [delegate_email],
       );
       const hasCompletedSignup = !!existingRow[0]?.password_hash;
 
+      const loginUrl = `${getPublicOrigin(req)}/login`;
+
       if (!hasCompletedSignup) {
         await generateAndSendCode(delegate_email, (code) => ({
           subject: "You've been invited to manage a Tesla Powerwall account",
-          text: `You've been invited by ${grantedBy} to manage the ${accountEmail} Powerwall account with ${profile} access.\n\nYour verification code is: ${code}\n\nThis code is valid for 15 minutes. Complete signup in the app to accept.`,
+          text: `You've been invited by ${grantedBy} to manage the ${accountEmail} Powerwall account with ${profile} access.
+
+To accept, go to ${loginUrl} and click "Sign up". Enter this email address (${delegate_email}) and the verification code below, then choose a password to finish creating your account.
+
+Your verification code is: ${code}
+
+This code is valid for 15 minutes.`,
         }));
       } else {
         await sendEmail(
           "You've been granted access to a Tesla Powerwall account",
-          `You've been granted ${profile} access to the ${accountEmail} Powerwall account by ${grantedBy}. Log in with your existing account to see it.`,
+          `You've been granted ${profile} access to the ${accountEmail} Powerwall account by ${grantedBy}.
+
+Log in at ${loginUrl} with your existing account to see it.`,
           delegate_email,
         );
       }
@@ -195,7 +206,7 @@ router.post(
     try {
       const db = await AppDataSource.getInstance();
       await db.query(
-        `UPDATE users
+        `UPDATE ${qualifiedTable("users")}
          SET user_permissions = jsonb_set(
            user_permissions, '{delegations}',
            (SELECT jsonb_agg(
@@ -240,7 +251,7 @@ router.post(
     try {
       const db = await AppDataSource.getInstance();
       await db.query(
-        `UPDATE users
+        `UPDATE ${qualifiedTable("users")}
          SET user_permissions = jsonb_set(
            user_permissions, '{delegations}',
            (SELECT jsonb_agg(

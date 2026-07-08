@@ -211,18 +211,20 @@ export const PROFILES: Record<ProfileName, ActionSchema> = {
   admin: ADMIN_PROFILE,
 };
 
-// Path lookup into whichever profile object, with one mechanical rule beyond a plain
-// path-walk: "access" means the same thing at every depth — "can this be reached/
-// viewed at all" — so wherever a container along the path defines its own "access"
-// sibling (schedule.access, backupReserve.access, etc.), that value is a hard CAP on
-// every leaf nested anywhere beneath it, transitively, regardless of what those
-// leaves are individually authored to.
-export function getElementState(
-  profileName: ProfileName,
+// Path walk over any concrete ActionSchema value, with one mechanical rule
+// beyond a plain path-walk: "access" means the same thing at every depth —
+// "can this be reached/viewed at all" — so wherever a container along the path
+// defines its own "access" sibling (schedule.access, backupReserve.access,
+// etc.), that value is a hard CAP on every leaf nested anywhere beneath it,
+// transitively, regardless of what those leaves are individually authored to.
+// Exported (not just getElementState) so the capping algorithm itself can be
+// unit-tested against synthetic profiles, independent of the app's real ones.
+export function resolveAccessLevel(
+  profile: ActionSchema,
   action: ActionKey,
 ): AccessLevel {
   const segments = action.split(".");
-  let node: unknown = PROFILES[profileName];
+  let node: unknown = profile;
   let cap: AccessLevel = "write"; // uncapped until an ancestor's own "access" says otherwise
   for (let i = 0; i < segments.length; i++) {
     if (node == null || typeof node !== "object") return "none";
@@ -234,4 +236,13 @@ export function getElementState(
   }
   const own = typeof node === "string" ? (node as AccessLevel) : "none";
   return min(own, cap);
+}
+
+// Path lookup into whichever named profile — the function every call site
+// (server middleware, client hooks) actually uses.
+export function getElementState(
+  profileName: ProfileName,
+  action: ActionKey,
+): AccessLevel {
+  return resolveAccessLevel(PROFILES[profileName], action);
 }
