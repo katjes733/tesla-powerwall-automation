@@ -21,11 +21,57 @@ import {
   SAMPLE_RETENTION_DAYS,
   MAX_CURVE_START_SOC_PERCENT,
 } from "~/server/util/curveFit";
+import type { ISchedule } from "~/server/database/models/schedule";
 
 export const CALIBRATION_SCHEDULE_ACTIONS = new Set([
   "calibrate_grid_charge_rate",
   "calibrate_charge_curve",
 ]);
+
+export type OneTimeSchedulePhase =
+  | "pending"
+  | "succeeded"
+  | "failed"
+  | "expired";
+
+// A one-time calibration schedule row is never reused across different
+// scheduled moments (a fresh Schedule row is created per booking), so these
+// fields unambiguously describe the single firing attempt for this exact
+// row — no need to cross-reference against the target date.
+export function computeOneTimeSchedulePhase(
+  schedule: ISchedule,
+): OneTimeSchedulePhase {
+  if (schedule.enabled) return "pending";
+  if (schedule.last_success_time) return "succeeded";
+  if (schedule.last_error) return "failed";
+  return "expired";
+}
+
+// Reconstructs the concrete target date from a one-time schedule's cron
+// ("minute hour dayOfMonth month *", built by ScheduleCalibrationDialog.tsx),
+// in the schedule's own timezone. Only meaningful for a "pending" schedule —
+// a completed one's original target time isn't needed once it has fired.
+export function computeOneTimeScheduleNextRun(
+  cron: string,
+  timezone: string,
+): Date {
+  const [minute, hour, dayOfMonth, month] = cron.split(" ").map(Number);
+  const now = moment.tz(timezone);
+  let target = now
+    .clone()
+    .month(month - 1)
+    .date(dayOfMonth)
+    .hour(hour)
+    .minute(minute)
+    .second(0)
+    .millisecond(0);
+  // The stored cron has no year — if constructing it against the current
+  // year lands in the past, the target must actually be next year.
+  if (target.isBefore(now)) {
+    target = target.add(1, "year");
+  }
+  return target.toDate();
+}
 
 export const MAX_GRID_RATE_SOC_PERCENT = 80;
 export const MAX_CURVE_CALIBRATION_SOC_PERCENT = MAX_CURVE_START_SOC_PERCENT;
@@ -174,7 +220,17 @@ export async function runCalibration(
     const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
       "SiteCalibration",
     );
+    // Only the latest row per site+type is ever read — update it in place
+    // rather than accumulating a new row on every completed calibration run.
+    const existing = await repo.findOne({
+      where: {
+        site_id: String(product.energy_site_id),
+        calibration_type: CALIBRATION_TYPE,
+      },
+      order: { creation_time: "DESC" },
+    });
     const saved = await repo.save({
+      ...(existing && { id: existing.id }),
       site_id: String(product.energy_site_id),
       calibration_type: CALIBRATION_TYPE,
       calibration_data: calibrationData as unknown as Record<string, unknown>,
@@ -259,7 +315,17 @@ export async function finalizeCurveCalibration(
 
   if (isValidCandidate(candidate)) {
     const now = new Date();
+    // Only the latest row per site+type is ever read — update it in place
+    // rather than accumulating a new row on every completed calibration run.
+    const existing = await calibRepo.findOne({
+      where: {
+        site_id: energySiteId,
+        calibration_type: CURVE_CALIBRATION_TYPE,
+      },
+      order: { creation_time: "DESC" },
+    });
     await calibRepo.save({
+      ...(existing && { id: existing.id }),
       site_id: energySiteId,
       calibration_type: CURVE_CALIBRATION_TYPE,
       calibration_data: candidate as unknown as Record<string, unknown>,

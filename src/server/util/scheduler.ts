@@ -251,6 +251,18 @@ export class Scheduler {
             ),
           redis,
         );
+        // A one-time schedule that never got the chance to fire (e.g. the
+        // server was down at the target time) still needs to be marked
+        // disabled — otherwise it stays "pending" forever from the
+        // Calibration tab's perspective, since the success/error branches
+        // below (the only other places that disable a runOnce schedule)
+        // never run for a schedule that expires before ever executing.
+        if (resolveScheduleOptions(schedule.options).runOnce) {
+          schedLog.info(
+            "One-time schedule expired without running — disabling",
+          );
+          await upsertScheduleInDb({ id: schedule.id, enabled: false });
+        }
       }
       return;
     }
@@ -655,7 +667,10 @@ export class Scheduler {
               : candidate;
 
             const now = new Date();
+            // Only the latest row per site+type is ever read — update it in
+            // place rather than accumulating a new row every 6 hours.
             await calibRepo.save({
+              ...(existing && { id: existing.id }),
               site_id,
               calibration_type: "chargeCurve",
               calibration_data: updated as unknown as Record<string, unknown>,

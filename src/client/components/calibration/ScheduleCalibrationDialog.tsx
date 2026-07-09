@@ -1,7 +1,6 @@
 import Alert from "@mui/material/Alert";
 import Box from "@mui/material/Box";
 import Button from "@mui/material/Button";
-import Chip from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Dialog from "@mui/material/Dialog";
 import DialogActions from "@mui/material/DialogActions";
@@ -24,6 +23,12 @@ interface Props {
   siteId: string;
   siteName: string;
   siteTimezone: string;
+  // The latest one-time schedule for this site+action, if any (regardless of
+  // its phase — pending or already completed) — fetched by the parent
+  // Calibration page (see Calibration.tsx's fetchScheduleStatus), which is
+  // also where its status and Cancel action are now displayed. This dialog
+  // only needs the id, to replace it on Save.
+  existingScheduleId?: string | null;
   readOnly?: boolean;
 }
 
@@ -32,12 +37,6 @@ const LABELS: Record<CalibrationType, string> = {
   calibrate_charge_curve: "Charge Curve Calibration",
 };
 
-interface ExistingSchedule {
-  id: string;
-  cron: string;
-  timezone: string;
-}
-
 export default function ScheduleCalibrationDialog({
   open,
   onClose,
@@ -45,13 +44,11 @@ export default function ScheduleCalibrationDialog({
   siteId,
   siteName,
   siteTimezone,
+  existingScheduleId = null,
   readOnly = false,
 }: Props) {
   const [selectedDateTime, setSelectedDateTime] = useState<Dayjs | null>(null);
   const [saving, setSaving] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
-  const [existingSchedule, setExistingSchedule] =
-    useState<ExistingSchedule | null>(null);
   const [peakWarning, setPeakWarning] = useState<{
     hasTouData: boolean;
     inPeak: boolean;
@@ -60,35 +57,11 @@ export default function ScheduleCalibrationDialog({
 
   const peakDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const loadExistingSchedule = useCallback(async () => {
-    try {
-      const res = await axiosInstance.get("/api/schedule/all");
-      const schedules: any[] = res.data.data ?? [];
-      const match = schedules.find(
-        (s: any) =>
-          s.options?.runOnce === true &&
-          s.enabled === true &&
-          Array.isArray(s.site_ids) &&
-          s.site_ids.includes(siteId) &&
-          Array.isArray(s.actions) &&
-          s.actions.some((a: any) => a.action === calibrationType),
-      );
-      setExistingSchedule(
-        match
-          ? { id: match.id, cron: match.cron, timezone: match.timezone }
-          : null,
-      );
-    } catch {
-      setExistingSchedule(null);
-    }
-  }, [siteId, calibrationType]);
-
   useEffect(() => {
     if (!open) return;
     setSelectedDateTime(null);
     setPeakWarning(null);
-    loadExistingSchedule();
-  }, [open, loadExistingSchedule]);
+  }, [open]);
 
   const checkPeak = useCallback(
     (dt: Dayjs | null) => {
@@ -123,28 +96,13 @@ export default function ScheduleCalibrationDialog({
     checkPeak(value);
   };
 
-  const handleCancel = async () => {
-    if (!existingSchedule) return;
-    setCancelling(true);
-    try {
-      await axiosInstance.post("/api/schedule/delete", {
-        id: existingSchedule.id,
-      });
-      setExistingSchedule(null);
-    } catch {
-      // swallow — parent will see the schedule still exists on next open
-    } finally {
-      setCancelling(false);
-    }
-  };
-
   const handleSave = async () => {
     if (!selectedDateTime || !selectedDateTime.isValid()) return;
     setSaving(true);
     try {
-      if (existingSchedule) {
+      if (existingScheduleId) {
         await axiosInstance.post("/api/schedule/delete", {
-          id: existingSchedule.id,
+          id: existingScheduleId,
         });
       }
       const dt = selectedDateTime;
@@ -168,22 +126,6 @@ export default function ScheduleCalibrationDialog({
     }
   };
 
-  function formatCron(cron: string, timezone: string): string {
-    const parts = cron.split(" ");
-    if (parts.length < 5) return cron;
-    const [minute, hour, dom, month] = parts;
-    const dt = dayjs()
-      .month(parseInt(month) - 1)
-      .date(parseInt(dom))
-      .hour(parseInt(hour))
-      .minute(parseInt(minute));
-    const timeStr = new Intl.DateTimeFormat(undefined, {
-      hour: "numeric",
-      minute: "2-digit",
-    }).format(dt.toDate());
-    return `${dt.format("MMM D")} at ${timeStr} (${timezone})`;
-  }
-
   const canSave =
     selectedDateTime !== null &&
     selectedDateTime.isValid() &&
@@ -196,32 +138,6 @@ export default function ScheduleCalibrationDialog({
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Site: <strong>{siteName}</strong>
         </Typography>
-
-        {existingSchedule && (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 1,
-              mb: 2,
-              flexWrap: "wrap",
-            }}
-          >
-            <Chip
-              size="small"
-              color="primary"
-              label={`Scheduled: ${formatCron(existingSchedule.cron, existingSchedule.timezone)}`}
-            />
-            <Button
-              size="small"
-              color="warning"
-              onClick={handleCancel}
-              disabled={cancelling || readOnly}
-            >
-              {cancelling ? <CircularProgress size={14} /> : "Cancel run"}
-            </Button>
-          </Box>
-        )}
 
         <DateTimePicker
           label="Date &amp; time"

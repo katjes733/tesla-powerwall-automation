@@ -363,6 +363,30 @@ describe("calculateGridChargeHours — curve path", () => {
     expect(solarCoversAboveSocPct).toBe(92.5);
   });
 
+  it("below the curve's lowest bin: uses chargeRateKw instead of extrapolating a possibly-noisy edge bin", () => {
+    // Regression: bins[0] here stands in for a noisy single-session outlier
+    // (should be ~16kW like its neighbors, per the real calibration data that
+    // prompted this fix). Flat-extrapolating it across the entire untested
+    // 62–70.5% range below the curve would wrongly conclude the battery can
+    // barely accept power there, skipping any real grid-time allocation.
+    const curve = makeCurve([
+      { soc_percent: 71, battery_kw: 0.93 }, // noisy outlier bin
+      { soc_percent: 73, battery_kw: 16 },
+      { soc_percent: 100, battery_kw: 16 },
+    ]);
+    const { hours, effectiveRateKw } = calculateGridChargeHours(
+      0.9, // energyNeededKwh (capacityKwh = 0.9 / 0.09 = 10 kWh)
+      0, // estimatedSolarKwh
+      62, // currentSoc — below the curve's lowest bin (71)
+      71, // targetSoc — all 18 steps land below the lowest bin
+      16, // chargeRateKw
+      curve,
+    );
+    // All steps use the chargeRateKw fallback, not the 0.93kW outlier bin.
+    expect(hours).toBeCloseTo(0.9 / 16 + STARTUP_HOURS, 3);
+    expect(effectiveRateKw).toBeCloseTo(16, 1);
+  });
+
   it("no curve: solarCoversAboveSocPct is undefined", () => {
     const { hours, solarCoversAboveSocPct } = calculateGridChargeHours(
       2,

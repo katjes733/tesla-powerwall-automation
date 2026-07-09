@@ -24,14 +24,19 @@ const MIN_BINS_REQUIRED = 10;
 const MIN_SOC_RANGE_PERCENT = 8;
 export const SAMPLE_RETENTION_DAYS = 60;
 
-// Minimum grid contribution to treat a sample as BMS-limited rather than
-// supply-limited. Solar-only charging may under-drive the battery, making
-// battery_kw reflect solar availability rather than the true acceptance curve.
+// Minimum grid contribution *to the battery* (battery_kw beyond what solar
+// alone could supply) to treat a sample as BMS-limited rather than
+// supply-limited. Checking raw grid_kw instead of this delta is unsound: grid
+// import can be high purely to cover concurrent household load while the
+// battery itself is charging from solar alone, which would otherwise pass a
+// raw grid_kw check despite the grid never actually reaching the battery.
 const MIN_GRID_KW_FOR_SAMPLE = 1.0;
 // Above this SOC the battery acceptance naturally falls below MIN_GRID_KW_FOR_SAMPLE
-// even under full grid charging. Samples here are exempt from the grid_kw gate
-// because the recorded battery_kw is the true BMS acceptance limit regardless
-// of how much the grid happens to be contributing.
+// even under full grid charging, so a sample is trusted here with any positive
+// (rather than the full MIN_GRID_KW_FOR_SAMPLE) grid contribution to the
+// battery. Still requires a strictly positive contribution — a sample where
+// grid is fully off (contribution <= 0) is solar-only regardless of SOC and
+// tells us nothing about the battery's grid-charging acceptance.
 const CV_TAPER_SOC_EXEMPT_PERCENT = 95;
 // Maximum SOC at which a calibration session must have started. Ensures the
 // dataset covers the CC region and carries through the full CV taper to ~100%.
@@ -107,15 +112,18 @@ export function buildChargeCurveBins(
     .flat();
   if (fullSessionSamples.length === 0) return null;
 
-  // Require grid_kw >= MIN_GRID_KW_FOR_SAMPLE to exclude supply-limited solar
-  // samples. Exempt samples above CV_TAPER_SOC_EXEMPT_PERCENT: at that SOC the
-  // battery's BMS acceptance naturally falls below MIN_GRID_KW_FOR_SAMPLE even
-  // under full grid charging, so the recorded battery_kw is the true limit.
-  const valid = fullSessionSamples.filter(
-    (s) =>
-      Number(s.sample_data.grid_kw) >= MIN_GRID_KW_FOR_SAMPLE ||
-      Number(s.sample_data.soc_percent) >= CV_TAPER_SOC_EXEMPT_PERCENT,
-  );
+  // Require the battery to have received meaningfully more than solar alone
+  // could supply, to exclude supply-limited (solar-only) samples — see
+  // MIN_GRID_KW_FOR_SAMPLE and CV_TAPER_SOC_EXEMPT_PERCENT above.
+  const valid = fullSessionSamples.filter((s) => {
+    const gridContributionKw =
+      Number(s.sample_data.battery_kw) - Number(s.sample_data.solar_kw);
+    const soc = Number(s.sample_data.soc_percent);
+    return (
+      gridContributionKw >= MIN_GRID_KW_FOR_SAMPLE ||
+      (soc >= CV_TAPER_SOC_EXEMPT_PERCENT && gridContributionKw > 0)
+    );
+  });
   if (valid.length === 0) return null;
 
   // Reject datasets that don't cover the CC region. Without samples at or below
@@ -264,9 +272,16 @@ export function blendChargeCurveBins(
 export function lookupBatteryRateKw(
   soc: number,
   bins: ChargeCurveBin[],
+  belowRangeRateKw: number,
 ): number {
-  if (bins.length === 0) return 0;
-  if (soc <= bins[0].soc_percent) return bins[0].battery_kw;
+  if (bins.length === 0) return belowRangeRateKw;
+  // Below the curve's lowest bin is untested CC-phase territory — the curve is
+  // only ever built starting at MAX_CURVE_START_SOC_PERCENT or higher, on the
+  // assumption that acceptance is flat below that point. Extrapolating the
+  // lowest bin's own value here is fragile: that bin can be a single noisy
+  // session's median (e.g. a grid-ramp-up transient), and trusting it would
+  // silently apply that noise to the entire untested range below it.
+  if (soc <= bins[0].soc_percent) return belowRangeRateKw;
 
   const lastBin = bins[bins.length - 1];
   if (soc >= lastBin.soc_percent) {

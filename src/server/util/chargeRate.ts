@@ -204,7 +204,7 @@ function calculateGridChargeHoursCurve(
 
   for (let i = 0; i < steps; i++) {
     const soc = currentSocPercent + i * CURVE_STEP_SOC;
-    const batteryCapKw = lookupBatteryRateKw(soc, curve.bins);
+    const batteryCapKw = lookupBatteryRateKw(soc, curve.bins, chargeRateKw);
 
     if (batteryCapKw <= solarRateKw) {
       // Solar covers this SOC step entirely — grid not needed here.
