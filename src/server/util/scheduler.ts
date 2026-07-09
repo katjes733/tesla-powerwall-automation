@@ -667,7 +667,10 @@ export class Scheduler {
               : candidate;
 
             const now = new Date();
+            // Only the latest row per site+type is ever read — update it in
+            // place rather than accumulating a new row every 6 hours.
             await calibRepo.save({
+              ...(existing && { id: existing.id }),
               site_id,
               calibration_type: "chargeCurve",
               calibration_data: updated as unknown as Record<string, unknown>,

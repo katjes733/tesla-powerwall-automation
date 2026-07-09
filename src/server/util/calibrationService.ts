@@ -220,7 +220,17 @@ export async function runCalibration(
     const repo = db.getRepository<ISiteCalibration & IBasicEntity>(
       "SiteCalibration",
     );
+    // Only the latest row per site+type is ever read — update it in place
+    // rather than accumulating a new row on every completed calibration run.
+    const existing = await repo.findOne({
+      where: {
+        site_id: String(product.energy_site_id),
+        calibration_type: CALIBRATION_TYPE,
+      },
+      order: { creation_time: "DESC" },
+    });
     const saved = await repo.save({
+      ...(existing && { id: existing.id }),
       site_id: String(product.energy_site_id),
       calibration_type: CALIBRATION_TYPE,
       calibration_data: calibrationData as unknown as Record<string, unknown>,
@@ -305,7 +315,17 @@ export async function finalizeCurveCalibration(
 
   if (isValidCandidate(candidate)) {
     const now = new Date();
+    // Only the latest row per site+type is ever read — update it in place
+    // rather than accumulating a new row on every completed calibration run.
+    const existing = await calibRepo.findOne({
+      where: {
+        site_id: energySiteId,
+        calibration_type: CURVE_CALIBRATION_TYPE,
+      },
+      order: { creation_time: "DESC" },
+    });
     await calibRepo.save({
+      ...(existing && { id: existing.id }),
       site_id: energySiteId,
       calibration_type: CURVE_CALIBRATION_TYPE,
       calibration_data: candidate as unknown as Record<string, unknown>,
