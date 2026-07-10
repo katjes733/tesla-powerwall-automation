@@ -1034,7 +1034,8 @@ export default function Calibration() {
                 >
                   Enables grid charging from current SOC to 100%, sampling every
                   15 s. Covers the full SOC range that automatic collection may
-                  not reach. Takes up to 3 hours. Can be stopped early — any
+                  not reach. Runs until 100% or until the next on-peak period
+                  begins, whichever comes first. Can be stopped early — any
                   sufficient data collected will be saved.
                 </Typography>
 

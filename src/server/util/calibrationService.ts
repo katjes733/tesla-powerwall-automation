@@ -100,9 +100,14 @@ export const JOB_TTL_MS = 30 * 60 * 1000;
 export const CALIBRATION_TYPE = "grid_charge_rate";
 
 export const CURVE_CALIBRATION_TYPE = "chargeCurve";
-export const CURVE_JOB_TTL_MS = 4 * 60 * 60 * 1000;
+// A curve session's actual stop condition is SOC reaching 100% or the site
+// entering an on-peak period (see runCurveCalibration) — neither is capped
+// to a fixed duration, since off-peak windows vary by tariff. This TTL only
+// bounds how long a job/Redis-recovery entry is considered live for
+// staleness-detection purposes (GET /curve-job, recoverCurveCalibrations),
+// generously sized above any realistic off-peak window.
+export const CURVE_JOB_TTL_MS = 24 * 60 * 60 * 1000;
 const CURVE_SAMPLE_INTERVAL_MS = 15 * 1000;
-const CURVE_MAX_DURATION_MS = 3 * 60 * 60 * 1000;
 
 // Shared fan-out for every calibration_job_outcomes email in this file
 // (grid-charge-rate and curve calibration alike) — sendEmail() is
@@ -431,12 +436,10 @@ export async function runCurveCalibration(
   const sampleRepo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
     "SiteCalibrationSample",
   );
-  const deadline = performance.now() + CURVE_MAX_DURATION_MS;
 
   try {
     while (true) {
       if (job.interruptRequested) break;
-      if (performance.now() > deadline) break;
 
       await sleep(CURVE_SAMPLE_INTERVAL_MS);
 
@@ -465,6 +468,24 @@ export async function runCurveCalibration(
       }
 
       if (live.percentage_charged >= 100) break;
+
+      // No fixed duration cap — a session runs for as long as the site's
+      // off-peak window lasts. getSiteInfo is cached (5 min TTL in fleet.ts)
+      // so checking every 15s doesn't add real Tesla API load.
+      const siteInfo = await fleet.getSiteInfo(product);
+      const tariff = siteInfo
+        ? parseTariffContent(siteInfo.tariff_content)
+        : null;
+      if (tariff && hasTouData(tariff)) {
+        const tz = siteInfo!.installation_time_zone ?? "UTC";
+        if (isCurrentlyInPeak(tariff, moment().tz(tz))) {
+          calibServiceLog.info(
+            { energySiteId },
+            "Curve calibration stopping — on-peak period beginning",
+          );
+          break;
+        }
+      }
     }
 
     job.status = job.interruptRequested ? "interrupted" : "complete";
