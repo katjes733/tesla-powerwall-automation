@@ -32,6 +32,7 @@ import {
 } from "~/server/util/tariff";
 import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
+import { resolveNotificationRecipients } from "~/server/util/notificationRecipients";
 import { buildChargeCurveBins, isValidCandidate } from "~/server/util/curveFit";
 import {
   MAX_GRID_RATE_SOC_PERCENT,
@@ -260,36 +261,55 @@ router.post(
   },
 );
 
-router.get("/job", requirePermission("calibration.access"), (req, res) => {
-  const jobId = req.query.jobId as string | undefined;
-  if (!jobId) {
-    res
-      .status(400)
-      .json({ success: false, message: "jobId query parameter required" });
-    return;
-  }
+router.get(
+  "/job",
+  requirePermission("calibration.access"),
+  requireSiteScope({ queryKey: "siteId" }),
+  (req, res) => {
+    const siteId = req.query.siteId as string | undefined;
+    // siteId is the discovery path for a scheduler-triggered job, whose jobId
+    // the browser never learns — jobId stays supported for the manual-start
+    // flow, which already has it from the /start response.
+    const jobId = siteId
+      ? calibrationJobBySite.get(siteId)
+      : (req.query.jobId as string | undefined);
+    if (!jobId) {
+      if (siteId) {
+        res.status(404).json({
+          success: false,
+          message: "No active grid charge rate calibration for this site",
+        });
+        return;
+      }
+      res.status(400).json({
+        success: false,
+        message: "jobId or siteId query parameter required",
+      });
+      return;
+    }
 
-  const now = performance.now();
-  for (const [id, j] of calibrationJobs.entries()) {
-    if (now - j.startedAt > JOB_TTL_MS) calibrationJobs.delete(id);
-  }
+    const now = performance.now();
+    for (const [id, j] of calibrationJobs.entries()) {
+      if (now - j.startedAt > JOB_TTL_MS) calibrationJobs.delete(id);
+    }
 
-  const job = calibrationJobs.get(jobId);
-  if (!job) {
-    res.status(404).json({ success: false, message: "Job not found" });
-    return;
-  }
+    const job = calibrationJobs.get(jobId);
+    if (!job) {
+      res.status(404).json({ success: false, message: "Job not found" });
+      return;
+    }
 
-  res.json({
-    success: true,
-    data: {
-      status: job.status,
-      phase: job.phase,
-      result: job.result,
-      error: job.error,
-    },
-  });
-});
+    res.json({
+      success: true,
+      data: {
+        status: job.status,
+        phase: job.phase,
+        result: job.result,
+        error: job.error,
+      },
+    });
+  },
+);
 
 router.delete(
   "/clear",
@@ -808,11 +828,12 @@ router.get(
       // Small per-account dataset (see scheduling.ts's GET /all for the same
       // reasoning) — filter in memory rather than push a jsonb containment
       // query into the DB layer.
+      const scopedSiteId = siteId;
       const schedules = await repo.findBy({ email });
       const oneTimeSchedules = schedules.filter(
         (s) =>
           resolveScheduleOptions(s.options).runOnce &&
-          (s.site_ids as string[]).includes(siteId),
+          (s.site_ids as string[]).includes(scopedSiteId),
       );
 
       function latestFor(action: string): OneTimeScheduleStatus | null {
@@ -823,7 +844,11 @@ router.get(
           );
         const schedule = matches[0];
         if (!schedule) return null;
-        const phase = computeOneTimeSchedulePhase(schedule);
+        const isRunning =
+          action === "calibrate_grid_charge_rate"
+            ? calibrationJobBySite.has(scopedSiteId)
+            : curveJobBySite.has(scopedSiteId);
+        const phase = computeOneTimeSchedulePhase(schedule, isRunning);
         return {
           id: schedule.id,
           phase,
@@ -862,6 +887,25 @@ router.get(
 // Server-restart recovery for in-progress curve calibrations
 // ---------------------------------------------------------------------------
 
+// Same calibration_job_outcomes fan-out as calibrationService.ts's
+// notifyCalibrationOutcome — a server-restart recovery failure is the same
+// failure class as a runtime exception during the calibration, just reached
+// via a different code path.
+async function notifyCurveRecoveryFailure(
+  email: string,
+  siteId: string,
+  body: string,
+): Promise<void> {
+  const recipients = await resolveNotificationRecipients(
+    email,
+    [siteId],
+    "calibration_job_outcomes",
+  );
+  await Promise.all(
+    recipients.map((r) => sendEmail("Powerwall Notification", body, r)),
+  );
+}
+
 export async function recoverCurveCalibrations(): Promise<void> {
   try {
     const keys = await redis.keys("curve_calibration_*");
@@ -877,10 +921,10 @@ export async function recoverCurveCalibrations(): Promise<void> {
             { key },
             "Curve calibration Redis key expired — deleted without recovery",
           );
-          sendEmail(
-            "Powerwall Notification",
-            `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (session too old). Please start a new calibration.`,
+          await notifyCurveRecoveryFailure(
             payload.email,
+            payload.energySiteId,
+            `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (session too old). Please start a new calibration.`,
           );
           continue;
         }
@@ -905,10 +949,10 @@ export async function recoverCurveCalibrations(): Promise<void> {
                 { energySiteId: payload.energySiteId },
                 "Curve calibration recovery: site not found — restoring grid charging defensively",
               );
-              sendEmail(
-                "Powerwall Notification",
-                `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (site not found). Please start a new calibration.`,
+              await notifyCurveRecoveryFailure(
                 payload.email,
+                payload.energySiteId,
+                `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (site not found). Please start a new calibration.`,
               );
               return false;
             }

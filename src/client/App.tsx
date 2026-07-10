@@ -20,6 +20,7 @@ import Calibration from "./components/calibration/Calibration";
 import EnergyHistory from "./components/history/EnergyHistory";
 import Maintenance from "./components/maintenance/Maintenance";
 import UserAdmin from "./components/userAdmin/UserAdmin";
+import NotificationPreferences from "./components/notificationPreferences/NotificationPreferences";
 import type { ActionKey } from "~/shared/permissions/schema";
 
 type ProtectedRouteProps = {
@@ -136,6 +137,14 @@ function App() {
                   element={
                     <ProtectedRoute requiredAction="userAdmin.access">
                       <UserAdmin />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/notification-preferences"
+                  element={
+                    <ProtectedRoute requiredAction="notificationPreferences.access">
+                      <NotificationPreferences />
                     </ProtectedRoute>
                   }
                 />

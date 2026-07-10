@@ -151,7 +151,7 @@ router.get(
             info,
             calibrating: live
               ? isCalibrating(live) ||
-                isDischargeCalibrating(product.energy_site_id)
+                (await isDischargeCalibrating(product.energy_site_id))
               : false,
             activeHoliday,
           };

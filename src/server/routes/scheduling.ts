@@ -164,7 +164,11 @@ router.get(
           where: {
             email,
             options: Raw(
-              (alias) => `(${alias}->>'runOnce') IS DISTINCT FROM 'true'`,
+              (alias) =>
+                `(${alias
+                  .split(".")
+                  .map((part) => `"${part}"`)
+                  .join(".")}->>'runOnce') IS DISTINCT FROM 'true'`,
             ),
           },
           take: pageSize,

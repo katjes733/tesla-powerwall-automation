@@ -35,6 +35,11 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/history", label: "Energy History", action: "powerwall.access" },
   { path: "/maintenance", label: "Maintenance", action: "maintenance.access" },
   { path: "/user-admin", label: "User Admin", action: "userAdmin.access" },
+  {
+    path: "/notification-preferences",
+    label: "Notifications",
+    action: "notificationPreferences.access",
+  },
 ];
 
 const PAGE_TITLES: Record<string, string> = Object.fromEntries(

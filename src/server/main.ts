@@ -18,6 +18,7 @@ import {
 import { router as SiteSettingsRouter } from "~/server/routes/siteSettings";
 import { router as MaintenanceRouter } from "~/server/routes/maintenance";
 import { router as UserAdminRouter } from "~/server/routes/userAdmin";
+import { router as NotificationPreferencesRouter } from "~/server/routes/notificationPreferences";
 import { RedisStore } from "connect-redis";
 import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
@@ -165,6 +166,7 @@ app.use("/api/calibration", CalibrationRouter);
 app.use("/api/site-settings", SiteSettingsRouter);
 app.use("/api/maintenance", MaintenanceRouter);
 app.use("/api/user-admin", UserAdminRouter);
+app.use("/api/notification-preferences", NotificationPreferencesRouter);
 
 const oauthCallbackLog = logger.child({ service: "oauth-callback" });
 

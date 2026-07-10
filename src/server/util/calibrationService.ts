@@ -15,6 +15,7 @@ import {
 } from "~/server/util/tariff";
 import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
+import { resolveNotificationRecipients } from "~/server/util/notificationRecipients";
 import {
   buildChargeCurveBins,
   isValidCandidate,
@@ -22,6 +23,7 @@ import {
   MAX_CURVE_START_SOC_PERCENT,
 } from "~/server/util/curveFit";
 import type { ISchedule } from "~/server/database/models/schedule";
+import { upsert as upsertScheduleInDb } from "~/server/util/routes/schedule";
 
 export const CALIBRATION_SCHEDULE_ACTIONS = new Set([
   "calibrate_grid_charge_rate",
@@ -30,6 +32,7 @@ export const CALIBRATION_SCHEDULE_ACTIONS = new Set([
 
 export type OneTimeSchedulePhase =
   | "pending"
+  | "running"
   | "succeeded"
   | "failed"
   | "expired";
@@ -38,9 +41,19 @@ export type OneTimeSchedulePhase =
 // scheduled moments (a fresh Schedule row is created per booking), so these
 // fields unambiguously describe the single firing attempt for this exact
 // row — no need to cross-reference against the target date.
+//
+// `isRunning` comes from the caller checking the in-memory job maps
+// (calibrationJobBySite/curveJobBySite) for this schedule's site+action —
+// the schedule row itself stays `enabled: true` for the entire (potentially
+// hours-long) duration of the background job, only flipping to
+// succeeded/failed once the job actually finishes (see
+// finalizeCalibrationSchedule), so "enabled" alone can't distinguish
+// "waiting to fire" from "actively running".
 export function computeOneTimeSchedulePhase(
   schedule: ISchedule,
+  isRunning = false,
 ): OneTimeSchedulePhase {
+  if (isRunning) return "running";
   if (schedule.enabled) return "pending";
   if (schedule.last_success_time) return "succeeded";
   if (schedule.last_error) return "failed";
@@ -87,9 +100,55 @@ export const JOB_TTL_MS = 30 * 60 * 1000;
 export const CALIBRATION_TYPE = "grid_charge_rate";
 
 export const CURVE_CALIBRATION_TYPE = "chargeCurve";
-export const CURVE_JOB_TTL_MS = 4 * 60 * 60 * 1000;
+// A curve session's actual stop condition is SOC reaching 100% or the site
+// entering an on-peak period (see runCurveCalibration) — neither is capped
+// to a fixed duration, since off-peak windows vary by tariff. This TTL only
+// bounds how long a job/Redis-recovery entry is considered live for
+// staleness-detection purposes (GET /curve-job, recoverCurveCalibrations),
+// generously sized above any realistic off-peak window.
+export const CURVE_JOB_TTL_MS = 24 * 60 * 60 * 1000;
 const CURVE_SAMPLE_INTERVAL_MS = 15 * 1000;
-const CURVE_MAX_DURATION_MS = 3 * 60 * 60 * 1000;
+
+// Shared fan-out for every calibration_job_outcomes email in this file
+// (grid-charge-rate and curve calibration alike) — sendEmail() is
+// single-recipient only, so this resolves who's opted in for this site and
+// loops the send instead of hardcoding the account owner as the sole recipient.
+async function notifyCalibrationOutcome(
+  email: string,
+  siteId: string,
+  subject: string,
+  body: string,
+): Promise<void> {
+  const recipients = await resolveNotificationRecipients(
+    email,
+    [siteId],
+    "calibration_job_outcomes",
+  );
+  await Promise.all(recipients.map((r) => sendEmail(subject, body, r)));
+}
+
+// A scheduler-triggered ("runOnce") calibration is fired asynchronously — the
+// trigger function below returns as soon as the background job *starts*, not
+// when it finishes (a curve calibration can run for up to 3 hours). The
+// schedule row must only be marked succeeded/failed and disabled once the
+// job actually completes, not at trigger time — otherwise the Calibration
+// tab shows a stale "succeeded" schedule while the job is still running, and
+// silently loses a later failure. No-op for manually-started jobs (no
+// scheduleId).
+async function finalizeCalibrationSchedule(
+  scheduleId: string | undefined,
+  outcome: { success: true } | { success: false; error: string },
+): Promise<void> {
+  if (!scheduleId) return;
+  const now = new Date();
+  await upsertScheduleInDb({
+    id: scheduleId,
+    enabled: false,
+    ...(outcome.success
+      ? { lastSuccessTime: now }
+      : { lastError: outcome.error, lastErrorTime: now }),
+  });
+}
 
 type CalibrationPhase = "ramp-up" | "sampling" | "done";
 type CalibrationJobStatus = "running" | "complete" | "failed";
@@ -122,6 +181,10 @@ export interface CurveCalibrationRedisPayload {
   previousGridState: "enabled" | "disabled";
   startSoc: number;
   startedAtMs: number;
+  // Only set for a scheduler-triggered ("runOnce") run — carried through
+  // Redis so a server-restart recovery (recoverCurveCalibrations in
+  // calibration.ts) can still finalize the schedule row on completion.
+  scheduleId?: string;
 }
 
 export const calibrationJobs = new Map<string, CalibrationJob>();
@@ -159,6 +222,7 @@ export async function runCalibration(
   previousGridState: "enabled" | "disabled",
   email: string,
   sendSuccessEmail = false,
+  scheduleId?: string,
 ): Promise<void> {
   try {
     const window: number[] = [];
@@ -251,35 +315,43 @@ export async function runCalibration(
     );
 
     if (sendSuccessEmail) {
-      sendEmail(
+      await notifyCalibrationOutcome(
+        email,
+        String(product.energy_site_id),
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Scheduled grid charge rate calibration complete for site ${String(product.energy_site_id)}: ${avgRateKw} kW average charge rate (${samples.length} samples).`,
-        email,
       );
     }
+    await finalizeCalibrationSchedule(scheduleId, { success: true });
   } catch (err: any) {
     job.status = "failed";
     job.phase = "done";
     job.error = err?.message ?? "Unknown error";
     calibServiceLog.error({ err }, "Calibration job failed");
-    sendEmail(
+    await finalizeCalibrationSchedule(scheduleId, {
+      success: false,
+      error: job.error ?? "Unknown error",
+    });
+    await notifyCalibrationOutcome(
+      email,
+      String(product.energy_site_id),
       "Powerwall Notification",
       `[${new Date().toLocaleString()}] Grid charge rate calibration failed for site ${String(product.energy_site_id)}: ${job.error}`,
-      email,
     );
   } finally {
     calibrationJobBySite.delete(String(product.energy_site_id));
     await fleet
       .setGridCharging(product, previousGridState)
-      .catch((err: any) => {
+      .catch(async (err: any) => {
         calibServiceLog.error(
           { err },
           "Failed to restore grid charging state after calibration",
         );
-        sendEmail(
+        await notifyCalibrationOutcome(
+          email,
+          String(product.energy_site_id),
           "Powerwall Notification",
           `[${new Date().toLocaleString()}] Failed to restore grid charging for site ${String(product.energy_site_id)} after calibration: ${err?.message ?? "Unknown error"}. Please check the site manually.`,
-          email,
         );
       });
   }
@@ -355,6 +427,7 @@ export async function runCurveCalibration(
   previousGridState: "enabled" | "disabled",
   email: string,
   sendSuccessEmail = false,
+  scheduleId?: string,
 ): Promise<void> {
   const job = curveJobs.get(jobId);
   if (!job) return;
@@ -363,12 +436,10 @@ export async function runCurveCalibration(
   const sampleRepo = db.getRepository<IBasicEntity & ISiteCalibrationSample>(
     "SiteCalibrationSample",
   );
-  const deadline = performance.now() + CURVE_MAX_DURATION_MS;
 
   try {
     while (true) {
       if (job.interruptRequested) break;
-      if (performance.now() > deadline) break;
 
       await sleep(CURVE_SAMPLE_INTERVAL_MS);
 
@@ -397,41 +468,79 @@ export async function runCurveCalibration(
       }
 
       if (live.percentage_charged >= 100) break;
+
+      // No fixed duration cap — a session runs for as long as the site's
+      // off-peak window lasts. getSiteInfo is cached (5 min TTL in fleet.ts)
+      // so checking every 15s doesn't add real Tesla API load.
+      const siteInfo = await fleet.getSiteInfo(product);
+      const tariff = siteInfo
+        ? parseTariffContent(siteInfo.tariff_content)
+        : null;
+      if (tariff && hasTouData(tariff)) {
+        const tz = siteInfo!.installation_time_zone ?? "UTC";
+        if (isCurrentlyInPeak(tariff, moment().tz(tz))) {
+          calibServiceLog.info(
+            { energySiteId },
+            "Curve calibration stopping — on-peak period beginning",
+          );
+          break;
+        }
+      }
     }
 
     job.status = job.interruptRequested ? "interrupted" : "complete";
 
     if (sendSuccessEmail && job.status === "complete") {
-      sendEmail(
+      await notifyCalibrationOutcome(
+        email,
+        energySiteId,
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Scheduled charge curve calibration session complete for site ${energySiteId}. Samples collected: ${job.sampleCount}.`,
-        email,
       );
     }
   } catch (err: any) {
     job.status = "failed";
     job.error = err?.message ?? "Unknown error";
     calibServiceLog.error({ err }, "Curve calibration job failed");
-    sendEmail(
+    await notifyCalibrationOutcome(
+      email,
+      String(product.energy_site_id),
       "Powerwall Notification",
       `[${new Date().toLocaleString()}] Curve calibration failed for site ${String(product.energy_site_id)}: ${job.error}`,
-      email,
     );
   } finally {
     job.phase = "done";
     curveJobBySite.delete(String(product.energy_site_id));
 
+    // A manual Stop counts as a failure from the schedule's perspective too
+    // — "interrupted" isn't a phase the Calibration tab knows how to show for
+    // a one-time schedule (only pending/running/succeeded/failed/expired).
+    await finalizeCalibrationSchedule(
+      scheduleId,
+      job.status === "complete"
+        ? { success: true }
+        : {
+            success: false,
+            error:
+              job.error ??
+              (job.status === "interrupted"
+                ? "Calibration was stopped before completing"
+                : "Unknown error"),
+          },
+    );
+
     await fleet
       .setGridCharging(product, previousGridState)
-      .catch((err: any) => {
+      .catch(async (err: any) => {
         calibServiceLog.error(
           { err },
           "Failed to restore grid charging after curve calibration",
         );
-        sendEmail(
+        await notifyCalibrationOutcome(
+          email,
+          String(product.energy_site_id),
           "Powerwall Notification",
           `[${new Date().toLocaleString()}] Failed to restore grid charging for site ${String(product.energy_site_id)} after curve calibration: ${err?.message ?? "Unknown error"}. Please check the site manually.`,
-          email,
         );
       });
 
@@ -454,6 +563,7 @@ export async function runCurveCalibration(
 export async function triggerGridChargeRateCalibration(
   siteId: string,
   email: string,
+  scheduleId?: string,
 ): Promise<void> {
   const fleet = Fleet.getInstance(email, {
     throwOnError: true,
@@ -524,19 +634,26 @@ export async function triggerGridChargeRateCalibration(
   calibrationJobs.set(jobId, job);
   calibrationJobBySite.set(siteId, jobId);
 
-  runCalibration(fleet, product, job, previousGridState, email, true).catch(
-    (err) => {
-      calibServiceLog.error(
-        { err },
-        "Unexpected error in scheduled grid charge rate calibration job",
-      );
-    },
-  );
+  runCalibration(
+    fleet,
+    product,
+    job,
+    previousGridState,
+    email,
+    true,
+    scheduleId,
+  ).catch((err) => {
+    calibServiceLog.error(
+      { err },
+      "Unexpected error in scheduled grid charge rate calibration job",
+    );
+  });
 }
 
 export async function triggerChargeCurveCalibration(
   siteId: string,
   email: string,
+  scheduleId?: string,
 ): Promise<void> {
   const fleet = Fleet.getInstance(email, {
     throwOnError: true,
@@ -618,6 +735,7 @@ export async function triggerChargeCurveCalibration(
     previousGridState,
     startSoc: liveStatus.percentage_charged,
     startedAtMs,
+    scheduleId,
   };
   try {
     await redis.setex(
@@ -636,6 +754,7 @@ export async function triggerChargeCurveCalibration(
     previousGridState,
     email,
     true,
+    scheduleId,
   ).catch((err) => {
     calibServiceLog.error(
       { err },

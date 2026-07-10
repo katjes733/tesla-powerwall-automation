@@ -21,6 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
     - [Environment variables in tests](#environment-variables-in-tests)
   - [Accepted security findings](#accepted-security-findings)
   - [UI / Frontend conventions](#ui--frontend-conventions)
+    - [UI verification workflow](#ui-verification-workflow)
     - [Mobile-responsive layout](#mobile-responsive-layout)
     - [Charts](#charts)
   - [Key conventions](#key-conventions)
@@ -263,6 +264,17 @@ Node.js / Bun validate TLS certificates by default (`rejectUnauthorized: true`).
 
 ## UI / Frontend conventions
 
+### UI verification workflow
+
+Every UI change — not just responsive-layout tweaks — must be verified visually in a real browser before being considered done. Reading the JSX or trusting the type-checker is not verification.
+
+- **Use the Playwright MCP browser.** Take real screenshots at both viewports (see below) rather than describing expected behavior.
+- **Dev server endpoint**: `http://localhost:5173`. If that's not reachable, automatically retry with `https://localhost:5173` — don't stop and ask, just fall back to the other scheme.
+- **Evaluate, don't just capture.** Look at each screenshot and assess layout correctness, spacing/alignment, and visual cohesion with the rest of the app (typography scale, color usage, existing component conventions) — not merely "did it render without an error."
+- **Always check both viewports**, even for a change that looks desktop- or mobile-only in the diff — shared components and shared state mean a fix at one breakpoint can silently regress the other:
+  1. Desktop (≥ 1280 px)
+  2. Mobile (375 px)
+
 ### Mobile-responsive layout
 
 All UI work must support both desktop (≥ 600 px, MUI `sm` and above) and mobile phones (< 600 px, MUI `xs`). The desktop layout must remain pixel-identical. Only additive changes for `xs` are permitted.
@@ -276,10 +288,7 @@ All UI work must support both desktop (≥ 600 px, MUI `sm` and above) and mobil
 - **ToggleButtonGroup day selectors** — add `flexWrap: "wrap"` and reduce `gap` on `xs` so 7 day buttons can wrap to a second line on very narrow screens.
 - **TimePicker pairs side-by-side in dialogs** — wrap in `<Box sx={{ overflowX: "auto" }}>` or switch to a column layout on `xs`.
 - **Card min-widths** — use `minWidth: { xs: "100%", sm: N }` so cards stack full-width on phones.
-- **Verification** — after any UI change, verify:
-  1. Desktop (≥ 1280 px): layout unchanged.
-  2. Mobile (375 px DevTools emulation): no horizontal scroll, all content reachable.
-  Use the Playwright MCP browser to resize and screenshot both viewports.
+- **Verification** — additionally to the desktop/mobile check, confirm no horizontal scroll and that all content is reachable on mobile. See [UI verification workflow](#ui-verification-workflow) for the general process (dev server endpoint, Playwright, what to evaluate).
 
 ### Charts
 
