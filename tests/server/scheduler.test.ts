@@ -16,6 +16,7 @@ const {
   cronCallbacks,
   mockTriggerGridRate,
   mockTriggerChargeCurve,
+  mockResolveNotificationRecipients,
 } = vi.hoisted(() => {
   const mockQueryBuilder = {
     select: vi.fn().mockReturnThis(),
@@ -45,6 +46,14 @@ const {
     cronCallbacks: {} as Record<string, () => Promise<void>>,
     mockTriggerGridRate: vi.fn(async () => {}),
     mockTriggerChargeCurve: vi.fn(async () => {}),
+    // Notification-recipient resolution has its own dedicated test coverage
+    // (tests/server/util/notificationRecipients.test.ts) — here it's mocked
+    // wholesale (same treatment as Fleet below) so these tests stay focused
+    // on scheduler logic. Defaults to "just the account owner", mirroring
+    // the pre-existing unconditional-owner-email behavior these tests assert.
+    mockResolveNotificationRecipients: vi.fn(async (accountEmail: string) => [
+      accountEmail,
+    ]),
   };
 });
 
@@ -53,6 +62,9 @@ const {
 // ---------------------------------------------------------------------------
 
 vi.mock("~/server/util/mailing", () => ({ sendEmail: mockSendEmail }));
+vi.mock("~/server/util/notificationRecipients", () => ({
+  resolveNotificationRecipients: mockResolveNotificationRecipients,
+}));
 vi.mock("~/server/util/redis", () => ({ redis: mockRedis }));
 vi.mock("~/server/util/fleet", () => ({
   Fleet: {

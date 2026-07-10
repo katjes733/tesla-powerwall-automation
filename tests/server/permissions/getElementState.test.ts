@@ -41,6 +41,12 @@ describe("getElementState — read profile", () => {
     expect(getElementState("read", "userAdmin.access")).toBe("none");
     expect(getElementState("read", "userAdmin.invite")).toBe("none");
   });
+
+  it("hides notification preferences entirely (write/admin only)", () => {
+    expect(getElementState("read", "notificationPreferences.access")).toBe(
+      "none",
+    );
+  });
 });
 
 describe("getElementState — write profile", () => {
@@ -61,6 +67,12 @@ describe("getElementState — write profile", () => {
     expect(getElementState("write", "maintenance.refreshToken")).toBe("none");
     expect(getElementState("write", "userAdmin.access")).toBe("none");
   });
+
+  it("grants notification preferences", () => {
+    expect(getElementState("write", "notificationPreferences.access")).toBe(
+      "write",
+    );
+  });
 });
 
 describe("getElementState — admin profile", () => {
@@ -72,6 +84,9 @@ describe("getElementState — admin profile", () => {
     expect(getElementState("admin", "userAdmin.invite")).toBe("write");
     expect(getElementState("admin", "userAdmin.update")).toBe("write");
     expect(getElementState("admin", "userAdmin.revoke")).toBe("write");
+    expect(getElementState("admin", "notificationPreferences.access")).toBe(
+      "write",
+    );
   });
 });
 

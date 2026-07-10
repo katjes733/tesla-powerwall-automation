@@ -188,6 +188,11 @@ export const WRITE_PROFILE: ActionSchema = {
   },
   siteSettings: { access: "write", write: "write" },
   health: { access: "write" },
+  // Self-service notification settings: write/admin only, omitted from
+  // READ_PROFILE entirely (same "not even present" mechanism as
+  // maintenance/userAdmin below) since a read-only delegate shouldn't be able
+  // to view or edit their own notification preferences at all.
+  notificationPreferences: { access: "write" },
   // maintenance, userAdmin: still omitted — still "none" for Write
 };
 

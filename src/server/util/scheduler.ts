@@ -20,6 +20,7 @@ import {
   deleteById as deleteScheduleFromDb,
 } from "~/server/util/routes/schedule";
 import { sendEmail } from "./mailing";
+import { resolveNotificationRecipients } from "~/server/util/notificationRecipients";
 import { Fleet, type SmartChargingData } from "~/server/util/fleet";
 import { redis } from "~/server/util/redis";
 import {
@@ -49,6 +50,31 @@ import {
 const CALIBRATION_ACTIONS = CALIBRATION_SCHEDULE_ACTIONS;
 
 const schedulerLog = logger.child({ service: "scheduler" });
+
+// Awaited by every caller (directly, or via notifyOnce's send(), which itself
+// awaits it) — unlike sendEmail (which swallows its own errors internally),
+// resolveNotificationRecipients is a DB call that could reject, so errors are
+// caught here rather than left to surface as an unhandled rejection or abort
+// the caller's own error-handling flow. relevantSiteIds is the schedule's own
+// site_ids (can span several).
+async function notifyScheduleIssue(
+  accountEmail: string,
+  relevantSiteIds: string[],
+  body: string,
+): Promise<void> {
+  try {
+    const recipients = await resolveNotificationRecipients(
+      accountEmail,
+      relevantSiteIds,
+      "schedule_issues",
+    );
+    await Promise.all(
+      recipients.map((r) => sendEmail("Powerwall Notification", body, r)),
+    );
+  } catch (err) {
+    schedulerLog.error({ err }, "Failed to resolve schedule_issues recipients");
+  }
+}
 
 async function evaluateConditions(
   conditions: IScheduleCondition[],
@@ -244,10 +270,10 @@ export class Scheduler {
         await notifyOnce(
           `sched_expired_notified:${schedule.id}`,
           () =>
-            sendEmail(
-              "Powerwall Notification",
-              `[${new Date().toLocaleString()}] Your schedule has expired and will no longer run.`,
+            notifyScheduleIssue(
               schedule.email,
+              schedule.site_ids,
+              `[${new Date().toLocaleString()}] Your schedule has expired and will no longer run.`,
             ),
           redis,
         );
@@ -429,18 +455,18 @@ export class Scheduler {
         await notifyOnce(
           redisKey,
           () =>
-            sendEmail(
-              "Powerwall Notification",
-              `[${new Date().toLocaleString()}] ${lastError}`,
+            notifyScheduleIssue(
               schedule.email,
+              schedule.site_ids,
+              `[${new Date().toLocaleString()}] ${lastError}`,
             ),
           redis,
         );
       } else {
-        sendEmail(
-          "Powerwall Notification",
-          `[${new Date().toLocaleString()}] ${lastError}`,
+        await notifyScheduleIssue(
           schedule.email,
+          schedule.site_ids,
+          `[${new Date().toLocaleString()}] ${lastError}`,
         );
       }
       if (schedule.id) {
@@ -504,10 +530,10 @@ export class Scheduler {
         await notifyOnce(
           `sched_expired_notified:${schedule.id}`,
           () =>
-            sendEmail(
-              "Powerwall Notification",
-              `[${new Date().toLocaleString()}] Your schedule has expired and will no longer run.`,
+            notifyScheduleIssue(
               schedule.email,
+              schedule.site_ids,
+              `[${new Date().toLocaleString()}] Your schedule has expired and will no longer run.`,
             ),
           redis,
         );
@@ -568,25 +594,51 @@ export class Scheduler {
     }
 
     // Internal task — not user-configurable, tick-rate, no recovery mechanism.
+    // Accounts and their sites are checked concurrently: each site's discharge
+    // buffer/event state is keyed independently (per energy_site_id), token
+    // refresh is deduplicated per Fleet instance, and the DB layer is a pooled
+    // singleton — so there's no shared mutable state that requires sequencing.
+    // A per-site catch keeps one failing site from blocking its siblings.
     this.calibrationTask?.stop();
     this.calibrationTask = scheduleTask("* * * * *", async () => {
-      for (const { email } of this.validEmails) {
-        try {
-          const fleet = Fleet.getInstance(email, {
-            throwOnError: false,
-            mailOnError: true,
-          });
-          const products = await fleet.getEnergyProducts();
-          for (const product of products) {
-            await fleet.detectCalibration(product);
-          }
-        } catch (err: any) {
-          schedulerLog.error(
-            { err, email: maskEmail(email) },
-            "Calibration check failed",
-          );
-        }
+      // Re-read every tick (single indexed query, negligible next to the
+      // per-site API calls below) so accounts registered after startup are
+      // picked up within a minute instead of requiring a server restart.
+      try {
+        this.validEmails = await getAllEmailsFromDb();
+      } catch (err: any) {
+        schedulerLog.error({ err }, "Failed to refresh valid emails");
       }
+      await Promise.all(
+        this.validEmails.map(async ({ email }) => {
+          try {
+            const fleet = Fleet.getInstance(email, {
+              throwOnError: false,
+              mailOnError: true,
+            });
+            const products = await fleet.getEnergyProducts();
+            await Promise.all(
+              products.map((product) =>
+                fleet.detectCalibration(product).catch((err: any) => {
+                  schedulerLog.error(
+                    {
+                      err,
+                      email: maskEmail(email),
+                      siteId: product.energy_site_id,
+                    },
+                    "Calibration check failed for site",
+                  );
+                }),
+              ),
+            );
+          } catch (err: any) {
+            schedulerLog.error(
+              { err, email: maskEmail(email) },
+              "Calibration check failed",
+            );
+          }
+        }),
+      );
     });
     schedulerLog.info("Calibration detection task initialized");
 
@@ -727,10 +779,19 @@ export class Scheduler {
             const notifKey = `token_stale_notified:${email}`;
             const alreadyNotified = await redis.exists(notifKey).catch(() => 1);
             if (!alreadyNotified) {
-              sendEmail(
-                "Powerwall Notification",
-                `[${new Date().toLocaleString()}] The Tesla access token for ${email} has not been refreshed since ${expiresAt.toLocaleString()}. Schedules for this account may be failing. Please check the server logs or re-authenticate if necessary.`,
+              const recipients = await resolveNotificationRecipients(
                 email,
+                null,
+                "account_health",
+              );
+              await Promise.all(
+                recipients.map((r) =>
+                  sendEmail(
+                    "Powerwall Notification",
+                    `[${new Date().toLocaleString()}] The Tesla access token for ${email} has not been refreshed since ${expiresAt.toLocaleString()}. Schedules for this account may be failing. Please check the server logs or re-authenticate if necessary.`,
+                    r,
+                  ),
+                ),
               );
               await redis
                 .set(notifKey, "1", "EX", 24 * 60 * 60)

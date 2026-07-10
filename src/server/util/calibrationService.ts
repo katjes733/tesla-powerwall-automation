@@ -15,6 +15,7 @@ import {
 } from "~/server/util/tariff";
 import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
+import { resolveNotificationRecipients } from "~/server/util/notificationRecipients";
 import {
   buildChargeCurveBins,
   isValidCandidate,
@@ -90,6 +91,24 @@ export const CURVE_CALIBRATION_TYPE = "chargeCurve";
 export const CURVE_JOB_TTL_MS = 4 * 60 * 60 * 1000;
 const CURVE_SAMPLE_INTERVAL_MS = 15 * 1000;
 const CURVE_MAX_DURATION_MS = 3 * 60 * 60 * 1000;
+
+// Shared fan-out for every calibration_job_outcomes email in this file
+// (grid-charge-rate and curve calibration alike) — sendEmail() is
+// single-recipient only, so this resolves who's opted in for this site and
+// loops the send instead of hardcoding the account owner as the sole recipient.
+async function notifyCalibrationOutcome(
+  email: string,
+  siteId: string,
+  subject: string,
+  body: string,
+): Promise<void> {
+  const recipients = await resolveNotificationRecipients(
+    email,
+    [siteId],
+    "calibration_job_outcomes",
+  );
+  await Promise.all(recipients.map((r) => sendEmail(subject, body, r)));
+}
 
 type CalibrationPhase = "ramp-up" | "sampling" | "done";
 type CalibrationJobStatus = "running" | "complete" | "failed";
@@ -251,10 +270,11 @@ export async function runCalibration(
     );
 
     if (sendSuccessEmail) {
-      sendEmail(
+      await notifyCalibrationOutcome(
+        email,
+        String(product.energy_site_id),
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Scheduled grid charge rate calibration complete for site ${String(product.energy_site_id)}: ${avgRateKw} kW average charge rate (${samples.length} samples).`,
-        email,
       );
     }
   } catch (err: any) {
@@ -262,24 +282,26 @@ export async function runCalibration(
     job.phase = "done";
     job.error = err?.message ?? "Unknown error";
     calibServiceLog.error({ err }, "Calibration job failed");
-    sendEmail(
+    await notifyCalibrationOutcome(
+      email,
+      String(product.energy_site_id),
       "Powerwall Notification",
       `[${new Date().toLocaleString()}] Grid charge rate calibration failed for site ${String(product.energy_site_id)}: ${job.error}`,
-      email,
     );
   } finally {
     calibrationJobBySite.delete(String(product.energy_site_id));
     await fleet
       .setGridCharging(product, previousGridState)
-      .catch((err: any) => {
+      .catch(async (err: any) => {
         calibServiceLog.error(
           { err },
           "Failed to restore grid charging state after calibration",
         );
-        sendEmail(
+        await notifyCalibrationOutcome(
+          email,
+          String(product.energy_site_id),
           "Powerwall Notification",
           `[${new Date().toLocaleString()}] Failed to restore grid charging for site ${String(product.energy_site_id)} after calibration: ${err?.message ?? "Unknown error"}. Please check the site manually.`,
-          email,
         );
       });
   }
@@ -402,20 +424,22 @@ export async function runCurveCalibration(
     job.status = job.interruptRequested ? "interrupted" : "complete";
 
     if (sendSuccessEmail && job.status === "complete") {
-      sendEmail(
+      await notifyCalibrationOutcome(
+        email,
+        energySiteId,
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Scheduled charge curve calibration session complete for site ${energySiteId}. Samples collected: ${job.sampleCount}.`,
-        email,
       );
     }
   } catch (err: any) {
     job.status = "failed";
     job.error = err?.message ?? "Unknown error";
     calibServiceLog.error({ err }, "Curve calibration job failed");
-    sendEmail(
+    await notifyCalibrationOutcome(
+      email,
+      String(product.energy_site_id),
       "Powerwall Notification",
       `[${new Date().toLocaleString()}] Curve calibration failed for site ${String(product.energy_site_id)}: ${job.error}`,
-      email,
     );
   } finally {
     job.phase = "done";
@@ -423,15 +447,16 @@ export async function runCurveCalibration(
 
     await fleet
       .setGridCharging(product, previousGridState)
-      .catch((err: any) => {
+      .catch(async (err: any) => {
         calibServiceLog.error(
           { err },
           "Failed to restore grid charging after curve calibration",
         );
-        sendEmail(
+        await notifyCalibrationOutcome(
+          email,
+          String(product.energy_site_id),
           "Powerwall Notification",
           `[${new Date().toLocaleString()}] Failed to restore grid charging for site ${String(product.energy_site_id)} after curve calibration: ${err?.message ?? "Unknown error"}. Please check the site manually.`,
-          email,
         );
       });
 

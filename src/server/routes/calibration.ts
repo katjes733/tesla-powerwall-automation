@@ -32,6 +32,7 @@ import {
 } from "~/server/util/tariff";
 import { redis } from "~/server/util/redis";
 import { sendEmail } from "~/server/util/mailing";
+import { resolveNotificationRecipients } from "~/server/util/notificationRecipients";
 import { buildChargeCurveBins, isValidCandidate } from "~/server/util/curveFit";
 import {
   MAX_GRID_RATE_SOC_PERCENT,
@@ -862,6 +863,25 @@ router.get(
 // Server-restart recovery for in-progress curve calibrations
 // ---------------------------------------------------------------------------
 
+// Same calibration_job_outcomes fan-out as calibrationService.ts's
+// notifyCalibrationOutcome — a server-restart recovery failure is the same
+// failure class as a runtime exception during the calibration, just reached
+// via a different code path.
+async function notifyCurveRecoveryFailure(
+  email: string,
+  siteId: string,
+  body: string,
+): Promise<void> {
+  const recipients = await resolveNotificationRecipients(
+    email,
+    [siteId],
+    "calibration_job_outcomes",
+  );
+  await Promise.all(
+    recipients.map((r) => sendEmail("Powerwall Notification", body, r)),
+  );
+}
+
 export async function recoverCurveCalibrations(): Promise<void> {
   try {
     const keys = await redis.keys("curve_calibration_*");
@@ -877,10 +897,10 @@ export async function recoverCurveCalibrations(): Promise<void> {
             { key },
             "Curve calibration Redis key expired — deleted without recovery",
           );
-          sendEmail(
-            "Powerwall Notification",
-            `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (session too old). Please start a new calibration.`,
+          await notifyCurveRecoveryFailure(
             payload.email,
+            payload.energySiteId,
+            `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (session too old). Please start a new calibration.`,
           );
           continue;
         }
@@ -905,10 +925,10 @@ export async function recoverCurveCalibrations(): Promise<void> {
                 { energySiteId: payload.energySiteId },
                 "Curve calibration recovery: site not found — restoring grid charging defensively",
               );
-              sendEmail(
-                "Powerwall Notification",
-                `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (site not found). Please start a new calibration.`,
+              await notifyCurveRecoveryFailure(
                 payload.email,
+                payload.energySiteId,
+                `[${new Date().toLocaleString()}] An in-progress curve calibration for site ${payload.energySiteId} could not be recovered after server restart (site not found). Please start a new calibration.`,
               );
               return false;
             }

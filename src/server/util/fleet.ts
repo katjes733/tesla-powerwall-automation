@@ -38,6 +38,8 @@ import { isObservedHolidayOnDate } from "~/server/util/holidays";
 import { getNewTokenWithRefreshToken } from "~/server/util/auth";
 import { retry } from "~/server/util/retry";
 import { sendEmail } from "./mailing";
+import { resolveNotificationRecipients } from "~/server/util/notificationRecipients";
+import type { NotificationType } from "~/shared/schemas/notificationPreferences";
 import {
   upsert as upsertToken,
   getByEmail as getRefreshTokenByEmail,
@@ -133,10 +135,38 @@ const curveCache = new Map<
 const DISCHARGE_BUFFER_SIZE = 10;
 const DISCHARGE_MIN_POWER_W = 300;
 const dischargeBuffer = new Map<number, number[]>();
-const dischargeCalibrationActive = new Map<number, boolean>();
 
-export function isDischargeCalibrating(siteId: number): boolean {
-  return dischargeCalibrationActive.get(siteId) ?? false;
+// Cache over the `site_events` row `handleSiteEvent` maintains — site_events
+// is the source of truth (it's also what drives the start/end emails), so
+// reads go there instead of a separately-maintained in-memory flag that would
+// need to stay in sync and wouldn't survive a restart. TTL is set longer than
+// the calibration cron's own tick interval (once a minute) so the write-through
+// in detectCalibration always refreshes the cache before it expires — the DB
+// fallback below is only ever reached on a genuinely cold cache (e.g. right
+// after a restart, before this site's first post-restart tick has run).
+// Without that margin, a stale site_events row (e.g. one a DRY_RUN instance
+// can never correct, since it doesn't write to site_events) would leak back
+// into the "current status" every time the cache's TTL lapsed between ticks.
+const DISCHARGE_STATE_CACHE_TTL_MS = 90_000;
+const dischargeStateCache = new Map<number, { active: boolean; at: number }>();
+
+export async function isDischargeCalibrating(siteId: number): Promise<boolean> {
+  const cached = dischargeStateCache.get(siteId);
+  if (cached && performance.now() - cached.at < DISCHARGE_STATE_CACHE_TTL_MS) {
+    return cached.active;
+  }
+  const db = await AppDataSource.getInstance();
+  const repo = db.getRepository<ISiteEvent>("SiteEvent");
+  const openEvent = await repo.findOne({
+    where: {
+      site_id: String(siteId),
+      event_payload: IsNull(),
+      event_type: "calibration_discharge",
+    },
+  });
+  const active = !!openEvent;
+  dischargeStateCache.set(siteId, { active, at: performance.now() });
+  return active;
 }
 
 function formatScheduledTime(t: moment.Moment, now: moment.Moment): string {
@@ -298,11 +328,11 @@ export class Fleet {
     if (!tokenResponse.ok) {
       const errorMsg = `Failed to obtain new token with refresh token: ${tokenResponse.status} ${tokenResponse.statusText}`;
       this.log.error({ status: tokenResponse.status }, "Token refresh failed");
-      await sendEmail(
+      await this.notifyRecipients(
+        null,
+        "account_health",
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Tesla API token refresh failed. Please check the server logs and re-authenticate if necessary.`,
-        this.email,
-        this.options.mailOnError,
       );
       throw new Error(errorMsg);
     }
@@ -385,11 +415,11 @@ export class Fleet {
         { err: error },
         "Error getting energy products after retries",
       );
-      await sendEmail(
+      await this.notifyRecipients(
+        null,
+        "account_health",
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to retrieve energy products from the Tesla API. Please check the server logs.`,
-        this.email,
-        this.options.mailOnError,
       );
       if (this.options.throwOnError) {
         throw new Error(errorMsg, { cause: error });
@@ -436,11 +466,11 @@ export class Fleet {
     } catch (error: any) {
       const errorMsg = `Error getting Site Info for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
       siteLog.error({ err: error }, "Error getting site info after retries");
-      await sendEmail(
+      await this.notifyRecipients(
+        [String(product.energy_site_id)],
+        "site_status_unavailable",
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to retrieve site info for Energy Site ${product.energy_site_id}. Please check the server logs.`,
-        this.email,
-        this.options.mailOnError,
       );
       if (this.options.throwOnError) {
         throw new Error(errorMsg, { cause: error });
@@ -487,11 +517,11 @@ export class Fleet {
     } catch (error: any) {
       const errorMsg = `Error getting Live Status for Energy Site ${product.energy_site_id} after retries: ${error.message}`;
       siteLog.error({ err: error }, "Error getting live status after retries");
-      await sendEmail(
+      await this.notifyRecipients(
+        [String(product.energy_site_id)],
+        "site_status_unavailable",
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to retrieve live status for Energy Site ${product.energy_site_id}. Please check the server logs.`,
-        this.email,
-        this.options.mailOnError,
       );
       if (this.options.throwOnError) {
         throw new Error(errorMsg, { cause: error });
@@ -825,7 +855,7 @@ export class Fleet {
     value: string | number,
   ): Promise<void> {
     const percent = typeof value === "string" ? parseInt(value, 10) : value;
-    if (percent < 0 && percent > 100) {
+    if (!Number.isInteger(percent) || percent < 0 || percent > 100) {
       throw new Error("Percent must be between 0 and 100.");
     }
     const siteLog = this.log.child({
@@ -889,11 +919,11 @@ export class Fleet {
         { err: error },
         "Error setting backup reserve after retries",
       );
-      await sendEmail(
+      await this.notifyRecipients(
+        [String(product.energy_site_id)],
+        "site_action_failures",
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to set backup reserve for Energy Site ${product.energy_site_id}. Please check the server logs.`,
-        this.email,
-        this.options.mailOnError,
       );
       if (this.options.throwOnError) {
         throw new Error(errorMsg, { cause: error });
@@ -1020,11 +1050,11 @@ export class Fleet {
         { err: error },
         "Error setting energy exports after retries",
       );
-      await sendEmail(
+      await this.notifyRecipients(
+        [String(product.energy_site_id)],
+        "site_action_failures",
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to set energy exports for Energy Site ${product.energy_site_id}. Please check the server logs.`,
-        this.email,
-        this.options.mailOnError,
       );
       if (this.options.throwOnError) {
         throw new Error(errorMsg, { cause: error });
@@ -1170,11 +1200,11 @@ export class Fleet {
         { err: error },
         "Error setting grid charging after retries",
       );
-      await sendEmail(
+      await this.notifyRecipients(
+        [String(product.energy_site_id)],
+        "site_action_failures",
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to set grid charging for Energy Site ${product.energy_site_id}. Please check the server logs.`,
-        this.email,
-        this.options.mailOnError,
       );
       if (this.options.throwOnError) {
         throw new Error(errorMsg, { cause: error });
@@ -1869,11 +1899,11 @@ export class Fleet {
         { err: error },
         "Error setting operational mode after retries",
       );
-      await sendEmail(
+      await this.notifyRecipients(
+        [String(product.energy_site_id)],
+        "site_action_failures",
         "Powerwall Notification",
         `[${new Date().toLocaleString()}] Failed to set operational mode for Energy Site ${product.energy_site_id}. Please check the server logs.`,
-        this.email,
-        this.options.mailOnError,
       );
       if (this.options.throwOnError) {
         throw new Error(errorMsg, { cause: error });
@@ -1900,6 +1930,29 @@ export class Fleet {
     );
   }
 
+  // Resolves who's opted into `notificationType` for the relevant site(s)
+  // (null for account-wide types) and fans the email out to each of them —
+  // sendEmail() is single-recipient only, so this is the shared loop every
+  // notification call site in this class uses instead of hardcoding
+  // `this.email` (the account owner) as the sole recipient.
+  private async notifyRecipients(
+    relevantSiteIds: string[] | null,
+    notificationType: NotificationType,
+    subject: string,
+    body: string,
+  ): Promise<void> {
+    const recipients = await resolveNotificationRecipients(
+      this.email,
+      relevantSiteIds,
+      notificationType,
+    );
+    await Promise.all(
+      recipients.map((r) =>
+        sendEmail(subject, body, r, this.options.mailOnError),
+      ),
+    );
+  }
+
   async detectCalibration(product: Product): Promise<void> {
     const live = await this.getLiveStatus(product);
     if (!live) return;
@@ -1918,8 +1971,57 @@ export class Fleet {
     const bufferFull = buf.length >= DISCHARGE_BUFFER_SIZE;
     const isOnGrid =
       live.island_status === "on_grid" && !live.storm_mode_active;
+
+    // Sustained discharge during an on-peak TOU window is expected: smart
+    // charging self-powers from the battery to avoid on-peak grid rates,
+    // which produces the same signature (>300W discharge for 10+ minutes,
+    // on-grid) as a genuine Tesla calibration discharge. A real calibration
+    // discharge only stands out when there's no on-peak reason to be
+    // discharging, so on-peak periods are excluded from detection.
+    const siteInfo = await this.getSiteInfo(product);
+    const tariff = siteInfo
+      ? parseTariffContent(siteInfo.tariff_content)
+      : null;
+    const onPeak =
+      tariff && hasTouData(tariff)
+        ? isCurrentlyInPeak(
+            tariff,
+            moment().tz(siteInfo!.installation_time_zone),
+          )
+        : false;
+
     const dischargeCalibrating =
-      bufferFull && isOnGrid && buf.every((p) => p > DISCHARGE_MIN_POWER_W);
+      bufferFull &&
+      isOnGrid &&
+      !onPeak &&
+      buf.every((p) => p > DISCHARGE_MIN_POWER_W);
+
+    // Confirming a calibration discharge requires the full buffer (10
+    // consecutive minutes of sustained >300W discharge) — a brief spike
+    // shouldn't trigger a false positive. Clearing it doesn't deserve the
+    // same patience: the instant a single fresh reading no longer looks
+    // like sustained discharge (power dropped, went off-grid, or moved into
+    // an on-peak window where discharge is expected for other reasons),
+    // that's already conclusive — waiting out a full buffer cycle (e.g.
+    // after a restart wipes the buffer) would keep reporting a stale
+    // "calibrating" state for up to 10 more minutes after it's clearly over.
+    const currentReadingLooksLikeDischarge =
+      isOnGrid && !onPeak && live.battery_power > DISCHARGE_MIN_POWER_W;
+    const canUpdateDischargeState =
+      bufferFull || !currentReadingLooksLikeDischarge;
+
+    // Keep the live "is calibrating" status cache in sync with the freshly
+    // computed value regardless of DRY_RUN — DRY_RUN only suppresses
+    // persisted audit history (site_events) and emails, it must not also
+    // suppress the live status the UI badge reads, or the badge silently
+    // falls back to whatever a real (non-dry-run) writer last persisted,
+    // however stale.
+    if (canUpdateDischargeState) {
+      dischargeStateCache.set(product.energy_site_id, {
+        active: dischargeCalibrating,
+        at: performance.now(),
+      });
+    }
 
     if (process.env.DRY_RUN === "true") {
       if (bmsCalibrating) {
@@ -1937,6 +2039,11 @@ export class Fleet {
             minPowerW: DISCHARGE_MIN_POWER_W,
           },
           "[DRY RUN] Discharge calibration detected — no DB write or email",
+        );
+      } else if (bufferFull && isOnGrid && onPeak) {
+        siteLog.debug(
+          { onPeak: true },
+          "Discharge signature present but suppressed — currently in on-peak period",
         );
       }
       return;
@@ -1957,20 +2064,19 @@ export class Fleet {
       `The battery calibration cycle on "${siteName}" has finished.\n\nNormal operation has resumed.`,
     );
 
-    // Skip discharge detection until the buffer has enough readings (e.g. after
-    // a server restart) to avoid prematurely closing a stale open event.
-    if (!bufferFull) {
+    // Skip the discharge write only when we genuinely can't tell either way
+    // yet (buffer still warming up after a restart, and the current reading
+    // alone still looks like it could be sustained discharge) — otherwise
+    // this proceeds even mid-warm-up so a clear "not discharging" reading
+    // can close a stale open event immediately rather than waiting out a
+    // full new 10-minute buffer cycle.
+    if (!canUpdateDischargeState) {
       siteLog.debug(
         { bufferLength: buf.length, bufferSize: DISCHARGE_BUFFER_SIZE },
         "Discharge buffer filling",
       );
       return;
     }
-
-    dischargeCalibrationActive.set(
-      product.energy_site_id,
-      dischargeCalibrating,
-    );
 
     await this.handleSiteEvent(
       repo,
@@ -2019,11 +2125,11 @@ export class Fleet {
         event_payload: null,
       } satisfies ISiteEvent);
       siteLog.info({ eventType }, "Site event started");
-      await sendEmail(
+      await this.notifyRecipients(
+        [siteId],
+        "calibration_events",
         startSubject,
         startBody,
-        this.email,
-        this.options.mailOnError,
       );
     } else if (!active && openEvent) {
       const now = new Date();
@@ -2032,11 +2138,11 @@ export class Fleet {
         event_payload: { ended_at: now.toISOString() },
       });
       siteLog.info({ eventType }, "Site event completed");
-      await sendEmail(
+      await this.notifyRecipients(
+        [siteId],
+        "calibration_events",
         endSubject,
         endBody,
-        this.email,
-        this.options.mailOnError,
       );
     }
   }

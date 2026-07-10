@@ -1,3 +1,4 @@
+import { useId } from "react";
 import Box from "@mui/material/Box";
 import Checkbox from "@mui/material/Checkbox";
 import FormControl from "@mui/material/FormControl";
@@ -16,11 +17,25 @@ interface Props {
   value: string[] | "*";
   onChange: (value: string[] | "*") => void;
   label?: string;
+  // Visually hides the label (e.g. when an external label already sits next
+  // to the control, as in a label-left settings row) while keeping it as the
+  // accessible name — unlike passing label="", which would silently strip
+  // the control's accessible name for assistive tech.
+  hideLabel?: boolean;
   size?: "small" | "medium";
   fullWidth?: boolean;
   sx?: SxProps<Theme>;
   disabled?: boolean;
 }
+
+const visuallyHiddenSx: SxProps<Theme> = {
+  position: "absolute",
+  width: 1,
+  height: 1,
+  overflow: "hidden",
+  clip: "rect(0 0 0 0)",
+  whiteSpace: "nowrap",
+};
 
 // Multi-select for granting a delegate access to a subset of sites, with an
 // "All sites" option mapping to the "*" sentinel (present and future sites).
@@ -29,11 +44,13 @@ export default function SiteMultiSelect({
   value,
   onChange,
   label = "Sites",
+  hideLabel = false,
   size = "small",
   fullWidth = false,
   sx,
   disabled,
 }: Props) {
+  const labelId = useId();
   const selected = value === ALL_SITES ? [ALL_SITES] : value;
 
   const handleChange = (event: SelectChangeEvent<string[]>) => {
@@ -48,12 +65,14 @@ export default function SiteMultiSelect({
 
   return (
     <FormControl size={size} fullWidth={fullWidth} sx={sx} disabled={disabled}>
-      <InputLabel id="site-multi-select-label">{label}</InputLabel>
+      <InputLabel id={labelId} sx={hideLabel ? visuallyHiddenSx : undefined}>
+        {label}
+      </InputLabel>
       <Select
-        labelId="site-multi-select-label"
+        labelId={labelId}
         multiple
         value={selected}
-        label={label}
+        label={hideLabel ? "" : label}
         onChange={handleChange}
         renderValue={(selectedIds) =>
           selectedIds.includes(ALL_SITES)
