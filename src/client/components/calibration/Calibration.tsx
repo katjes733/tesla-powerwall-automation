@@ -100,7 +100,12 @@ interface CurveStatusResponse {
   socBinCount: number;
 }
 
-type OneTimeSchedulePhase = "pending" | "succeeded" | "failed" | "expired";
+type OneTimeSchedulePhase =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "expired";
 
 interface OneTimeScheduleStatus {
   id: string;
@@ -110,14 +115,6 @@ interface OneTimeScheduleStatus {
   lastError?: string;
   lastErrorTime?: string;
   lastSuccessTime?: string;
-}
-
-function jobStorageKey(siteId: string) {
-  return `calibration_job_${siteId}`;
-}
-
-function curveJobStorageKey(siteId: string) {
-  return `calibration_curve_job_${siteId}`;
 }
 
 function SettingCard({ children }: { children: React.ReactNode }) {
@@ -192,6 +189,17 @@ function OneTimeScheduleIndicator({
     );
   }
 
+  if (status.phase === "running") {
+    return (
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+        <CircularProgress size={14} />
+        <Typography variant="body2" color="text.secondary">
+          Scheduled run in progress
+        </Typography>
+      </Box>
+    );
+  }
+
   if (status.phase === "succeeded") {
     return (
       <Typography variant="body2" color="text.secondary">
@@ -244,7 +252,6 @@ export default function Calibration() {
   const [curveCalibration, setCurveCalibration] =
     useState<CurveCalibrationRecord | null>(null);
   const [loadingData, setLoadingData] = useState(false);
-  const [jobId, setJobId] = useState<string | null>(null);
   const [jobStatus, setJobStatus] = useState<CalibrationJobResponse | null>(
     null,
   );
@@ -262,14 +269,16 @@ export default function Calibration() {
     "calibrate_grid_charge_rate" | "calibrate_charge_curve"
   >("calibrate_grid_charge_rate");
   const autoCurveToggleState = useElementState("calibration.curve.toggleAuto");
+  const gridScheduleReadOnly =
+    useElementState("calibration.gridChargeRate.scheduleRunOnce") === "read";
+  const curveScheduleReadOnly =
+    useElementState("calibration.curve.scheduleRunOnce") === "read";
   // Both "Schedule" buttons stay enabled for read users (opening = viewing an
   // existing scheduled run); the dialog itself is opened read-only instead.
   const scheduleDialogReadOnly =
-    useElementState(
-      scheduleDialogType === "calibrate_charge_curve"
-        ? "calibration.curve.scheduleRunOnce"
-        : "calibration.gridChargeRate.scheduleRunOnce",
-    ) === "read";
+    scheduleDialogType === "calibrate_charge_curve"
+      ? curveScheduleReadOnly
+      : gridScheduleReadOnly;
 
   // Curve tab state
   const [curveJobStatus, setCurveJobStatus] = useState<CurveJobResponse | null>(
@@ -355,6 +364,78 @@ export default function Calibration() {
       .catch(() => {});
   }, []);
 
+  // Site-scoped (not jobId-scoped) so a scheduler-triggered run — whose
+  // jobId the browser never learns — is discovered the same way a manual
+  // run is: see GET /api/calibration/job's siteId lookup, backed by the same
+  // calibrationJobBySite map the trigger functions populate.
+  const pollJob = useCallback(
+    (siteId: string) => {
+      axiosInstance
+        .get<{ success: boolean; data: CalibrationJobResponse }>(
+          `/api/calibration/job?siteId=${encodeURIComponent(siteId)}`,
+        )
+        .then((res) => {
+          const job = res.data.data;
+          setJobStatus(job);
+          if (job.status === "complete") {
+            if (jobPollRef.current) clearInterval(jobPollRef.current);
+            showNotification("Calibration complete", "success");
+            fetchCalibrationData(siteId);
+          } else if (job.status === "failed") {
+            if (jobPollRef.current) clearInterval(jobPollRef.current);
+            showNotification(
+              `Calibration failed: ${job.error ?? "unknown error"}`,
+              "error",
+            );
+          }
+        })
+        .catch((err: any) => {
+          if (err?.response?.status === 404) {
+            if (jobPollRef.current) clearInterval(jobPollRef.current);
+            setJobStatus(null);
+          }
+        });
+    },
+    [fetchCalibrationData, showNotification],
+  );
+
+  const pollCurveJob = useCallback(
+    (siteId: string) => {
+      axiosInstance
+        .get<{ success: boolean; data: CurveJobResponse }>(
+          `/api/calibration/curve-job?siteId=${encodeURIComponent(siteId)}`,
+        )
+        .then((res) => {
+          const job = res.data.data;
+          setCurveJobStatus(job);
+          if (job.status === "complete" || job.status === "interrupted") {
+            if (curvePollRef.current) clearInterval(curvePollRef.current);
+            showNotification(
+              job.status === "complete"
+                ? "Curve calibration complete"
+                : "Curve calibration stopped",
+              "success",
+            );
+            fetchCalibrationData(siteId);
+            fetchCurveStatus(siteId);
+          } else if (job.status === "failed") {
+            if (curvePollRef.current) clearInterval(curvePollRef.current);
+            showNotification(
+              `Curve calibration failed: ${job.error ?? "unknown error"}`,
+              "error",
+            );
+          }
+        })
+        .catch((err: any) => {
+          if (err?.response?.status === 404) {
+            if (curvePollRef.current) clearInterval(curvePollRef.current);
+            setCurveJobStatus(null);
+          }
+        });
+    },
+    [showNotification, fetchCalibrationData, fetchCurveStatus],
+  );
+
   useEffect(() => {
     if (!selectedSiteId) return;
     setLoadingData(true);
@@ -362,30 +443,11 @@ export default function Calibration() {
     setCalibration(null);
     setCurveCalibration(null);
     setAutoCurveEnabled(true);
-    setJobId(null);
     setJobStatus(null);
     setCurveJobStatus(null);
     setCurveStatus(null);
     setGridScheduleStatus(null);
     setCurveScheduleStatus(null);
-
-    const storedJobId = localStorage.getItem(jobStorageKey(selectedSiteId));
-    if (storedJobId) {
-      setJobId(storedJobId);
-      setJobStatus({ status: "running", phase: "ramp-up" });
-    }
-
-    const storedCurveJobExists =
-      localStorage.getItem(curveJobStorageKey(selectedSiteId)) !== null;
-    if (storedCurveJobExists) {
-      setCurveJobStatus({
-        status: "running",
-        phase: "charging",
-        startSoc: 0,
-        currentSoc: 0,
-        sampleCount: 0,
-      });
-    }
 
     axiosInstance
       .get<{
@@ -416,11 +478,19 @@ export default function Calibration() {
 
     fetchCurveStatus(selectedSiteId);
     fetchScheduleStatus(selectedSiteId);
+    // Discover a job already in flight for this site — covers a
+    // scheduler-triggered run (which never went through this browser's
+    // "Start" button) as well as a manual run left over from a previous
+    // session, without depending on any client-local state.
+    pollJob(selectedSiteId);
+    pollCurveJob(selectedSiteId);
 
     if (mainPollRef.current) clearInterval(mainPollRef.current);
     mainPollRef.current = setInterval(() => {
       fetchCalibrationData(selectedSiteId);
       fetchScheduleStatus(selectedSiteId);
+      pollJob(selectedSiteId);
+      pollCurveJob(selectedSiteId);
     }, 30_000);
     return () => {
       if (mainPollRef.current) clearInterval(mainPollRef.current);
@@ -430,66 +500,28 @@ export default function Calibration() {
     fetchCalibrationData,
     fetchCurveStatus,
     fetchScheduleStatus,
+    pollJob,
+    pollCurveJob,
   ]);
 
-  const pollJob = useCallback(
-    (id: string) => {
-      axiosInstance
-        .get<{ success: boolean; data: CalibrationJobResponse }>(
-          `/api/calibration/job?jobId=${encodeURIComponent(id)}`,
-        )
-        .then((res) => {
-          const job = res.data.data;
-          setJobStatus(job);
-          if (job.status === "complete") {
-            if (jobPollRef.current) clearInterval(jobPollRef.current);
-            localStorage.removeItem(jobStorageKey(selectedSiteId));
-            setJobId(null);
-            showNotification("Calibration complete", "success");
-            if (selectedSiteId) fetchCalibrationData(selectedSiteId);
-          } else if (job.status === "failed") {
-            if (jobPollRef.current) clearInterval(jobPollRef.current);
-            localStorage.removeItem(jobStorageKey(selectedSiteId));
-            setJobId(null);
-            showNotification(
-              `Calibration failed: ${job.error ?? "unknown error"}`,
-              "error",
-            );
-          }
-        })
-        .catch((err: any) => {
-          if (err?.response?.status === 404) {
-            if (jobPollRef.current) clearInterval(jobPollRef.current);
-            localStorage.removeItem(jobStorageKey(selectedSiteId));
-            setJobId(null);
-            setJobStatus(null);
-          }
-        });
-    },
-    [selectedSiteId, fetchCalibrationData, showNotification],
-  );
-
   useEffect(() => {
-    if (!jobId) return;
-    pollJob(jobId);
+    if (!selectedSiteId) return;
+    if (jobStatus?.status !== "running") return;
+    pollJob(selectedSiteId);
     if (jobPollRef.current) clearInterval(jobPollRef.current);
-    jobPollRef.current = setInterval(() => pollJob(jobId), 10_000);
+    jobPollRef.current = setInterval(() => pollJob(selectedSiteId), 10_000);
     return () => {
       if (jobPollRef.current) clearInterval(jobPollRef.current);
     };
-  }, [jobId, pollJob]);
+  }, [selectedSiteId, jobStatus?.status === "running", pollJob]);
 
   const handleStartCalibration = async () => {
     if (!selectedSiteId) return;
     setStarting(true);
     try {
-      const res = await axiosInstance.post<{
-        success: boolean;
-        data: { jobId: string };
-      }>("/api/calibration/start", { siteId: selectedSiteId });
-      const id = res.data.data.jobId;
-      localStorage.setItem(jobStorageKey(selectedSiteId), id);
-      setJobId(id);
+      await axiosInstance.post("/api/calibration/start", {
+        siteId: selectedSiteId,
+      });
       setJobStatus({ status: "running", phase: "ramp-up" });
     } catch (err: any) {
       showNotification(
@@ -557,50 +589,9 @@ export default function Calibration() {
     }
   };
 
-  const pollCurveJob = useCallback(
-    (siteId: string) => {
-      axiosInstance
-        .get<{ success: boolean; data: CurveJobResponse }>(
-          `/api/calibration/curve-job?siteId=${encodeURIComponent(siteId)}`,
-        )
-        .then((res) => {
-          const job = res.data.data;
-          setCurveJobStatus(job);
-          if (job.status === "complete" || job.status === "interrupted") {
-            if (curvePollRef.current) clearInterval(curvePollRef.current);
-            localStorage.removeItem(curveJobStorageKey(siteId));
-            showNotification(
-              job.status === "complete"
-                ? "Curve calibration complete"
-                : "Curve calibration stopped",
-              "success",
-            );
-            fetchCalibrationData(siteId);
-            fetchCurveStatus(siteId);
-          } else if (job.status === "failed") {
-            if (curvePollRef.current) clearInterval(curvePollRef.current);
-            localStorage.removeItem(curveJobStorageKey(siteId));
-            showNotification(
-              `Curve calibration failed: ${job.error ?? "unknown error"}`,
-              "error",
-            );
-          }
-        })
-        .catch((err: any) => {
-          if (err?.response?.status === 404) {
-            if (curvePollRef.current) clearInterval(curvePollRef.current);
-            localStorage.removeItem(curveJobStorageKey(siteId));
-            setCurveJobStatus(null);
-          }
-        });
-    },
-    [showNotification, fetchCalibrationData, fetchCurveStatus],
-  );
-
   useEffect(() => {
     if (!selectedSiteId) return;
-    const stored = localStorage.getItem(curveJobStorageKey(selectedSiteId));
-    if (!stored || curveJobStatus?.status !== "running") return;
+    if (curveJobStatus?.status !== "running") return;
     pollCurveJob(selectedSiteId);
     if (curvePollRef.current) clearInterval(curvePollRef.current);
     curvePollRef.current = setInterval(
@@ -626,7 +617,6 @@ export default function Calibration() {
       await axiosInstance.post("/api/calibration/curve-start", {
         siteId: selectedSiteId,
       });
-      localStorage.setItem(curveJobStorageKey(selectedSiteId), "active");
       setCurveJobStatus({
         status: "running",
         phase: "charging",
@@ -670,6 +660,19 @@ export default function Calibration() {
     safeguards.onGrid &&
     safeguards.offPeakOk;
   const jobRunning = jobStatus?.status === "running";
+  const curveJobRunning = curveJobStatus?.status === "running";
+  // A pending/running one-time schedule already owns the site's grid
+  // charging state for its action type — starting a manual run (or
+  // scheduling a second one) on top of it would race against it. The
+  // Schedule button itself stays enabled for read users (opening = viewing
+  // the existing scheduled run read-only); ScheduleCalibrationDialog handles
+  // that split via its own readOnly prop.
+  const gridSchedulePendingOrRunning =
+    gridScheduleStatus?.phase === "pending" ||
+    gridScheduleStatus?.phase === "running";
+  const curveSchedulePendingOrRunning =
+    curveScheduleStatus?.phase === "pending" ||
+    curveScheduleStatus?.phase === "running";
 
   const phaseLabel =
     jobStatus?.phase === "ramp-up"
@@ -825,7 +828,12 @@ export default function Calibration() {
                   permissionAction="calibration.gridChargeRate.start"
                   variant="contained"
                   onClick={handleStartCalibration}
-                  disabled={!allSafeguardsOk || jobRunning || starting}
+                  disabled={
+                    !allSafeguardsOk ||
+                    jobRunning ||
+                    starting ||
+                    gridSchedulePendingOrRunning
+                  }
                   startIcon={
                     starting ? <CircularProgress size={16} /> : undefined
                   }
@@ -835,6 +843,9 @@ export default function Calibration() {
                 <Button
                   variant="outlined"
                   size="small"
+                  disabled={
+                    !gridScheduleReadOnly && gridSchedulePendingOrRunning
+                  }
                   onClick={() => {
                     setScheduleDialogType("calibrate_grid_charge_rate");
                     setScheduleDialogOpen(true);
@@ -1058,8 +1069,9 @@ export default function Calibration() {
                     onClick={() => setCurveStartDialogOpen(true)}
                     disabled={
                       !allCurveSafeguardsOk ||
-                      curveJobStatus?.status === "running" ||
-                      curveStarting
+                      curveJobRunning ||
+                      curveStarting ||
+                      curveSchedulePendingOrRunning
                     }
                     startIcon={
                       curveStarting ? <CircularProgress size={16} /> : undefined
@@ -1068,7 +1080,7 @@ export default function Calibration() {
                     {curveStarting ? "Starting…" : "Start Curve Calibration"}
                   </PermissionButton>
 
-                  {curveJobStatus?.status === "running" && (
+                  {curveJobRunning && (
                     <PermissionButton
                       permissionAction="calibration.curve.stop"
                       variant="outlined"
@@ -1088,6 +1100,9 @@ export default function Calibration() {
                   <Button
                     variant="outlined"
                     size="small"
+                    disabled={
+                      !curveScheduleReadOnly && curveSchedulePendingOrRunning
+                    }
                     onClick={() => {
                       setScheduleDialogType("calibrate_charge_curve");
                       setScheduleDialogOpen(true);

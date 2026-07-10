@@ -321,6 +321,13 @@ export class Scheduler {
         (a) => a.action === "setTouHolidayOverride",
       );
       let actionsExecuted = 0;
+      // Set once a calibration action's background job actually starts (as
+      // opposed to the trigger throwing synchronously). A calibration job
+      // runs for minutes to hours after this function returns, so this
+      // schedule's success/failure and disabling must wait for the job to
+      // actually finish (see finalizeCalibrationSchedule in
+      // calibrationService.ts) rather than being marked immediately below.
+      let firedAsyncCalibration = false;
 
       for (const product of products) {
         const siteSchedLog = schedLog.child({
@@ -381,11 +388,14 @@ export class Scheduler {
                 ? triggerGridChargeRateCalibration(
                     String(product.energy_site_id),
                     schedule.email,
+                    schedule.id,
                   )
                 : triggerChargeCurveCalibration(
                     String(product.energy_site_id),
                     schedule.email,
+                    schedule.id,
                   ));
+              firedAsyncCalibration = true;
             }
             siteSchedLog.info(
               {
@@ -434,12 +444,21 @@ export class Scheduler {
           id: schedule.id,
           lastRunTime: now.toDate(),
           nextRunTime: task?.getNextRun() || undefined,
-          ...(process.env.DRY_RUN !== "true" && {
-            lastSuccessTime: now.toDate(),
-          }),
+          ...(process.env.DRY_RUN !== "true" &&
+            !firedAsyncCalibration && {
+              lastSuccessTime: now.toDate(),
+            }),
         });
       }
-      if (resolveScheduleOptions(schedule.options).runOnce && schedule.id) {
+      // A fired calibration job's own completion (finalizeCalibrationSchedule
+      // in calibrationService.ts) is responsible for marking success/failure
+      // and disabling this one-time schedule — doing it here too would mark
+      // it "succeeded" and disable it the instant the job merely *starts*.
+      if (
+        resolveScheduleOptions(schedule.options).runOnce &&
+        schedule.id &&
+        !firedAsyncCalibration
+      ) {
         schedLog.info("One-time schedule completed — disabling");
         await upsertScheduleInDb({ id: schedule.id, enabled: false });
         task?.destroy();
@@ -537,6 +556,19 @@ export class Scheduler {
             ),
           redis,
         );
+        // Same reasoning as the expiry branch in runEvaluationInner: a
+        // one-time schedule that was already expired before the server ever
+        // got a chance to register its cron task must still be disabled here
+        // — otherwise it stays "pending" forever (with a next-run date that
+        // computeOneTimeScheduleNextRun rolls forward a full year) since no
+        // task ever gets registered below to catch this schedule later.
+        if (resolveScheduleOptions(schedule.options).runOnce) {
+          schedulerLog.info(
+            { scheduleId: schedule.id },
+            "One-time schedule already expired at startup — disabling",
+          );
+          await upsertScheduleInDb({ id: schedule.id, enabled: false });
+        }
       }
     }
     if (!this.isValidSchedule(schedule)) {

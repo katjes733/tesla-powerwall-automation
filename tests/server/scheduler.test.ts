@@ -434,7 +434,11 @@ describe("runEvaluation — calibration action dispatch", () => {
     );
 
     expect(mockTriggerGridRate).toHaveBeenCalledOnce();
-    expect(mockTriggerGridRate).toHaveBeenCalledWith("42", "owner@example.com");
+    expect(mockTriggerGridRate).toHaveBeenCalledWith(
+      "42",
+      "owner@example.com",
+      "sched-1",
+    );
     expect(mockTriggerChargeCurve).not.toHaveBeenCalled();
   });
 
@@ -448,6 +452,7 @@ describe("runEvaluation — calibration action dispatch", () => {
     expect(mockTriggerChargeCurve).toHaveBeenCalledWith(
       "42",
       "owner@example.com",
+      "sched-1",
     );
     expect(mockTriggerGridRate).not.toHaveBeenCalled();
   });
