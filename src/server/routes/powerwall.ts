@@ -3,6 +3,7 @@ import {
   Fleet,
   isCalibrating,
   isDischargeCalibrating,
+  getSmartChargingState,
 } from "~/server/util/fleet";
 import { getByEmail } from "~/server/util/routes/schedule";
 import { getActiveHolidayName } from "~/server/util/holidays";
@@ -154,6 +155,7 @@ router.get(
                 (await isDischargeCalibrating(product.energy_site_id))
               : false,
             activeHoliday,
+            smartCharging: getSmartChargingState(product.energy_site_id),
           };
         }),
       );

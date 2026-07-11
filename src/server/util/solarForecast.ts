@@ -62,6 +62,21 @@ export function estimateSolarKwhFromHistory(
 
   const nowMins = now.hours() * 60 + now.minutes();
   const peakMins = peakStart.hours() * 60 + peakStart.minutes();
+  // Calendar-day gap between now's and peakStart's site-local dates (0 = same
+  // day). Using startOf("day").diff(..., "days") — rather than raw
+  // peakStart.diff(now, "days") or comparing nowMins/peakMins — is essential:
+  // a raw elapsed-time diff floors differently from the calendar-day count
+  // whenever the two times of day differ (e.g. Fri 20:00 → Mon 14:00 is 3
+  // calendar days apart but under 72 elapsed hours), and comparing
+  // nowMins/peakMins alone can't distinguish "peak is later today" from "peak
+  // is on a later calendar date" when the times of day happen to line up
+  // (e.g. Mon 08:00 → Tue 10:00 has nowMins < peakMins despite a 1-day gap).
+  // moment's day-unit diff cancels out DST via zoneDelta internally, so this
+  // is safe across spring-forward/fall-back transitions.
+  const dayGap = peakStart
+    .clone()
+    .startOf("day")
+    .diff(now.clone().startOf("day"), "days");
   const todayKey = now.format("YYYY-MM-DD");
   const recentWindowStartMins = nowMins - SOLAR_RECENT_WINDOW_MINUTES;
 
@@ -84,15 +99,23 @@ export function estimateSolarKwhFromHistory(
   }
 
   const dailyEnergies: number[] = [];
+  const fullDayEnergies: number[] = [];
   const historicalEnergyToNow: number[] = [];
   const historicalRecentEnergies: number[] = [];
 
   for (const [date, readings] of byDate.entries()) {
     if (date === todayKey) continue; // today handled separately below
 
-    // Handle windows that wrap midnight (nowMins > peakMins, e.g. 22:00 → 08:00).
+    // dayGap === 0: a genuine same-day slice. dayGap >= 1: approximate as
+    // "tail of now's day" + "head of peakStart's day" using one historical
+    // date's full 24h of readings for both fragments — this shape is correct
+    // whenever the peak is on a later calendar date, regardless of how
+    // nowMins/peakMins compare numerically (comparing nowMins <= peakMins
+    // instead would mis-select the same-day slice whenever dayGap >= 1 but
+    // now's time-of-day happens to be <= peakStart's, e.g. Mon 08:00 → Tue
+    // 10:00, capturing almost none of the real solar day).
     const windowReadings = readings.filter((r) =>
-      nowMins <= peakMins
+      dayGap === 0
         ? r.todMins >= nowMins && r.todMins < peakMins
         : r.todMins >= nowMins || r.todMins < peakMins,
     );
@@ -109,6 +132,19 @@ export function estimateSolarKwhFromHistory(
       0,
     );
     dailyEnergies.push(energyKwh);
+
+    // When peakStart is on a later calendar date, any fully-intervening
+    // calendar days (e.g. Fri evening → Mon peak skips all of Sat and Sun)
+    // get none of their solar production captured by the tail/head window
+    // above. Track each qualifying historical date's total energy so we can
+    // add `extraFullDays` worth of average full-day production below.
+    if (dayGap >= 1) {
+      const fullDayEnergy = readings.reduce(
+        (sum, r) => sum + r.solarKw * INTERVAL_HOURS,
+        0,
+      );
+      fullDayEnergies.push(fullDayEnergy);
+    }
 
     // Cumulative energy from start of day up to now — used for weather scaling.
     const energyToNow = readings
@@ -134,6 +170,17 @@ export function estimateSolarKwhFromHistory(
   const avgHistoricalRecentEnergy =
     historicalRecentEnergies.reduce((a, b) => a + b, 0) /
     historicalRecentEnergies.length;
+
+  // Additional full calendar days of solar production skipped over between
+  // now's day and peakStart's day (e.g. dayGap=3 for Fri→Mon means Sat and
+  // Sun are fully intervening → extraFullDays=2). dayGap<=1 contributes 0 —
+  // the tail/head window above already covers a same-day or immediate
+  // overnight/next-day transition.
+  const extraFullDays = Math.max(dayGap - 1, 0);
+  const avgFullDayKwh =
+    extraFullDays > 0 && fullDayEnergies.length > 0
+      ? fullDayEnergies.reduce((a, b) => a + b, 0) / fullDayEnergies.length
+      : 0;
 
   // Today's cumulative energy from start of day up to now.
   const todayReadings = byDate.get(todayKey) ?? [];
@@ -175,7 +222,8 @@ export function estimateSolarKwhFromHistory(
   }
 
   return {
-    estimatedKwh: avgHistoricalKwh * scalingFactor,
+    estimatedKwh:
+      (avgHistoricalKwh + extraFullDays * avgFullDayKwh) * scalingFactor,
     scalingFactor,
     daysUsed: dailyEnergies.length,
   };

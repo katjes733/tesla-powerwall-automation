@@ -242,4 +242,79 @@ describe("estimateSolarKwhFromHistory", () => {
       expect(result!.daysUsed).toBe(5);
     });
   });
+
+  describe("multi-day gaps", () => {
+    // History: June 1–7 (Mon–Sun), 1kW solar 08:00–16:59 (9 kWh/full day).
+
+    it("sums full intervening days when peakStart is 2 calendar days away (Friday evening → Monday afternoon)", () => {
+      // Real bug scenario: Saturday/Sunday have no on-peak period, so the
+      // next on-peak is Monday — 2 full calendar days (Sat, Sun) sit between
+      // now's day and peakStart's day. No "today" (June 12) data, isolating
+      // the day-count math from weather scaling.
+      const now = moment.tz("2026-06-12 20:00", TZ); // Friday
+      const peak = moment.tz("2026-06-15 14:00", TZ); // Monday
+      const result = estimateSolarKwhFromHistory(sunnySeven(), now, peak, TZ);
+      expect(result).not.toBeNull();
+      expect(result!.scalingFactor).toBe(1.0);
+      expect(result!.daysUsed).toBe(7);
+      // Tail/head window (todMins>=1200 || todMins<840) captures hours 8–13
+      // = 6 kWh/day. Plus 2 extra full days at 9 kWh each = 6 + 18 = 24.
+      expect(result!.estimatedKwh).toBeCloseTo(24, 1);
+    });
+
+    it("uses the wrap-style window (not a near-empty same-day slice) when dayGap=1 even though nowMins <= peakMins", () => {
+      // now's time-of-day (08:00) is numerically before peakStart's (10:00),
+      // but peakStart is on the NEXT calendar day — a 1-day gap. Selecting
+      // the window filter by nowMins<=peakMins instead of by dayGap would
+      // wrongly take a same-day 08:00–10:00 slice (~2 kWh), missing nearly
+      // the whole solar day.
+      const now = moment.tz("2026-06-08 08:00", TZ); // Monday
+      const peak = moment.tz("2026-06-09 10:00", TZ); // Tuesday
+      const result = estimateSolarKwhFromHistory(sunnySeven(), now, peak, TZ);
+      expect(result).not.toBeNull();
+      expect(result!.scalingFactor).toBe(1.0);
+      expect(result!.daysUsed).toBe(7);
+      expect(result!.estimatedKwh).toBeCloseTo(9, 1);
+    });
+
+    it("applies weather scaling to the whole extended total, not just the window-slice component", () => {
+      // Same Friday→Monday gap as above, but today (June 12) ran at half
+      // historical output through 20:00 → scalingFactor = 0.5, applied to
+      // the full (window + extra days) sum, not just the 6 kWh window piece.
+      const now = moment.tz("2026-06-12 20:00", TZ);
+      const peak = moment.tz("2026-06-15 14:00", TZ);
+      const result = estimateSolarKwhFromHistory(
+        [...sunnySeven(), ...makeDay("2026-06-12", solarHours(500))],
+        now,
+        peak,
+        TZ,
+      );
+      expect(result).not.toBeNull();
+      expect(result!.scalingFactor).toBeCloseTo(0.5, 5);
+      // (6 + 2*9) * 0.5 = 12
+      expect(result!.estimatedKwh).toBeCloseTo(12, 1);
+    });
+
+    it("scales extraFullDays correctly for a different gap magnitude (not hardcoded to the 2-day case)", () => {
+      // Friday evening → Sunday afternoon: only Saturday is fully intervening.
+      const now = moment.tz("2026-06-12 20:00", TZ); // Friday
+      const peak = moment.tz("2026-06-14 14:00", TZ); // Sunday
+      const result = estimateSolarKwhFromHistory(sunnySeven(), now, peak, TZ);
+      expect(result).not.toBeNull();
+      expect(result!.daysUsed).toBe(7);
+      // 6 kWh window + 1 extra full day at 9 kWh = 15.
+      expect(result!.estimatedKwh).toBeCloseTo(15, 1);
+    });
+
+    it("still returns null under MIN_VALID_DAYS with a multi-day gap", () => {
+      const data = sunnySeven().filter(
+        (p) =>
+          p.timestamp.startsWith("2026-06-01") ||
+          p.timestamp.startsWith("2026-06-02"),
+      );
+      const now = moment.tz("2026-06-12 20:00", TZ);
+      const peak = moment.tz("2026-06-15 14:00", TZ);
+      expect(estimateSolarKwhFromHistory(data, now, peak, TZ)).toBeNull();
+    });
+  });
 });

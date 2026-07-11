@@ -1,6 +1,5 @@
 import {
   Box,
-  Button,
   CircularProgress,
   FormControlLabel,
   Paper,
@@ -269,16 +268,6 @@ export default function Calibration() {
     "calibrate_grid_charge_rate" | "calibrate_charge_curve"
   >("calibrate_grid_charge_rate");
   const autoCurveToggleState = useElementState("calibration.curve.toggleAuto");
-  const gridScheduleReadOnly =
-    useElementState("calibration.gridChargeRate.scheduleRunOnce") === "read";
-  const curveScheduleReadOnly =
-    useElementState("calibration.curve.scheduleRunOnce") === "read";
-  // Both "Schedule" buttons stay enabled for read users (opening = viewing an
-  // existing scheduled run); the dialog itself is opened read-only instead.
-  const scheduleDialogReadOnly =
-    scheduleDialogType === "calibrate_charge_curve"
-      ? curveScheduleReadOnly
-      : gridScheduleReadOnly;
 
   // Curve tab state
   const [curveJobStatus, setCurveJobStatus] = useState<CurveJobResponse | null>(
@@ -663,10 +652,7 @@ export default function Calibration() {
   const curveJobRunning = curveJobStatus?.status === "running";
   // A pending/running one-time schedule already owns the site's grid
   // charging state for its action type — starting a manual run (or
-  // scheduling a second one) on top of it would race against it. The
-  // Schedule button itself stays enabled for read users (opening = viewing
-  // the existing scheduled run read-only); ScheduleCalibrationDialog handles
-  // that split via its own readOnly prop.
+  // scheduling a second one) on top of it would race against it.
   const gridSchedulePendingOrRunning =
     gridScheduleStatus?.phase === "pending" ||
     gridScheduleStatus?.phase === "running";
@@ -840,19 +826,18 @@ export default function Calibration() {
                 >
                   {starting ? "Starting…" : "Start Calibration"}
                 </PermissionButton>
-                <Button
+                <PermissionButton
+                  permissionAction="calibration.gridChargeRate.scheduleRunOnce"
                   variant="outlined"
                   size="small"
-                  disabled={
-                    !gridScheduleReadOnly && gridSchedulePendingOrRunning
-                  }
+                  disabled={gridSchedulePendingOrRunning}
                   onClick={() => {
                     setScheduleDialogType("calibrate_grid_charge_rate");
                     setScheduleDialogOpen(true);
                   }}
                 >
                   Schedule
-                </Button>
+                </PermissionButton>
                 <OneTimeScheduleIndicator
                   status={gridScheduleStatus}
                   permissionAction="calibration.gridChargeRate.scheduleRunOnce"
@@ -1098,19 +1083,18 @@ export default function Calibration() {
                     </PermissionButton>
                   )}
 
-                  <Button
+                  <PermissionButton
+                    permissionAction="calibration.curve.scheduleRunOnce"
                     variant="outlined"
                     size="small"
-                    disabled={
-                      !curveScheduleReadOnly && curveSchedulePendingOrRunning
-                    }
+                    disabled={curveSchedulePendingOrRunning}
                     onClick={() => {
                       setScheduleDialogType("calibrate_charge_curve");
                       setScheduleDialogOpen(true);
                     }}
                   >
                     Schedule
-                  </Button>
+                  </PermissionButton>
                   <OneTimeScheduleIndicator
                     status={curveScheduleStatus}
                     permissionAction="calibration.curve.scheduleRunOnce"
@@ -1354,7 +1338,6 @@ export default function Calibration() {
             ? curveScheduleStatus?.id
             : gridScheduleStatus?.id
         }
-        readOnly={scheduleDialogReadOnly}
       />
     </Box>
   );

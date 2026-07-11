@@ -32,6 +32,8 @@ export async function upsert({
       email,
       refresh_token: encrypt(refreshToken),
       expires_at: expiresAtDate,
+      last_refresh_error: null,
+      last_refresh_error_at: null,
     });
     status = 200;
   } else {
@@ -39,6 +41,8 @@ export async function upsert({
       modified_time: newDate,
       refresh_token: encrypt(refreshToken),
       expires_at: expiresAtDate,
+      last_refresh_error: null,
+      last_refresh_error_at: null,
     });
     status = 201;
   }
@@ -51,8 +55,23 @@ export async function upsert({
       refreshToken,
       expiresAt: expiresAtDate,
       modifiedTime: newDate,
+      lastRefreshError: null,
+      lastRefreshErrorAt: null,
     } as RefreshTokenData,
   };
+}
+
+export async function recordRefreshError(
+  email: string,
+  message: string,
+): Promise<void> {
+  const tokenRepo = (await AppDataSource.getInstance()).getRepository(
+    "RefreshToken",
+  );
+  await tokenRepo.update(
+    { email },
+    { last_refresh_error: message, last_refresh_error_at: new Date() },
+  );
 }
 
 export async function getByEmail(email: string) {
@@ -62,7 +81,15 @@ export async function getByEmail(email: string) {
   return await tokenRepo
     .findOne({
       where: { email },
-      select: ["id", "email", "refresh_token", "expires_at", "modified_time"],
+      select: [
+        "id",
+        "email",
+        "refresh_token",
+        "expires_at",
+        "modified_time",
+        "last_refresh_error",
+        "last_refresh_error_at",
+      ],
     })
     .then((record) => {
       if (record) {
@@ -72,6 +99,8 @@ export async function getByEmail(email: string) {
           refreshToken: decryptIfEncrypted(record.refresh_token),
           expiresAt: record.expires_at,
           modifiedTime: record.modified_time,
+          lastRefreshError: record.last_refresh_error,
+          lastRefreshErrorAt: record.last_refresh_error_at,
         } as RefreshTokenData;
       }
       return null;

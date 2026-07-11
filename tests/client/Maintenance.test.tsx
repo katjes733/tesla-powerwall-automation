@@ -72,6 +72,27 @@ describe("Maintenance", () => {
     expect(await screen.findByText("Needs attention")).toBeInTheDocument();
   });
 
+  it("shows Refresh failing (not Healthy) when lastRefreshError is set, even though expires_at is still fresh", async () => {
+    // Regression test: expires_at can look fresh (stale:false) while every
+    // refresh attempt since has actually been failing — lastRefreshError is
+    // the real-time signal and must win over the stale-based chip.
+    mockStatus({
+      stale: false,
+      lastRefreshError:
+        "Failed to obtain new token with refresh token: 400 Bad Request",
+      lastRefreshErrorAt: new Date("2026-01-01T00:00:00.000Z").toISOString(),
+    });
+    render(<Maintenance />);
+
+    expect(await screen.findByText("Refresh failing")).toBeInTheDocument();
+    expect(screen.queryByText("Healthy")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Failed to obtain new token with refresh token: 400 Bad Request/,
+      ),
+    ).toBeInTheDocument();
+  });
+
   it("shows an error toast when the status fetch fails", async () => {
     mockGet.mockRejectedValue(new Error("network error"));
     render(<Maintenance />);

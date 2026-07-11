@@ -86,6 +86,8 @@ describe("maintenance routes", () => {
           hasToken: false,
           stale: false,
           lastRefreshedAt: null,
+          lastRefreshError: null,
+          lastRefreshErrorAt: null,
         },
       });
     });
@@ -98,6 +100,8 @@ describe("maintenance routes", () => {
         refreshToken: "super-secret-token",
         expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1h in the future
         modifiedTime,
+        lastRefreshError: null,
+        lastRefreshErrorAt: null,
       });
       const app = buildApp(await loadRouter(), "user@example.com");
       const res = await request(app).get(
@@ -109,6 +113,8 @@ describe("maintenance routes", () => {
         hasToken: true,
         stale: false,
         lastRefreshedAt: modifiedTime.toISOString(),
+        lastRefreshError: null,
+        lastRefreshErrorAt: null,
       });
       expect(JSON.stringify(res.body)).not.toContain("super-secret-token");
     });
@@ -121,6 +127,8 @@ describe("maintenance routes", () => {
         refreshToken: "super-secret-token",
         expiresAt: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3h in the past
         modifiedTime,
+        lastRefreshError: null,
+        lastRefreshErrorAt: null,
       });
       const app = buildApp(await loadRouter(), "user@example.com");
       const res = await request(app).get(
@@ -128,6 +136,31 @@ describe("maintenance routes", () => {
       );
       expect(res.status).toBe(200);
       expect(res.body.data.stale).toBe(true);
+    });
+
+    it("surfaces lastRefreshError even when expires_at is still fresh (not masked by stale:false)", async () => {
+      const modifiedTime = new Date("2026-01-01T00:00:00.000Z");
+      const errorAt = new Date("2026-01-01T01:00:00.000Z");
+      mockedGetByEmail.mockResolvedValue({
+        id: "id-1",
+        email: "user@example.com",
+        refreshToken: "super-secret-token",
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1h in the future — not stale
+        modifiedTime,
+        lastRefreshError:
+          "Failed to obtain new token with refresh token: 400 Bad Request",
+        lastRefreshErrorAt: errorAt,
+      });
+      const app = buildApp(await loadRouter(), "user@example.com");
+      const res = await request(app).get(
+        "/api/maintenance/refresh-token/status",
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.stale).toBe(false);
+      expect(res.body.data.lastRefreshError).toBe(
+        "Failed to obtain new token with refresh token: 400 Bad Request",
+      );
+      expect(res.body.data.lastRefreshErrorAt).toBe(errorAt.toISOString());
     });
 
     it("returns 500 when the lookup throws", async () => {

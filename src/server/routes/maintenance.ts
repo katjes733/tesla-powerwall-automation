@@ -39,6 +39,8 @@ router.get(
           // meaningful signal here.
           stale: record ? isTokenStale(record.expiresAt) : false,
           lastRefreshedAt: record?.modifiedTime ?? null,
+          lastRefreshError: record?.lastRefreshError ?? null,
+          lastRefreshErrorAt: record?.lastRefreshErrorAt ?? null,
         },
       });
     } catch (error: any) {

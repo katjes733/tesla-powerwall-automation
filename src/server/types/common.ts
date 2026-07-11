@@ -17,6 +17,8 @@ export interface RefreshTokenData {
   refreshToken: string;
   expiresAt: Date;
   modifiedTime: Date;
+  lastRefreshError: string | null;
+  lastRefreshErrorAt: Date | null;
 }
 
 export interface Product {

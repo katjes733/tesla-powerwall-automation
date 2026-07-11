@@ -18,6 +18,8 @@ interface RefreshTokenStatus {
   hasToken: boolean;
   stale: boolean;
   lastRefreshedAt: string | null;
+  lastRefreshError: string | null;
+  lastRefreshErrorAt: string | null;
 }
 
 const OAUTH_ERROR_MESSAGES: Record<string, string> = {
@@ -44,6 +46,13 @@ function SettingCard({ children }: { children: React.ReactNode }) {
 function StatusChip({ status }: { status: RefreshTokenStatus }) {
   if (!status.hasToken) {
     return <Chip label="No token" color="error" size="small" />;
+  }
+  // Checked before `stale`: a live refresh failure is a stronger, more
+  // current signal than expiry-based staleness — `expires_at` can still
+  // look fresh (e.g. from an earlier successful refresh) while every
+  // attempt since has been failing.
+  if (status.lastRefreshError) {
+    return <Chip label="Refresh failing" color="error" size="small" />;
   }
   if (status.stale) {
     return <Chip label="Needs attention" color="warning" size="small" />;
@@ -149,24 +158,37 @@ export default function Maintenance() {
           <CircularProgress size={20} />
         ) : (
           status && (
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "center",
-                gap: 1,
-                mb: 2,
-                flexWrap: "wrap",
-              }}
-            >
-              <Typography variant="body2">{status.email}</Typography>
-              <StatusChip status={status} />
-              {status.hasToken && status.lastRefreshedAt && (
-                <Typography variant="body2" color="text.secondary">
-                  Last refreshed{" "}
-                  {dayjs(status.lastRefreshedAt).format("MMM D, YYYY h:mm A")}
+            <>
+              <Box
+                sx={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 1,
+                  mb: status.lastRefreshError ? 0.5 : 2,
+                  flexWrap: "wrap",
+                }}
+              >
+                <Typography variant="body2">{status.email}</Typography>
+                <StatusChip status={status} />
+                {status.hasToken && status.lastRefreshedAt && (
+                  <Typography variant="body2" color="text.secondary">
+                    Last refreshed{" "}
+                    {dayjs(status.lastRefreshedAt).format("MMM D, YYYY h:mm A")}
+                  </Typography>
+                )}
+              </Box>
+              {status.lastRefreshError && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ mb: 2 }}
+                >
+                  {status.lastRefreshError}
+                  {status.lastRefreshErrorAt &&
+                    ` (${dayjs(status.lastRefreshErrorAt).format("MMM D, YYYY h:mm A")})`}
                 </Typography>
               )}
-            </Box>
+            </>
           )
         )}
 

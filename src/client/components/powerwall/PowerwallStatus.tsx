@@ -17,6 +17,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 import { axiosInstance } from "../auth/AuthContext";
 import SiteCard from "./SiteCard";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
+import type { SmartChargingData } from "~/server/util/fleet";
 
 interface SiteStatus {
   product: Product;
@@ -24,6 +25,7 @@ interface SiteStatus {
   info: SiteInfo | null;
   calibrating: boolean;
   activeHoliday: string | null;
+  smartCharging: SmartChargingData | null;
 }
 
 const INTERVAL_OPTIONS = [
@@ -242,7 +244,14 @@ export default function PowerwallStatus() {
                   }}
                 >
                   {filteredSites.map(
-                    ({ product, live, info, calibrating, activeHoliday }) => (
+                    ({
+                      product,
+                      live,
+                      info,
+                      calibrating,
+                      activeHoliday,
+                      smartCharging,
+                    }) => (
                       <Box
                         key={product.energy_site_id}
                         sx={{ flex: "0 0 100%", px: 0.5 }}
@@ -253,6 +262,7 @@ export default function PowerwallStatus() {
                           info={info}
                           calibrating={calibrating}
                           activeHoliday={activeHoliday}
+                          smartCharging={smartCharging}
                         />
                       </Box>
                     ),
@@ -299,7 +309,14 @@ export default function PowerwallStatus() {
               }}
             >
               {filteredSites.map(
-                ({ product, live, info, calibrating, activeHoliday }) => (
+                ({
+                  product,
+                  live,
+                  info,
+                  calibrating,
+                  activeHoliday,
+                  smartCharging,
+                }) => (
                   <SiteCard
                     key={product.energy_site_id}
                     product={product}
@@ -307,6 +324,7 @@ export default function PowerwallStatus() {
                     info={info}
                     calibrating={calibrating}
                     activeHoliday={activeHoliday}
+                    smartCharging={smartCharging}
                   />
                 ),
               )}

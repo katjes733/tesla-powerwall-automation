@@ -12,7 +12,6 @@ describe("getElementState — read profile", () => {
     expect(getElementState("read", "calibration.access")).toBe("write");
     expect(getElementState("read", "touConfig.access")).toBe("write");
     expect(getElementState("read", "siteSettings.access")).toBe("write");
-    expect(getElementState("read", "health.access")).toBe("write");
   });
 
   it("resolves mutating actions to read (visible, disabled)", () => {
@@ -40,6 +39,7 @@ describe("getElementState — read profile", () => {
     expect(getElementState("read", "maintenance.refreshToken")).toBe("none");
     expect(getElementState("read", "userAdmin.access")).toBe("none");
     expect(getElementState("read", "userAdmin.invite")).toBe("none");
+    expect(getElementState("read", "health.access")).toBe("none");
   });
 
   it("hides notification preferences entirely (write/admin only)", () => {
@@ -66,6 +66,7 @@ describe("getElementState — write profile", () => {
     expect(getElementState("write", "maintenance.access")).toBe("none");
     expect(getElementState("write", "maintenance.refreshToken")).toBe("none");
     expect(getElementState("write", "userAdmin.access")).toBe("none");
+    expect(getElementState("write", "health.access")).toBe("none");
   });
 
   it("grants notification preferences", () => {
@@ -87,6 +88,7 @@ describe("getElementState — admin profile", () => {
     expect(getElementState("admin", "notificationPreferences.access")).toBe(
       "write",
     );
+    expect(getElementState("admin", "health.access")).toBe("write");
   });
 });
 
