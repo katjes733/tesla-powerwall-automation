@@ -1,9 +1,15 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect } from "vitest";
-import { render, screen } from "@testing-library/react";
+import {
+  render,
+  screen,
+  within,
+  waitForElementToBeRemoved,
+} from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import SiteCard from "~/client/components/powerwall/SiteCard";
-import type { LiveStatus, Product } from "~/server/types/common";
+import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
 import type { SmartChargingData } from "~/server/util/fleet";
 
 const theme = createTheme();
@@ -56,10 +62,35 @@ const SMART_CHARGING_BASE: SmartChargingData = {
   gridContributionPct: null,
 };
 
+const SITE_INFO: SiteInfo = {
+  id: "site-1",
+  site_name: "Test Site",
+  backup_reserve_percent: 20,
+  default_real_mode: "autonomous",
+  installation_date: "2025-12-30T00:00:00Z",
+  user_settings: {} as SiteInfo["user_settings"],
+  app_settings: {},
+  components: { disallow_charge_from_grid_with_solar_installed: true },
+  version: "26.18.1 fabf8f5a",
+  battery_count: 5,
+  tariff_content: {},
+  nameplate_power: 23000,
+  nameplate_energy: 40500,
+  installation_time_zone: "America/Phoenix",
+  off_grid_vehicle_charging_reserve_percent: 0,
+  max_site_meter_power_ac: 0,
+  min_site_meter_power_ac: 0,
+  tariff_content_v2: {},
+  vpp_backup_reserve_percent: 0,
+  utility: "Salt River Project",
+  island_config: {},
+};
+
 function renderCard(overrides: {
   smartCharging?: SmartChargingData | null;
   calibrating?: boolean;
   live?: LiveStatus | null;
+  info?: SiteInfo | null;
 }) {
   const live = "live" in overrides ? overrides.live! : LIVE;
   return render(
@@ -67,7 +98,7 @@ function renderCard(overrides: {
       <SiteCard
         product={PRODUCT}
         live={live}
-        info={null}
+        info={overrides.info ?? null}
         calibrating={overrides.calibrating ?? false}
         smartCharging={overrides.smartCharging ?? null}
       />
@@ -148,5 +179,48 @@ describe("SiteCard — state pill (unchanged behavior)", () => {
       smartCharging: { ...SMART_CHARGING_BASE, situation: "grid_needed" },
     });
     expect(screen.getByText("Smart Charging")).toBeInTheDocument();
+  });
+});
+
+describe("SiteCard — collapsed site-details row", () => {
+  it("renders no clickable row when info is null (nothing to show yet)", () => {
+    renderCard({});
+    expect(
+      screen.queryByTestId("site-details-trigger"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Mode/Backup reserve/Grid charging rows (not a generic 'Site details' label) instead of the always-visible Batteries/Firmware block", () => {
+    renderCard({ info: SITE_INFO });
+    const trigger = screen.getByTestId("site-details-trigger");
+    expect(within(trigger).getByText("Self-Powered")).toBeInTheDocument();
+    expect(within(trigger).getByText("20%")).toBeInTheDocument();
+    expect(within(trigger).getByText("Disabled")).toBeInTheDocument();
+    expect(screen.queryByText("Site details")).not.toBeInTheDocument();
+    expect(screen.queryByText("Firmware")).not.toBeInTheDocument();
+  });
+
+  it("opens a dialog with the full site details on click", async () => {
+    renderCard({ info: SITE_INFO });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByTestId("site-details-trigger"));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByText("42")).toBeInTheDocument(); // Site ID
+    expect(within(dialog).getByText("gw-1")).toBeInTheDocument(); // Gateway ID
+    expect(within(dialog).getByText("26.18.1 fabf8f5a")).toBeInTheDocument();
+    expect(within(dialog).getByText("Salt River Project")).toBeInTheDocument();
+  });
+
+  it("closes the dialog when Close is clicked", async () => {
+    renderCard({ info: SITE_INFO });
+    const user = userEvent.setup();
+
+    await user.click(screen.getByTestId("site-details-trigger"));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close" }));
+
+    await waitForElementToBeRemoved(() => screen.queryByRole("dialog"));
   });
 });
