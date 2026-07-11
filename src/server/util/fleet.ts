@@ -43,7 +43,9 @@ import type { NotificationType } from "~/shared/schemas/notificationPreferences"
 import {
   upsert as upsertToken,
   getByEmail as getRefreshTokenByEmail,
+  recordRefreshError,
 } from "~/server/util/routes/refreshToken";
+import { notifyOnce, clearNotification } from "~/server/util/notificationDedup";
 import {
   calculateChargeRateKw,
   calculateGridChargeHours,
@@ -67,6 +69,21 @@ import {
 import { maskEmail } from "~/server/util/maskEmail";
 import { getCurrentActor } from "~/server/util/actorContext";
 
+// A coarse classification of *why* `desired`/`action` came out the way they
+// did, alongside the free-form `reason` string — lets a UI render a short
+// icon/label without re-parsing prose. "deadline_passed" is the
+// betweenHours-mode equivalent of "in_peak" (both are the terminal
+// must-stop-now condition for their mode).
+export type SmartChargingSituation =
+  | "grid_needed"
+  | "waiting"
+  | "blocked_window"
+  | "in_peak"
+  | "deadline_passed"
+  | "target_reached"
+  | "solar_sufficient"
+  | "no_peak_found";
+
 export interface SmartChargingData {
   desired: "enabled" | "disabled";
   current: "enabled" | "disabled";
@@ -82,6 +99,16 @@ export interface SmartChargingData {
   chargeRateSource: "calibrated" | "formula";
   chargeRateCurveSource: "lookup" | "defaults";
   reason: string;
+  situation: SmartChargingSituation;
+  gridEnergyKwh: number | null;
+  solarCoversAboveSocPct: number | null;
+  peakOrDeadlineAt: string | null;
+  predictedSocAtPeak: number | null;
+  targetGapPct: number;
+  gridStartAt: string | null;
+  windowReopensAt: string | null;
+  solarContributionPct: number | null;
+  gridContributionPct: number | null;
 }
 
 interface BackupReserveData {
@@ -167,6 +194,29 @@ export async function isDischargeCalibrating(siteId: number): Promise<boolean> {
   const active = !!openEvent;
   dischargeStateCache.set(siteId, { active, at: performance.now() });
   return active;
+}
+
+// A scheduler-triggered smart charging tick's decision is never persisted
+// anywhere (only logged) — this cache is the only thing that lets the
+// GET /api/powerwall/status route show it. TTL is generous over the smart
+// schedule's own ~60s tick interval so a brief delay in the cron loop
+// doesn't make the status page flicker to "no data"; once truly stale (the
+// schedule was disabled/deleted, or the server restarted and hasn't ticked
+// yet), it correctly reports null rather than showing a stale decision.
+const SMART_CHARGING_CACHE_TTL_MS = 150_000;
+const smartChargingStateCache = new Map<
+  number,
+  { data: SmartChargingData; at: number }
+>();
+
+export function getSmartChargingState(
+  siteId: number,
+): SmartChargingData | null {
+  const cached = smartChargingStateCache.get(siteId);
+  if (!cached || performance.now() - cached.at > SMART_CHARGING_CACHE_TTL_MS) {
+    return null;
+  }
+  return cached.data;
 }
 
 function formatScheduledTime(t: moment.Moment, now: moment.Moment): string {
@@ -323,17 +373,39 @@ export class Fleet {
     return this.tokenRefreshPromise;
   }
 
-  private async doTokenRefresh(): Promise<string> {
+  private async doTokenRefresh(alreadyResynced = false): Promise<string> {
     const tokenResponse = await getNewTokenWithRefreshToken(this.refreshToken);
     if (!tokenResponse.ok) {
+      // The DB may already hold a newer refresh token than the one we just
+      // tried — written by a manual re-auth via the Maintenance UI, or by
+      // another process/instance that rotated it first. Tesla's refresh
+      // tokens are single-use, so resyncing and retrying once turns this
+      // from a permanent failure loop into a silent recovery.
+      if (!alreadyResynced) {
+        const latest = await getRefreshTokenByEmail(this.email);
+        if (latest && latest.refreshToken !== this.refreshToken) {
+          this.log.info(
+            "Refresh token diverged from DB — resyncing and retrying",
+          );
+          this.refreshToken = latest.refreshToken;
+          return this.doTokenRefresh(true);
+        }
+      }
+
       const errorMsg = `Failed to obtain new token with refresh token: ${tokenResponse.status} ${tokenResponse.statusText}`;
       this.log.error({ status: tokenResponse.status }, "Token refresh failed");
-      await this.notifyRecipients(
-        null,
-        "account_health",
-        "Powerwall Notification",
-        `[${new Date().toLocaleString()}] Tesla API token refresh failed. Please check the server logs and re-authenticate if necessary.`,
+      await notifyOnce(
+        `token_refresh_failed:${this.email}`,
+        () =>
+          this.notifyRecipients(
+            null,
+            "account_health",
+            "Powerwall Notification",
+            `[${new Date().toLocaleString()}] Tesla API token refresh failed. Please check the server logs and re-authenticate if necessary.`,
+          ),
+        redis,
       );
+      await recordRefreshError(this.email, errorMsg);
       throw new Error(errorMsg);
     }
     const tokenData = (await tokenResponse.json()) as TokenData;
@@ -351,6 +423,7 @@ export class Fleet {
       refreshToken: this.refreshToken,
       expiresAt: new Date(this.tokenExpiresAt),
     });
+    await clearNotification(`token_refresh_failed:${this.email}`, redis);
 
     this.log.info("Token refreshed successfully");
 
@@ -1284,6 +1357,20 @@ export class Fleet {
     let disableRequired = false;
     let reason: string;
     let solarForecast: SolarForecastResult | null = null;
+    let situation: SmartChargingSituation;
+    let gridEnergyKwhResult: number | null = null;
+    let solarCoversAboveSocPctResult: number | null = null;
+    let peakOrDeadlineAt: string | null = null;
+    // Every reachable path below (both isTouMode and betweenHoursCond
+    // branches) assigns this before the final return reads it — no
+    // initializer, so a future branch that forgets to set it is a real
+    // compile error instead of silently falling back to null.
+    let predictedSocAtPeak: number | null;
+    let targetGapPct = 0;
+    let gridStartAt: string | null = null;
+    let windowReopensAt: string | null = null;
+    let solarContributionPct: number | null = null;
+    let gridContributionPct: number | null = null;
     const chargeRateKw = calculateChargeRateKw(siteInfo.components);
     const calibration = await this.getCalibration(
       product.energy_site_id.toString(),
@@ -1328,16 +1415,26 @@ export class Fleet {
       if (isCurrentlyInPeak(tariff!, now)) {
         desired = "disabled";
         disableRequired = true;
+        situation = "in_peak";
         reason = "currently in on-peak period";
+        predictedSocAtPeak = liveStatus.percentage_charged;
+        targetGapPct = Math.max(0, config.targetSoc - predictedSocAtPeak);
       } else if (energyNeededKwh <= 0) {
         desired = "disabled";
+        disableRequired = true;
+        situation = "target_reached";
         reason = `target SOC already reached (${liveStatus.percentage_charged.toFixed(1)}%)`;
+        predictedSocAtPeak = liveStatus.percentage_charged;
       } else {
         const nextPeakStart = findNextPeakStart(tariff!, now, holidayEntries);
         if (!nextPeakStart) {
           desired = "disabled";
+          situation = "no_peak_found";
           reason = "no upcoming peak found in tariff";
+          predictedSocAtPeak = liveStatus.percentage_charged;
+          targetGapPct = Math.max(0, config.targetSoc - predictedSocAtPeak);
         } else {
+          peakOrDeadlineAt = nextPeakStart.toISOString();
           const effectivePeakStart = nextPeakStart
             .clone()
             .subtract(PEAK_BUFFER_MINUTES, "minutes");
@@ -1368,12 +1465,23 @@ export class Fleet {
           // grid charging on its own (it ignores the solar bell curve).
           if (solarForecast !== null && estimatedSolarKwh >= energyNeededKwh) {
             desired = "disabled";
+            situation = "solar_sufficient";
             reason = `solar forecast to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
+            predictedSocAtPeak = Math.min(
+              100,
+              liveStatus.percentage_charged +
+                (estimatedSolarKwh / totalEnergyKwh) * 100,
+            );
+            targetGapPct = Math.max(0, config.targetSoc - predictedSocAtPeak);
+            solarContributionPct =
+              Math.round((estimatedSolarKwh / totalEnergyKwh) * 1000) / 10;
+            gridContributionPct = 0;
           } else {
             const gridEnergyKwh = Math.max(
               0,
               energyNeededKwh - estimatedSolarKwh,
             );
+            gridEnergyKwhResult = gridEnergyKwh;
             const {
               hours: gridChargeHours,
               effectiveRateKw,
@@ -1386,6 +1494,7 @@ export class Fleet {
               effectiveChargeRateKw,
               chargeCurve ?? undefined,
             );
+            solarCoversAboveSocPctResult = solarCoversAboveSocPct ?? null;
             const latestGridStart = effectivePeakStart
               .clone()
               .subtract(gridChargeHours, "hours");
@@ -1396,6 +1505,8 @@ export class Fleet {
                 : "";
 
             let withinWindow = true;
+            let windowCloseLabel: string | null = null;
+            let windowOpenLabel: string | null = null;
             const windowCond = conditions.find(
               (c) => c.condition === "inSeasonalGridChargeWindow",
             );
@@ -1411,18 +1522,67 @@ export class Fleet {
                   seasonWindow.to,
                   now,
                 );
+                windowCloseLabel = seasonWindow.to;
+                windowOpenLabel = seasonWindow.from;
               }
             }
 
+            // Predicted SOC by peak: caps grid contribution to the actual
+            // time remaining (not the theoretical hours the plan assumed),
+            // and to zero once the window is blocked — this is what makes a
+            // config change (narrower window, higher target, lower rate)
+            // that leaves the target unreachable visible immediately rather
+            // than only once peak arrives and the battery isn't full.
+            const remainingHours = minutesToPeak / 60;
+            const achievableGridKwh = withinWindow
+              ? Math.min(gridEnergyKwh, effectiveRateKw * remainingHours)
+              : 0;
+            predictedSocAtPeak = Math.min(
+              100,
+              liveStatus.percentage_charged +
+                ((estimatedSolarKwh + achievableGridKwh) / totalEnergyKwh) *
+                  100,
+            );
+            targetGapPct = Math.max(0, config.targetSoc - predictedSocAtPeak);
+            solarContributionPct =
+              Math.round((estimatedSolarKwh / totalEnergyKwh) * 1000) / 10;
+            gridContributionPct =
+              Math.round((achievableGridKwh / totalEnergyKwh) * 1000) / 10;
+            const shortfallNote =
+              targetGapPct > 2
+                ? `; predicted only ${predictedSocAtPeak.toFixed(1)}% by peak (target ${config.targetSoc}%)`
+                : "";
+
             if (nowIsAtOrAfterLatestStart && withinWindow) {
               desired = "enabled";
-              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW${taperNote} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
+              situation = "grid_needed";
+              reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW${taperNote} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})${shortfallNote}`;
             } else if (!nowIsAtOrAfterLatestStart) {
               desired = "disabled";
-              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)}${taperNote} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})`;
+              situation = "waiting";
+              gridStartAt = latestGridStart.toISOString();
+              reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)}${taperNote} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})${shortfallNote}`;
             } else {
+              // The window closing is exactly as much a "must stop now"
+              // condition as on-peak start or a charge-by deadline — without
+              // this, grid charging that's already on would keep running
+              // past the window close, right up to whatever the next
+              // disable-triggering branch happens to be (e.g. on-peak).
               desired = "disabled";
-              reason = `outside allowed window — grid start due at ${formatScheduledTime(latestGridStart, now)} but window is closed`;
+              disableRequired = true;
+              situation = "blocked_window";
+              if (windowOpenLabel) {
+                const [oh, om] = windowOpenLabel.split(":").map(Number);
+                windowReopensAt = now
+                  .clone()
+                  .add(1, "day")
+                  .hours(oh)
+                  .minutes(om)
+                  .seconds(0)
+                  .milliseconds(0)
+                  .toISOString();
+              }
+              reason = `outside allowed window (closes ${windowCloseLabel ?? "?"}) — would have needed to start by ${formatScheduledTime(latestGridStart, now)} for a full charge by peak${shortfallNote}`;
             }
           }
         }
@@ -1444,11 +1604,18 @@ export class Fleet {
       if (!now.isBefore(deadline)) {
         desired = "disabled";
         disableRequired = true;
+        situation = "deadline_passed";
         reason = `past charge-by deadline ${window.to}`;
+        predictedSocAtPeak = liveStatus.percentage_charged;
+        targetGapPct = Math.max(0, config.targetSoc - predictedSocAtPeak);
       } else if (energyNeededKwh <= 0) {
         desired = "disabled";
+        disableRequired = true;
+        situation = "target_reached";
         reason = `target SOC already reached (${liveStatus.percentage_charged.toFixed(1)}%)`;
+        predictedSocAtPeak = liveStatus.percentage_charged;
       } else {
+        peakOrDeadlineAt = deadline.toISOString();
         const effectiveDeadline = deadline
           .clone()
           .subtract(PEAK_BUFFER_MINUTES, "minutes");
@@ -1479,12 +1646,23 @@ export class Fleet {
         // grid charging on its own (it ignores the solar bell curve).
         if (solarForecast !== null && estimatedSolarKwh >= energyNeededKwh) {
           desired = "disabled";
+          situation = "solar_sufficient";
           reason = `solar forecast to cover full ${energyNeededKwh.toFixed(2)}kWh needed (${solarLabel} — grid not needed)`;
+          predictedSocAtPeak = Math.min(
+            100,
+            liveStatus.percentage_charged +
+              (estimatedSolarKwh / totalEnergyKwh) * 100,
+          );
+          targetGapPct = Math.max(0, config.targetSoc - predictedSocAtPeak);
+          solarContributionPct =
+            Math.round((estimatedSolarKwh / totalEnergyKwh) * 1000) / 10;
+          gridContributionPct = 0;
         } else {
           const gridEnergyKwh = Math.max(
             0,
             energyNeededKwh - estimatedSolarKwh,
           );
+          gridEnergyKwhResult = gridEnergyKwh;
           const {
             hours: gridChargeHours,
             effectiveRateKw,
@@ -1497,6 +1675,7 @@ export class Fleet {
             effectiveChargeRateKw,
             chargeCurve ?? undefined,
           );
+          solarCoversAboveSocPctResult = solarCoversAboveSocPct ?? null;
           const latestGridStart = effectiveDeadline
             .clone()
             .subtract(gridChargeHours, "hours");
@@ -1507,15 +1686,51 @@ export class Fleet {
               ? `; solar covers SOC ${solarCoversAboveSocPct.toFixed(1)}–100%`
               : "";
 
+          const remainingHours = minutesToDeadline / 60;
+          const achievableGridKwh = withinWindow
+            ? Math.min(gridEnergyKwh, effectiveRateKw * remainingHours)
+            : 0;
+          predictedSocAtPeak = Math.min(
+            100,
+            liveStatus.percentage_charged +
+              ((estimatedSolarKwh + achievableGridKwh) / totalEnergyKwh) * 100,
+          );
+          targetGapPct = Math.max(0, config.targetSoc - predictedSocAtPeak);
+          solarContributionPct =
+            Math.round((estimatedSolarKwh / totalEnergyKwh) * 1000) / 10;
+          gridContributionPct =
+            Math.round((achievableGridKwh / totalEnergyKwh) * 1000) / 10;
+          const shortfallNote =
+            targetGapPct > 2
+              ? `; predicted only ${predictedSocAtPeak.toFixed(1)}% by peak (target ${config.targetSoc}%)`
+              : "";
+
           if (nowIsAtOrAfterLatestStart && withinWindow) {
             desired = "enabled";
-            reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW${taperNote} (${solarLabel}, deadline ${window.to})`;
+            situation = "grid_needed";
+            reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW${taperNote} (${solarLabel}, deadline ${window.to})${shortfallNote}`;
           } else if (!nowIsAtOrAfterLatestStart) {
             desired = "disabled";
-            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)}${taperNote} (${solarLabel}, deadline ${window.to})`;
+            situation = "waiting";
+            gridStartAt = latestGridStart.toISOString();
+            reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)}${taperNote} (${solarLabel}, deadline ${window.to})${shortfallNote}`;
           } else {
+            // See the TOU-mode branch above — the window closing must force
+            // a disable just like the charge-by deadline does, otherwise
+            // grid charging that's already on would keep running past it.
             desired = "disabled";
-            reason = `outside allowed window — grid start due at ${formatScheduledTime(latestGridStart, now)} but window is closed`;
+            disableRequired = true;
+            situation = "blocked_window";
+            const [oh, om] = window.from.split(":").map(Number);
+            windowReopensAt = now
+              .clone()
+              .add(1, "day")
+              .hours(oh)
+              .minutes(om)
+              .seconds(0)
+              .milliseconds(0)
+              .toISOString();
+            reason = `outside allowed window (closes ${window.to}) — would have needed to start by ${formatScheduledTime(latestGridStart, now)} for a full charge by deadline${shortfallNote}`;
           }
         }
       }
@@ -1561,7 +1776,7 @@ export class Fleet {
       action = "no_change";
     }
 
-    return {
+    const data: SmartChargingData = {
       desired,
       current,
       action,
@@ -1596,7 +1811,31 @@ export class Fleet {
       chargeRateSource,
       chargeRateCurveSource,
       reason,
+      situation,
+      gridEnergyKwh:
+        gridEnergyKwhResult !== null
+          ? Math.round(gridEnergyKwhResult * 100) / 100
+          : null,
+      solarCoversAboveSocPct:
+        solarCoversAboveSocPctResult !== null
+          ? Math.round(solarCoversAboveSocPctResult * 10) / 10
+          : null,
+      peakOrDeadlineAt,
+      predictedSocAtPeak:
+        predictedSocAtPeak !== null
+          ? Math.round(predictedSocAtPeak * 10) / 10
+          : null,
+      targetGapPct: Math.round(targetGapPct * 10) / 10,
+      gridStartAt,
+      windowReopensAt,
+      solarContributionPct,
+      gridContributionPct,
     };
+    smartChargingStateCache.set(product.energy_site_id, {
+      data,
+      at: performance.now(),
+    });
+    return data;
   }
 
   private buildWeekendTariff(tariff: Record<string, any>): Record<string, any> {

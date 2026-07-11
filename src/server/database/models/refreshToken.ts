@@ -10,6 +10,8 @@ export const RefreshToken = new EntitySchema({
     email: { type: "varchar", length: 255, unique: true, nullable: false },
     refresh_token: { type: "varchar", unique: true, nullable: false },
     expires_at: { type: "timestamp with time zone", nullable: false },
+    last_refresh_error: { type: "varchar", nullable: true },
+    last_refresh_error_at: { type: "timestamp with time zone", nullable: true },
   },
   indices: [
     {
