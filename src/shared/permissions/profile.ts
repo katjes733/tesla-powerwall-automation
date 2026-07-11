@@ -91,8 +91,7 @@ export const READ_PROFILE: ActionSchema = {
     apply: "read",
   },
   siteSettings: { access: "write", write: "read" },
-  health: { access: "write" },
-  // maintenance, userAdmin: omitted entirely — every leaf resolves to "none" (hidden)
+  // maintenance, userAdmin, health: omitted entirely — every leaf resolves to "none" (hidden)
 };
 
 // Every leaf READ_PROFILE marks "read" (visible-disabled) becomes "write" (visible-
@@ -187,7 +186,6 @@ export const WRITE_PROFILE: ActionSchema = {
     apply: "write",
   },
   siteSettings: { access: "write", write: "write" },
-  health: { access: "write" },
   // Self-service notification settings: write/admin only, omitted from
   // READ_PROFILE entirely (same "not even present" mechanism as
   // maintenance/userAdmin below) since a read-only delegate shouldn't be able
@@ -208,6 +206,7 @@ export const ADMIN_PROFILE: ActionSchema = {
     update: "write",
     revoke: "write",
   },
+  health: { access: "write" },
 };
 
 export const PROFILES: Record<ProfileName, ActionSchema> = {

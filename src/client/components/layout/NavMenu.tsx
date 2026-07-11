@@ -23,7 +23,6 @@ interface NavItem {
 // nav and routes can't drift apart.
 const NAV_ITEMS: NavItem[] = [
   { path: "/", label: "Powerwall", action: "powerwall.access" },
-  { path: "/health", label: "App Health", action: "health.access" },
   { path: "/schedules", label: "Schedules", action: "schedule.access" },
   { path: "/tou-configs", label: "TOU Configs", action: "touConfig.access" },
   {
@@ -33,13 +32,14 @@ const NAV_ITEMS: NavItem[] = [
   },
   { path: "/calibration", label: "Calibration", action: "calibration.access" },
   { path: "/history", label: "Energy History", action: "powerwall.access" },
-  { path: "/maintenance", label: "Maintenance", action: "maintenance.access" },
-  { path: "/user-admin", label: "User Admin", action: "userAdmin.access" },
   {
     path: "/notification-preferences",
     label: "Notifications",
     action: "notificationPreferences.access",
   },
+  { path: "/maintenance", label: "Maintenance", action: "maintenance.access" },
+  { path: "/user-admin", label: "User Admin", action: "userAdmin.access" },
+  { path: "/health", label: "App Health", action: "health.access" },
 ];
 
 const PAGE_TITLES: Record<string, string> = Object.fromEntries(

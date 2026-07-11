@@ -29,7 +29,6 @@ interface Props {
   // also where its status and Cancel action are now displayed. This dialog
   // only needs the id, to replace it on Save.
   existingScheduleId?: string | null;
-  readOnly?: boolean;
 }
 
 const LABELS: Record<CalibrationType, string> = {
@@ -45,7 +44,6 @@ export default function ScheduleCalibrationDialog({
   siteName,
   siteTimezone,
   existingScheduleId = null,
-  readOnly = false,
 }: Props) {
   const [selectedDateTime, setSelectedDateTime] = useState<Dayjs | null>(null);
   const [saving, setSaving] = useState(false);
@@ -144,7 +142,6 @@ export default function ScheduleCalibrationDialog({
           value={selectedDateTime}
           onChange={handleDateTimeChange}
           disablePast
-          disabled={readOnly}
           slotProps={{ textField: { size: "small", fullWidth: true } }}
         />
 
@@ -189,7 +186,7 @@ export default function ScheduleCalibrationDialog({
         <Button
           variant="contained"
           onClick={handleSave}
-          disabled={!canSave || saving || readOnly}
+          disabled={!canSave || saving}
           startIcon={saving ? <CircularProgress size={16} /> : undefined}
         >
           {saving ? "Scheduling…" : "Schedule"}
