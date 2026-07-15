@@ -162,3 +162,69 @@ describe("setSmartGridCharging — disable when the charge window closes", () =>
     );
   });
 });
+
+describe("setSmartGridCharging — plans around the window's close time, not just peak", () => {
+  const originalDryRun = process.env.DRY_RUN;
+
+  beforeEach(() => {
+    process.env.DRY_RUN = "false";
+  });
+
+  afterEach(() => {
+    if (originalDryRun === undefined) delete process.env.DRY_RUN;
+    else process.env.DRY_RUN = originalDryRun;
+    vi.restoreAllMocks();
+  });
+
+  it("anchors latestGridStart to the window's close time when it's earlier than peak", async () => {
+    const fleet = Fleet.getInstance(
+      `smart-charging-window-plan-test-${Date.now()}@example.com`,
+      { throwOnError: false, mailOnError: false },
+    );
+
+    // Window closes at noon, well ahead of the 13:45 on-peak start — a wider
+    // gap than the reported bug, so the two possible anchors land far apart
+    // and the assertion isn't sensitive to minor timing.
+    const conditions: IScheduleCondition[] = [
+      {
+        condition: "inSeasonalGridChargeWindow",
+        value: [{ seasonName: "summer", from: "00:00", to: "12:00" }],
+      },
+    ];
+    // 50% → 90% on a 13.5kWh PW2 (4kW effective rate, no calibration/curve)
+    // needs energyNeededKwh=5.4kWh, entirely below the CV taper zone (which
+    // starts at 95%), so calculateGridChargeHours takes the flat-rate path:
+    // 5.4/4h + the 2-minute startup buffer = 83 minutes exactly.
+    const now = moment.tz("2026-07-13 10:00", TZ);
+
+    vi.spyOn(fleet, "getSiteInfo").mockResolvedValue(SITE_INFO as any);
+    vi.spyOn(fleet, "getLiveStatus").mockResolvedValue({
+      ...LIVE_STATUS,
+      percentage_charged: 50,
+    } as any);
+    vi.spyOn(fleet, "getSolarHistory").mockResolvedValue([]);
+    vi.spyOn(fleet as any, "getCalibration").mockResolvedValue(null);
+    vi.spyOn(fleet as any, "getChargeCurve").mockResolvedValue(null);
+    vi.spyOn(fleet, "setGridCharging").mockResolvedValue(undefined);
+    vi.useFakeTimers();
+    vi.setSystemTime(now.toDate());
+
+    const result = await fleet.setSmartGridCharging(
+      PRODUCT,
+      JSON.stringify({ targetSoc: 90 }),
+      conditions,
+    );
+
+    vi.useRealTimers();
+
+    expect(result?.situation).toBe("waiting");
+    // Regression: latestGridStart must be anchored to the window's close
+    // (12:00 − 5min buffer − 83min charge time = 10:32), not to on-peak
+    // start (13:45 − 5min buffer − 83min = 12:17) — the window closes
+    // first today, so it's the true constraint on available charging time.
+    // Before the fix, this would have read 12:17.
+    expect(result?.gridStartAt).toBe(
+      moment.tz("2026-07-13 10:32", TZ).toISOString(),
+    );
+  });
+});

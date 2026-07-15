@@ -1435,12 +1435,66 @@ export class Fleet {
           targetGapPct = Math.max(0, config.targetSoc - predictedSocAtPeak);
         } else {
           peakOrDeadlineAt = nextPeakStart.toISOString();
-          const effectivePeakStart = nextPeakStart
+
+          // A seasonal grid-charge window can close earlier in the day than
+          // on-peak start (e.g. window closes 1:30pm but peak isn't until
+          // 1:45pm). Whichever comes first is the true constraint on
+          // available charging time, so the plan must anchor to it rather
+          // than to peak alone — otherwise the plan assumes runway it
+          // doesn't actually have and starts grid charging later than truly
+          // necessary, undershooting the target by the time the window
+          // (not peak) cuts it off. This lookup only determines *today's*
+          // tighter anchor; whether grid is allowed right now is still
+          // decided by the reactive withinWindow check below.
+          let withinWindow = true;
+          let windowCloseLabel: string | null = null;
+          let windowOpenLabel: string | null = null;
+          const windowCond = conditions.find(
+            (c) => c.condition === "inSeasonalGridChargeWindow",
+          );
+          if (windowCond) {
+            const windows = windowCond.value as SeasonalWindow[];
+            const currentSeason = getCurrentSeason(tariff!, now);
+            const seasonWindow = windows.find(
+              (w) => w.seasonName === currentSeason?.name,
+            );
+            if (seasonWindow) {
+              withinWindow = isWithinWindow(
+                seasonWindow.from,
+                seasonWindow.to,
+                now,
+              );
+              windowCloseLabel = seasonWindow.to;
+              windowOpenLabel = seasonWindow.from;
+            }
+          }
+
+          let effectiveDeadline = nextPeakStart
             .clone()
             .subtract(PEAK_BUFFER_MINUTES, "minutes");
+          if (windowCloseLabel) {
+            const [closeHour, closeMinute] = windowCloseLabel
+              .split(":")
+              .map(Number);
+            const windowCloseToday = now
+              .clone()
+              .hours(closeHour)
+              .minutes(closeMinute)
+              .seconds(0)
+              .milliseconds(0);
+            if (
+              windowCloseToday.isAfter(now) &&
+              windowCloseToday.isBefore(effectiveDeadline)
+            ) {
+              effectiveDeadline = windowCloseToday
+                .clone()
+                .subtract(PEAK_BUFFER_MINUTES, "minutes");
+            }
+          }
+
           const minutesToPeak = Math.max(
             0,
-            effectivePeakStart.diff(now, "minutes"),
+            effectiveDeadline.diff(now, "minutes"),
           );
           const availableSolarKw = Math.max(
             0,
@@ -1451,7 +1505,7 @@ export class Fleet {
           solarForecast = estimateSolarKwhFromHistory(
             solarHistory,
             now,
-            effectivePeakStart,
+            effectiveDeadline,
             timezone,
           );
           const estimatedSolarKwh =
@@ -1495,7 +1549,7 @@ export class Fleet {
               chargeCurve ?? undefined,
             );
             solarCoversAboveSocPctResult = solarCoversAboveSocPct ?? null;
-            const latestGridStart = effectivePeakStart
+            const latestGridStart = effectiveDeadline
               .clone()
               .subtract(gridChargeHours, "hours");
             const nowIsAtOrAfterLatestStart = !now.isBefore(latestGridStart);
@@ -1503,29 +1557,6 @@ export class Fleet {
               solarCoversAboveSocPct !== undefined
                 ? `; solar covers SOC ${solarCoversAboveSocPct.toFixed(1)}–100%`
                 : "";
-
-            let withinWindow = true;
-            let windowCloseLabel: string | null = null;
-            let windowOpenLabel: string | null = null;
-            const windowCond = conditions.find(
-              (c) => c.condition === "inSeasonalGridChargeWindow",
-            );
-            if (windowCond) {
-              const windows = windowCond.value as SeasonalWindow[];
-              const currentSeason = getCurrentSeason(tariff!, now);
-              const seasonWindow = windows.find(
-                (w) => w.seasonName === currentSeason?.name,
-              );
-              if (seasonWindow) {
-                withinWindow = isWithinWindow(
-                  seasonWindow.from,
-                  seasonWindow.to,
-                  now,
-                );
-                windowCloseLabel = seasonWindow.to;
-                windowOpenLabel = seasonWindow.from;
-              }
-            }
 
             // Predicted SOC by peak: caps grid contribution to the actual
             // time remaining (not the theoretical hours the plan assumed),
