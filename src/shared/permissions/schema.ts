@@ -122,7 +122,11 @@ export interface ActionSchema {
     };
   };
 
-  maintenance?: { access?: AccessLevel; refreshToken?: AccessLevel };
+  maintenance?: {
+    access?: AccessLevel;
+    refreshToken?: AccessLevel;
+    siteLocation?: AccessLevel;
+  };
   userAdmin?: {
     access?: AccessLevel;
     invite?: AccessLevel;

@@ -25,18 +25,41 @@ vi.mock("~/client/components/notification/NotificationContext", () => ({
 
 import Maintenance from "~/client/components/maintenance/Maintenance";
 
+// Maintenance now also fetches the site list (for the location card's site
+// selector) and, per selected site, its location settings — both via the
+// same shared axiosInstance.get mock, so route by URL rather than a single
+// blanket mockResolvedValue.
 function mockStatus(overrides: Partial<Record<string, unknown>> = {}) {
-  mockGet.mockResolvedValue({
-    data: {
-      success: true,
+  mockGet.mockImplementation((url: unknown) => {
+    const path = String(url);
+    if (path.startsWith("/api/powerwall/sites")) {
+      return Promise.resolve({
+        data: {
+          success: true,
+          data: [{ id: "42", site_name: "Test Site", is_online: true }],
+        },
+      });
+    }
+    if (path.startsWith("/api/site-settings")) {
+      return Promise.resolve({
+        data: {
+          success: true,
+          data: { location_zip: null, location_lat: null, location_lon: null },
+        },
+      });
+    }
+    return Promise.resolve({
       data: {
-        email: "user@example.com",
-        hasToken: true,
-        stale: false,
-        lastRefreshedAt: new Date().toISOString(),
-        ...overrides,
+        success: true,
+        data: {
+          email: "user@example.com",
+          hasToken: true,
+          stale: false,
+          lastRefreshedAt: new Date().toISOString(),
+          ...overrides,
+        },
       },
-    },
+    });
   });
 }
 

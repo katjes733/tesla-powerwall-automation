@@ -1,5 +1,5 @@
 import { jwtDecode } from "jwt-decode";
-import moment from "moment-timezone";
+import moment, { type Moment } from "moment-timezone";
 import type {
   FleetOptions,
   FleetOptionsInput,
@@ -68,6 +68,13 @@ import {
 } from "~/server/util/solarForecast";
 import { maskEmail } from "~/server/util/maskEmail";
 import { getCurrentActor } from "~/server/util/actorContext";
+import type { ISiteSettings } from "~/server/database/models/siteSettings";
+import { resolveSiteSettings } from "~/server/database/models/siteSettings";
+import {
+  fetchRadiationForecast,
+  fetchHistoricalRadiation,
+  computeRadiationRatio,
+} from "~/server/util/weatherForecast";
 
 // A coarse classification of *why* `desired`/`action` came out the way they
 // did, alongside the free-form `reason` string — lets a UI render a short
@@ -109,6 +116,10 @@ export interface SmartChargingData {
   windowReopensAt: string | null;
   solarContributionPct: number | null;
   gridContributionPct: number | null;
+  // null when the site has no configured location (radiation not used at
+  // all) or the weather fetch failed — never used to boost estimatedSolarKwh
+  // above what the historical forecast alone produced, only to reduce it.
+  radiationRatio: number | null;
 }
 
 interface BackupReserveData {
@@ -155,6 +166,35 @@ const CURVE_CACHE_TTL_MS = 30 * 60 * 1000;
 const curveCache = new Map<
   string,
   { data: ChargeCurveCalibrationData | null; at: number }
+>();
+
+// Site settings change rarely — this just avoids a DB round-trip every tick.
+const SITE_LOCATION_CACHE_TTL_MS = SITE_INFO_CACHE_TTL_MS;
+const siteLocationCache = new Map<
+  string,
+  { data: { lat: number; lon: number } | null; at: number }
+>();
+
+// Open-Meteo's forecast model updates roughly hourly; 30 minutes keeps the
+// estimate reasonably fresh through the day without meaningfully more load.
+const RADIATION_FORECAST_CACHE_TTL_MS = 30 * 60 * 1000;
+const radiationForecastCache = new Map<
+  string,
+  {
+    data: import("~/server/util/weatherForecast").RadiationPoint[] | null;
+    at: number;
+  }
+>();
+
+// The historical baseline only needs to change once a day — the lookback
+// window shifts by at most one day between refreshes.
+const RADIATION_HISTORY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const radiationHistoryCache = new Map<
+  string,
+  {
+    data: import("~/server/util/weatherForecast").RadiationPoint[] | null;
+    at: number;
+  }
 >();
 
 // Ring buffer: last N battery_power readings per site (one per minute from cron).
@@ -1183,6 +1223,60 @@ export class Fleet {
     return data;
   }
 
+  private async getSiteLocation(
+    siteId: string,
+  ): Promise<{ lat: number; lon: number } | null> {
+    const cached = siteLocationCache.get(siteId);
+    if (cached && performance.now() - cached.at < SITE_LOCATION_CACHE_TTL_MS) {
+      return cached.data;
+    }
+    const db = await AppDataSource.getInstance(true);
+    const repo = db.getRepository<IBasicEntity & ISiteSettings>("SiteSettings");
+    const record = await repo.findOne({ where: { site_id: siteId } });
+    const settings = resolveSiteSettings(record?.settings ?? null);
+    const data =
+      settings.location_lat != null && settings.location_lon != null
+        ? { lat: settings.location_lat, lon: settings.location_lon }
+        : null;
+    siteLocationCache.set(siteId, { data, at: performance.now() });
+    return data;
+  }
+
+  // Only called when getSiteLocation() has already confirmed a location is
+  // configured — a site with no location never reaches here, so
+  // estimatedSolarKwh at the call sites is left byte-for-byte unchanged.
+  private async getRadiationRatio(
+    siteId: string,
+    lat: number,
+    lon: number,
+    timezone: string,
+    now: Moment,
+    deadline: Moment,
+  ): Promise<number | null> {
+    const cachedForecast = radiationForecastCache.get(siteId);
+    const forecast =
+      cachedForecast &&
+      performance.now() - cachedForecast.at < RADIATION_FORECAST_CACHE_TTL_MS
+        ? cachedForecast.data
+        : await fetchRadiationForecast(lat, lon, timezone).then((data) => {
+            radiationForecastCache.set(siteId, { data, at: performance.now() });
+            return data;
+          });
+
+    const cachedHistory = radiationHistoryCache.get(siteId);
+    const history =
+      cachedHistory &&
+      performance.now() - cachedHistory.at < RADIATION_HISTORY_CACHE_TTL_MS
+        ? cachedHistory.data
+        : await fetchHistoricalRadiation(lat, lon, timezone).then((data) => {
+            radiationHistoryCache.set(siteId, { data, at: performance.now() });
+            return data;
+          });
+
+    if (!forecast || !history) return null;
+    return computeRadiationRatio(forecast, history, now, deadline, timezone);
+  }
+
   private async recordChargeCurveSample(
     product: Product,
     liveStatus: LiveStatus,
@@ -1360,6 +1454,7 @@ export class Fleet {
     let situation: SmartChargingSituation;
     let gridEnergyKwhResult: number | null = null;
     let solarCoversAboveSocPctResult: number | null = null;
+    let radiationRatioResult: number | null = null;
     let peakOrDeadlineAt: string | null = null;
     // Every reachable path below (both isTouMode and betweenHoursCond
     // branches) assigns this before the final return reads it — no
@@ -1388,6 +1483,12 @@ export class Fleet {
     const chargeRateCurveSource: "lookup" | "defaults" = chargeCurve
       ? "lookup"
       : "defaults";
+
+    // null when the site has no configured location — every downstream use
+    // is gated on this, so estimatedSolarKwh stays untouched in that case.
+    const siteLocation = await this.getSiteLocation(
+      product.energy_site_id.toString(),
+    );
 
     if (liveStatus.battery_power < -500) {
       this.recordChargeCurveSample(product, liveStatus).catch(() => {});
@@ -1508,10 +1609,23 @@ export class Fleet {
             effectiveDeadline,
             timezone,
           );
-          const estimatedSolarKwh =
+          let estimatedSolarKwh =
             solarForecast !== null
               ? solarForecast.estimatedKwh * SOLAR_FORECAST_DISCOUNT
               : linearSolarKwh;
+          if (siteLocation) {
+            radiationRatioResult = await this.getRadiationRatio(
+              product.energy_site_id.toString(),
+              siteLocation.lat,
+              siteLocation.lon,
+              timezone,
+              now,
+              effectiveDeadline,
+            );
+            if (radiationRatioResult !== null) {
+              estimatedSolarKwh *= radiationRatioResult;
+            }
+          }
           const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
 
           // Only early-disable based on solar when the historical forecast is
@@ -1666,10 +1780,23 @@ export class Fleet {
           effectiveDeadline,
           timezone,
         );
-        const estimatedSolarKwh =
+        let estimatedSolarKwh =
           solarForecast !== null
             ? solarForecast.estimatedKwh * SOLAR_FORECAST_DISCOUNT
             : linearSolarKwh;
+        if (siteLocation) {
+          radiationRatioResult = await this.getRadiationRatio(
+            product.energy_site_id.toString(),
+            siteLocation.lat,
+            siteLocation.lon,
+            timezone,
+            now,
+            effectiveDeadline,
+          );
+          if (radiationRatioResult !== null) {
+            estimatedSolarKwh *= radiationRatioResult;
+          }
+        }
         const solarLabel = buildSolarLabel(solarForecast, linearSolarKwh);
 
         // Only early-disable based on solar when the historical forecast is
@@ -1861,6 +1988,10 @@ export class Fleet {
       windowReopensAt,
       solarContributionPct,
       gridContributionPct,
+      radiationRatio:
+        radiationRatioResult !== null
+          ? Math.round(radiationRatioResult * 100) / 100
+          : null,
     };
     smartChargingStateCache.set(product.energy_site_id, {
       data,

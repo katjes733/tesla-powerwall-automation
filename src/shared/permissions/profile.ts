@@ -199,7 +199,11 @@ export const WRITE_PROFILE: ActionSchema = {
 // profile would need to replicate.
 export const ADMIN_PROFILE: ActionSchema = {
   ...WRITE_PROFILE,
-  maintenance: { access: "write", refreshToken: "write" },
+  maintenance: {
+    access: "write",
+    refreshToken: "write",
+    siteLocation: "write",
+  },
   userAdmin: {
     access: "write",
     invite: "write",

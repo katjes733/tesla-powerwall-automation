@@ -43,6 +43,7 @@ const BASE: SmartChargingData = {
   windowReopensAt: null,
   solarContributionPct: null,
   gridContributionPct: null,
+  radiationRatio: null,
 };
 
 describe("PredictedChargeGauge — simple/paused mode", () => {

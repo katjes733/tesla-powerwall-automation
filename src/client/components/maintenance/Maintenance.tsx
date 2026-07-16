@@ -12,6 +12,8 @@ import { axiosInstance } from "../auth/AuthContext";
 import { useNotification } from "../notification/NotificationContext";
 import ConfirmDialog from "../shared/ConfirmDialog";
 import PermissionButton from "../shared/PermissionButton";
+import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
+import SiteLocationSettings from "../shared/SiteLocationSettings";
 
 interface RefreshTokenStatus {
   email: string;
@@ -66,6 +68,21 @@ export default function Maintenance() {
   const [loadingStatus, setLoadingStatus] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [starting, setStarting] = useState(false);
+
+  const [sites, setSites] = useState<SiteOption[]>([]);
+  const [selectedSiteId, setSelectedSiteId] = useState<string>("");
+
+  useEffect(() => {
+    axiosInstance
+      .get<{ success: boolean; data: SiteOption[] }>("/api/powerwall/sites")
+      .then((res) => {
+        const list = res.data.data;
+        setSites(list);
+        const firstOnline = list.find((s) => s.is_online);
+        if (firstOnline) setSelectedSiteId(firstOnline.id);
+      })
+      .catch(() => showNotification("Failed to load sites", "error"));
+  }, [showNotification]);
 
   const fetchStatus = useCallback(() => {
     setLoadingStatus(true);
@@ -137,6 +154,21 @@ export default function Maintenance() {
         Administrative tools for maintaining this Tesla Powerwall Automation
         instance.
       </Typography>
+
+      <SiteSingleSelect
+        sites={sites}
+        value={selectedSiteId}
+        onChange={setSelectedSiteId}
+        fullWidth
+        sx={{ mb: 3 }}
+      />
+
+      {selectedSiteId && (
+        <SiteLocationSettings
+          siteId={selectedSiteId}
+          permissionAction="maintenance.siteLocation"
+        />
+      )}
 
       <SettingCard>
         <Typography variant="subtitle1" fontWeight={600}>

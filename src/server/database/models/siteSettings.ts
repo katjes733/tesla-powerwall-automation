@@ -3,6 +3,11 @@ import type { IBasicEntity } from "~/server/types/common";
 
 export interface ISiteSettingsData {
   auto_curve_calibration_enabled?: boolean;
+  // null means "not configured" (as opposed to omitted) so every key still
+  // has a concrete value under the Required<> default merge below.
+  location_zip?: string | null;
+  location_lat?: number | null;
+  location_lon?: number | null;
 }
 
 export interface ISiteSettings {
@@ -12,6 +17,9 @@ export interface ISiteSettings {
 
 export const DEFAULT_SITE_SETTINGS: Required<ISiteSettingsData> = {
   auto_curve_calibration_enabled: true,
+  location_zip: null,
+  location_lat: null,
+  location_lon: null,
 };
 
 export function resolveSiteSettings(
