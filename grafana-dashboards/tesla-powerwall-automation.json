@@ -1298,6 +1298,127 @@
         }
       }
     },
+    "panel-radiation-ratio": {
+      "kind": "Panel",
+      "spec": {
+        "data": {
+          "kind": "QueryGroup",
+          "spec": {
+            "queries": [
+              {
+                "kind": "PanelQuery",
+                "spec": {
+                  "hidden": false,
+                  "query": {
+                    "datasource": {
+                      "name": "loki"
+                    },
+                    "group": "loki",
+                    "kind": "DataQuery",
+                    "spec": {
+                      "expr": "avg_over_time({container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | siteName=~\"$site\" | unwrap data_radiationRatio [$__interval]) by (siteName)",
+                      "legendFormat": "{{siteName}}"
+                    },
+                    "version": "v0"
+                  },
+                  "refId": "A"
+                }
+              }
+            ],
+            "queryOptions": {},
+            "transformations": []
+          }
+        },
+        "description": "Shortwave-radiation forecast ratio applied to the solar estimate (forecast vs historical baseline for the same window, clamped to 1.0 \u2014 only ever pulls the estimate down). No data until a site has a location configured under Maintenance.",
+        "id": 26,
+        "links": [],
+        "title": "Radiation Ratio at Decision",
+        "vizConfig": {
+          "group": "timeseries",
+          "kind": "VizConfig",
+          "spec": {
+            "fieldConfig": {
+              "defaults": {
+                "color": {
+                  "mode": "fixed",
+                  "fixedColor": "#5794F2"
+                },
+                "custom": {
+                  "axisBorderShow": false,
+                  "axisCenteredZero": false,
+                  "axisColorMode": "text",
+                  "axisLabel": "",
+                  "axisPlacement": "auto",
+                  "barAlignment": 0,
+                  "barWidthFactor": 0.6,
+                  "drawStyle": "line",
+                  "fillOpacity": 15,
+                  "gradientMode": "none",
+                  "hideFrom": {
+                    "legend": false,
+                    "tooltip": false,
+                    "viz": false
+                  },
+                  "insertNulls": false,
+                  "lineInterpolation": "linear",
+                  "lineWidth": 2,
+                  "pointSize": 5,
+                  "scaleDistribution": {
+                    "type": "linear"
+                  },
+                  "showPoints": "auto",
+                  "showValues": false,
+                  "spanNulls": false,
+                  "stacking": {
+                    "group": "A",
+                    "mode": "none"
+                  },
+                  "thresholdsStyle": {
+                    "mode": "off"
+                  }
+                },
+                "min": 0,
+                "max": 1,
+                "thresholds": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": 0
+                    }
+                  ]
+                },
+                "unit": "percentunit"
+              },
+              "overrides": []
+            },
+            "options": {
+              "annotations": {
+                "clustering": -1,
+                "multiLane": false
+              },
+              "legend": {
+                "calcs": [
+                  "mean",
+                  "max"
+                ],
+                "displayMode": "list",
+                "enableFacetedFilter": false,
+                "overflow": "ellipsis",
+                "placement": "bottom",
+                "showLegend": true
+              },
+              "tooltip": {
+                "hideZeros": false,
+                "mode": "single",
+                "sort": "none"
+              }
+            }
+          },
+          "version": "13.1.0"
+        }
+      }
+    },
     "panel-forecast-method": {
       "kind": "Panel",
       "spec": {
@@ -1434,7 +1555,7 @@
                     "group": "loki",
                     "kind": "DataQuery",
                     "spec": {
-                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | siteName=~\"$site\" | line_format \"[{{.data_action}}] soc={{.data_soc}} target={{.data_targetSoc}} | solar={{.data_estimatedSolarKwh}}kWh ({{.data_forecastMethod}}) | rate={{.data_chargeRateKw}}kW | {{.data_reason}}\""
+                      "expr": "{container_name=\"tesla-powerwall-automation\"} | json | scheduleAction=\"setSmartGridCharging\" | siteName=~\"$site\" | line_format \"[{{.data_action}}] soc={{.data_soc}} target={{.data_targetSoc}} | solar={{.data_estimatedSolarKwh}}kWh ({{.data_forecastMethod}}) radiation={{.data_radiationRatio}} | rate={{.data_chargeRateKw}}kW | {{.data_reason}}\""
                     },
                     "version": "v0"
                   },
@@ -2482,9 +2603,9 @@
           "spec": {
             "element": {
               "kind": "ElementReference",
-              "name": "row-auth-header"
+              "name": "panel-radiation-ratio"
             },
-            "height": 2,
+            "height": 8,
             "width": 24,
             "x": 0,
             "y": 39
@@ -2495,33 +2616,7 @@
           "spec": {
             "element": {
               "kind": "ElementReference",
-              "name": "panel-login-activity"
-            },
-            "height": 7,
-            "width": 12,
-            "x": 0,
-            "y": 40
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "panel-auth-log"
-            },
-            "height": 7,
-            "width": 12,
-            "x": 12,
-            "y": 40
-          }
-        },
-        {
-          "kind": "GridLayoutItem",
-          "spec": {
-            "element": {
-              "kind": "ElementReference",
-              "name": "row-calibration-header"
+              "name": "row-auth-header"
             },
             "height": 2,
             "width": 24,
@@ -2534,7 +2629,7 @@
           "spec": {
             "element": {
               "kind": "ElementReference",
-              "name": "panel-calibration-timeline"
+              "name": "panel-login-activity"
             },
             "height": 7,
             "width": 12,
@@ -2547,7 +2642,7 @@
           "spec": {
             "element": {
               "kind": "ElementReference",
-              "name": "panel-calibration-log"
+              "name": "panel-auth-log"
             },
             "height": 7,
             "width": 12,
@@ -2560,7 +2655,7 @@
           "spec": {
             "element": {
               "kind": "ElementReference",
-              "name": "row-system-health-header"
+              "name": "row-calibration-header"
             },
             "height": 2,
             "width": 24,
@@ -2573,12 +2668,51 @@
           "spec": {
             "element": {
               "kind": "ElementReference",
+              "name": "panel-calibration-timeline"
+            },
+            "height": 7,
+            "width": 12,
+            "x": 0,
+            "y": 56
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "panel-calibration-log"
+            },
+            "height": 7,
+            "width": 12,
+            "x": 12,
+            "y": 56
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
+              "name": "row-system-health-header"
+            },
+            "height": 2,
+            "width": 24,
+            "x": 0,
+            "y": 63
+          }
+        },
+        {
+          "kind": "GridLayoutItem",
+          "spec": {
+            "element": {
+              "kind": "ElementReference",
               "name": "panel-all-logs"
             },
             "height": 10,
             "width": 24,
             "x": 0,
-            "y": 56
+            "y": 64
           }
         },
         {
@@ -2591,7 +2725,7 @@
             "height": 7,
             "width": 12,
             "x": 0,
-            "y": 66
+            "y": 74
           }
         },
         {
@@ -2604,7 +2738,7 @@
             "height": 7,
             "width": 6,
             "x": 12,
-            "y": 66
+            "y": 74
           }
         },
         {
@@ -2617,7 +2751,7 @@
             "height": 7,
             "width": 6,
             "x": 18,
-            "y": 66
+            "y": 74
           }
         }
       ]

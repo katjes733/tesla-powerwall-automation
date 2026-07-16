@@ -60,6 +60,7 @@ const SMART_CHARGING_BASE: SmartChargingData = {
   windowReopensAt: null,
   solarContributionPct: null,
   gridContributionPct: null,
+  radiationRatio: null,
 };
 
 const SITE_INFO: SiteInfo = {

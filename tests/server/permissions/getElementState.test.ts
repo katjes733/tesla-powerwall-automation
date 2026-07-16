@@ -37,6 +37,7 @@ describe("getElementState — read profile", () => {
   it("hides admin-only domains entirely", () => {
     expect(getElementState("read", "maintenance.access")).toBe("none");
     expect(getElementState("read", "maintenance.refreshToken")).toBe("none");
+    expect(getElementState("read", "maintenance.siteLocation")).toBe("none");
     expect(getElementState("read", "userAdmin.access")).toBe("none");
     expect(getElementState("read", "userAdmin.invite")).toBe("none");
     expect(getElementState("read", "health.access")).toBe("none");
@@ -65,6 +66,7 @@ describe("getElementState — write profile", () => {
   it("still hides admin-only domains entirely", () => {
     expect(getElementState("write", "maintenance.access")).toBe("none");
     expect(getElementState("write", "maintenance.refreshToken")).toBe("none");
+    expect(getElementState("write", "maintenance.siteLocation")).toBe("none");
     expect(getElementState("write", "userAdmin.access")).toBe("none");
     expect(getElementState("write", "health.access")).toBe("none");
   });
@@ -81,6 +83,7 @@ describe("getElementState — admin profile", () => {
     expect(getElementState("admin", "schedule.delete")).toBe("write");
     expect(getElementState("admin", "maintenance.access")).toBe("write");
     expect(getElementState("admin", "maintenance.refreshToken")).toBe("write");
+    expect(getElementState("admin", "maintenance.siteLocation")).toBe("write");
     expect(getElementState("admin", "userAdmin.access")).toBe("write");
     expect(getElementState("admin", "userAdmin.invite")).toBe("write");
     expect(getElementState("admin", "userAdmin.update")).toBe("write");
