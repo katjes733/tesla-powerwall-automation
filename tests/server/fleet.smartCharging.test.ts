@@ -362,3 +362,70 @@ describe("setSmartGridCharging — shortwave radiation ratio adjusts the solar e
     expect(result?.predictedSocAtPeak).toBe(90);
   });
 });
+
+describe("setSmartGridCharging — waiting for a later start doesn't misreport a shortfall", () => {
+  const originalDryRun = process.env.DRY_RUN;
+
+  beforeEach(() => {
+    process.env.DRY_RUN = "false";
+  });
+
+  afterEach(() => {
+    if (originalDryRun === undefined) delete process.env.DRY_RUN;
+    else process.env.DRY_RUN = originalDryRun;
+    vi.restoreAllMocks();
+  });
+
+  it("still shows the full achievable grid contribution when currently outside the window but plenty of time remains before the latest start", async () => {
+    const fleet = Fleet.getInstance(
+      `smart-charging-waiting-outside-window-test-${Date.now()}@example.com`,
+      { throwOnError: false, mailOnError: false },
+    );
+
+    // Window allowed 00:00–12:00; on-peak today already ended (13:45–21:00),
+    // so the next peak is tomorrow 13:45. Evaluating at 22:00 today — outside
+    // the window, but the latest possible grid-start (tomorrow ~12:15) is
+    // still ~14 hours away, so this must be "waiting", not a real shortfall.
+    // Regression for the bug reported from a real log: achievableGridKwh was
+    // being zeroed out just because the window happened to be closed at the
+    // moment of evaluation, even though grid charging hadn't started yet and
+    // was fully on schedule to run within tomorrow's window.
+    const conditions: IScheduleCondition[] = [
+      {
+        condition: "inSeasonalGridChargeWindow",
+        value: [{ seasonName: "summer", from: "00:00", to: "12:00" }],
+      },
+    ];
+    const now = moment.tz("2026-07-13 22:00", TZ);
+
+    vi.spyOn(fleet, "getSiteInfo").mockResolvedValue(SITE_INFO as any);
+    vi.spyOn(fleet, "getLiveStatus").mockResolvedValue({
+      ...LIVE_STATUS,
+      percentage_charged: 50,
+    } as any);
+    vi.spyOn(fleet, "getSolarHistory").mockResolvedValue([]);
+    vi.spyOn(fleet as any, "getCalibration").mockResolvedValue(null);
+    vi.spyOn(fleet as any, "getChargeCurve").mockResolvedValue(null);
+    vi.spyOn(fleet as any, "getSiteLocation").mockResolvedValue(null);
+    vi.spyOn(fleet, "setGridCharging").mockResolvedValue(undefined);
+    vi.useFakeTimers();
+    vi.setSystemTime(now.toDate());
+
+    const result = await fleet.setSmartGridCharging(
+      PRODUCT,
+      JSON.stringify({ targetSoc: 90 }),
+      conditions,
+    );
+
+    vi.useRealTimers();
+
+    expect(result?.situation).toBe("waiting");
+    // No solar in this fixture, so the full 5.4kWh (40% of the 13.5kWh pack)
+    // needed is achievable from grid alone, well within the ~14 remaining
+    // hours — predictedSocAtPeak must reach the 90% target, not stall at 50%.
+    expect(result?.gridContributionPct).toBe(40);
+    expect(result?.predictedSocAtPeak).toBe(90);
+    expect(result?.targetGapPct).toBe(0);
+    expect(result?.reason).not.toContain("predicted only");
+  });
+});

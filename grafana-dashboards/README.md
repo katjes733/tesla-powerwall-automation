@@ -60,14 +60,14 @@ The Grafana Scenes JSON schema does not support query-type variables in the impo
 
 ## Panel overview
 
-| Section                | Panels                                                                                  | Notes                                                                                       |
-| ---------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| **Overview**           | Log volume by level, Error rate by service, Schedule runs/hr, Tesla API retries         | Error rate has no site filter — surfaces startup/db errors before site context is available |
-| **Schedule Execution** | Actions over time, Schedule failures, Recent executions                                 | Use `scheduleId` from Recent Executions to drill into a specific run in Grafana Explore     |
-| **Smart Charging**     | Grid charging decisions, SOC at decision, Solar forecast, Forecast method, Decision log | Decision log line: `[action] soc= target= \| solar=kWh (method) \| rate=kW \| reason`       |
-| **Auth Events**        | Login activity (success/failure/locked), Auth event log                                 | No site filter — auth is user-scoped, not site-scoped                                       |
-| **Calibration**        | Calibration events over time, Calibration event log                                     | Requires `eventType=~"calibration_.*"` logs from `service=fleet`                            |
-| **System Health**      | All logs, Error logs, DB errors, Mail events                                            | All logs and Error logs respect the site filter; DB/mail panels do not                      |
+| Section                | Panels                                                                                                   | Notes                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Overview**           | Log volume by level, Error rate by service, Schedule runs/hr, Tesla API retries                          | Error rate has no site filter — surfaces startup/db errors before site context is available      |
+| **Schedule Execution** | Actions over time, Schedule failures, Recent executions                                                  | Use `scheduleId` from Recent Executions to drill into a specific run in Grafana Explore          |
+| **Smart Charging**     | Grid charging decisions, SOC at decision, Solar forecast, Forecast method, Radiation ratio, Decision log | Decision log line: `[action] soc= target= \| solar=kWh (method) radiation= \| rate=kW \| reason` |
+| **Auth Events**        | Login activity (success/failure/locked), Auth event log                                                  | No site filter — auth is user-scoped, not site-scoped                                            |
+| **Calibration**        | Calibration events over time, Calibration event log                                                      | Requires `eventType=~"calibration_.*"` logs from `service=fleet`                                 |
+| **System Health**      | All logs, Error logs, DB errors, Mail events                                                             | All logs and Error logs respect the site filter; DB/mail panels do not                           |
 
 ---
 
@@ -77,4 +77,5 @@ The Grafana Scenes JSON schema does not support query-type variables in the impo
 - **Timezone:** defaults to `America/Phoenix`. Change in Dashboard settings → Time options.
 - **SOC at Decision / Solar Forecast panels** return no data until smart charging schedules have run at least once — they use `unwrap data_soc` and `unwrap data_estimatedSolarKwh` which require numeric fields emitted by the scheduler.
 - **Forecast Method donut** uses `$__range` (the full selected time window) for totals — most useful over a 24h+ window.
+- **Radiation Ratio at Decision** returns no data for a site until it has a location configured (Maintenance page) — `radiationRatio` is only emitted once shortwave-radiation forecasting is active for that site. Values are clamped to a max of 1.0 — dips below 1.0 indicate a worse-than-historical-average weather forecast pulling the solar estimate down.
 - **Logs before the `feat/logger` deploy** do not have `siteName` or `service` as Loki labels. Set the time range to **Last 1 hour** right after deploy to confirm the new labels are flowing.

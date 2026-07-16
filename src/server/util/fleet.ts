@@ -1674,14 +1674,23 @@ export class Fleet {
 
             // Predicted SOC by peak: caps grid contribution to the actual
             // time remaining (not the theoretical hours the plan assumed),
-            // and to zero once the window is blocked — this is what makes a
-            // config change (narrower window, higher target, lower rate)
-            // that leaves the target unreachable visible immediately rather
-            // than only once peak arrives and the battery isn't full.
+            // and to zero only once the window is genuinely, permanently
+            // blocked for today (nowIsAtOrAfterLatestStart && !withinWindow —
+            // the same test the situation branch below uses for
+            // "blocked_window") — this is what makes a config change
+            // (narrower window, higher target, lower rate) that leaves the
+            // target unreachable visible immediately rather than only once
+            // peak arrives and the battery isn't full. Being outside the
+            // window right now while still "waiting" for a later start
+            // (grid just hasn't kicked in yet, but will before the window
+            // closes) must NOT zero this out — otherwise every off-window
+            // evaluation tick would misreport an achievable target as a
+            // shortfall.
             const remainingHours = minutesToPeak / 60;
-            const achievableGridKwh = withinWindow
-              ? Math.min(gridEnergyKwh, effectiveRateKw * remainingHours)
-              : 0;
+            const blockedNow = nowIsAtOrAfterLatestStart && !withinWindow;
+            const achievableGridKwh = blockedNow
+              ? 0
+              : Math.min(gridEnergyKwh, effectiveRateKw * remainingHours);
             predictedSocAtPeak = Math.min(
               100,
               liveStatus.percentage_charged +
@@ -1844,10 +1853,15 @@ export class Fleet {
               ? `; solar covers SOC ${solarCoversAboveSocPct.toFixed(1)}–100%`
               : "";
 
+          // See the TOU-mode branch above — only the genuinely-blocked case
+          // (nowIsAtOrAfterLatestStart && !withinWindow) zeroes grid's
+          // contribution; "waiting" for a later start within the window must
+          // still show the achievable amount.
           const remainingHours = minutesToDeadline / 60;
-          const achievableGridKwh = withinWindow
-            ? Math.min(gridEnergyKwh, effectiveRateKw * remainingHours)
-            : 0;
+          const blockedNow = nowIsAtOrAfterLatestStart && !withinWindow;
+          const achievableGridKwh = blockedNow
+            ? 0
+            : Math.min(gridEnergyKwh, effectiveRateKw * remainingHours);
           predictedSocAtPeak = Math.min(
             100,
             liveStatus.percentage_charged +
