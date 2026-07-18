@@ -1577,17 +1577,26 @@ export class Fleet {
             const [closeHour, closeMinute] = windowCloseLabel
               .split(":")
               .map(Number);
-            const windowCloseToday = now
+            // Anchor to the window-close instance on nextPeakStart's own
+            // calendar day, not "today" — the window recurs daily, so when
+            // the peak has rolled to a future date (e.g. it's the weekend
+            // and the next on-peak isn't until Monday, or a holiday schedule
+            // pushed it out further), today's window close is irrelevant.
+            // Using "today" here collapsed the deadline down to this
+            // afternoon even with the whole weekend still ahead to charge
+            // from solar, forcing grid charging to start far earlier than
+            // actually necessary.
+            const windowCloseOnPeakDay = nextPeakStart
               .clone()
               .hours(closeHour)
               .minutes(closeMinute)
               .seconds(0)
               .milliseconds(0);
             if (
-              windowCloseToday.isAfter(now) &&
-              windowCloseToday.isBefore(effectiveDeadline)
+              windowCloseOnPeakDay.isAfter(now) &&
+              windowCloseOnPeakDay.isBefore(effectiveDeadline)
             ) {
-              effectiveDeadline = windowCloseToday
+              effectiveDeadline = windowCloseOnPeakDay
                 .clone()
                 .subtract(PEAK_BUFFER_MINUTES, "minutes");
             }
