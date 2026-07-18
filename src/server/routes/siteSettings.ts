@@ -13,7 +13,7 @@ import AppDataSource from "~/server/database/datasource";
 import type { IBasicEntity } from "~/server/types/common";
 import type { ISiteSettings } from "~/server/database/models/siteSettings";
 import { resolveSiteSettings } from "~/server/database/models/siteSettings";
-import { geocodeUsZip } from "~/server/util/geocode";
+import { geocodeUsZip, reverseGeocodeToZip } from "~/server/util/geocode";
 
 const SiteSettingsUpdateSchema = z.object({
   siteId: z.string().min(1),
@@ -121,39 +121,55 @@ router.patch(
       }
 
       let settings = incomingSettings;
-      if (
+      const hasCoords =
+        incomingSettings.location_lat != null ||
+        incomingSettings.location_lon != null;
+      if (incomingSettings.location_zip) {
+        // ZIP entry path: geocode server-side.
+        const resolved = geocodeUsZip(incomingSettings.location_zip);
+        if (!resolved) {
+          res.status(400).json({
+            success: false,
+            message: "Could not resolve location for that ZIP code",
+          });
+          return;
+        }
+        settings = {
+          ...incomingSettings,
+          location_lat: resolved.lat,
+          location_lon: resolved.lon,
+        };
+      } else if (hasCoords) {
+        // Browser-geolocation path: coordinates already resolved
+        // client-side, no ZIP involved. Must be checked before the
+        // "explicitly cleared" branch below, since the browser-geolocation
+        // request also sends location_zip: null alongside real coordinates —
+        // that's not a clear request. The precise lat/lon are kept as-is
+        // (not snapped to a ZIP centroid); location_zip is filled in purely
+        // as a friendly, editable approximation for the UI — null only for
+        // coordinates with no nearby ZIP at all (open ocean, wilderness).
+        settings = {
+          ...incomingSettings,
+          location_zip:
+            incomingSettings.location_lat != null &&
+            incomingSettings.location_lon != null
+              ? reverseGeocodeToZip(
+                  incomingSettings.location_lat,
+                  incomingSettings.location_lon,
+                )
+              : null,
+        };
+      } else if (
         Object.prototype.hasOwnProperty.call(incomingSettings, "location_zip")
       ) {
-        if (incomingSettings.location_zip) {
-          const resolved = geocodeUsZip(incomingSettings.location_zip);
-          if (!resolved) {
-            res.status(400).json({
-              success: false,
-              message: "Could not resolve location for that ZIP code",
-            });
-            return;
-          }
-          settings = {
-            ...incomingSettings,
-            location_lat: resolved.lat,
-            location_lon: resolved.lon,
-          };
-        } else {
-          // location_zip explicitly cleared — clear the whole location.
-          settings = {
-            ...incomingSettings,
-            location_zip: null,
-            location_lat: null,
-            location_lon: null,
-          };
-        }
-      } else if (
-        incomingSettings.location_lat != null ||
-        incomingSettings.location_lon != null
-      ) {
-        // Browser-geolocation path: coordinates already resolved
-        // client-side, no ZIP involved — persist as-is, zip stays null.
-        settings = { ...incomingSettings, location_zip: null };
+        // location_zip explicitly cleared and no coordinates provided —
+        // clear the whole location.
+        settings = {
+          ...incomingSettings,
+          location_zip: null,
+          location_lat: null,
+          location_lon: null,
+        };
       }
 
       const db = await AppDataSource.getInstance();

@@ -111,7 +111,11 @@ export default function SiteLocationSettings({
             },
           });
           setLocation(res.data.data);
-          setZipInput("");
+          // The server fills in the nearest ZIP for this lat/lon (purely a
+          // friendly, editable approximation — the precise coordinates are
+          // what's actually used for the weather forecast), so reflect it
+          // here rather than leaving the field blank.
+          setZipInput(res.data.data.location_zip ?? "");
           showNotification("Location updated from your browser", "success");
         } catch (err: any) {
           showNotification(

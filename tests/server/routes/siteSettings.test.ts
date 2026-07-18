@@ -127,10 +127,14 @@ describe("PATCH /api/site-settings — location", () => {
     expect(get.body.data.location_zip).toBe("85001");
   });
 
-  it("accepts direct lat/lon (browser geolocation) and clears location_zip", async () => {
+  it("accepts direct lat/lon (browser geolocation) and fills in the nearest ZIP", async () => {
+    // 40.1, -105.2 is Niwot, CO (Boulder area) — reverseGeocodeToZip resolves
+    // this for real (offline lookup, same convention as the ZIP-entry tests
+    // above), so this also guards against the derived ZIP drifting if the
+    // underlying zipcodes-us dataset ever changes.
     mockFindOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
       settings: {
-        location_zip: null,
+        location_zip: "80544",
         location_lat: 40.1,
         location_lon: -105.2,
       },
@@ -148,7 +152,46 @@ describe("PATCH /api/site-settings — location", () => {
     expect(mockSave).toHaveBeenCalledWith(
       expect.objectContaining({
         settings: expect.objectContaining({
+          location_zip: "80544",
+          location_lat: 40.1,
+          location_lon: -105.2,
+        }),
+      }),
+    );
+  });
+
+  it("preserves the precise lat/lon (not the nearest ZIP's centroid) when the browser-geolocation request also sends an explicit location_zip: null (regression)", async () => {
+    // The real client (SiteLocationSettings.tsx) always sends location_zip:
+    // null alongside the coordinates it resolved itself — that must not be
+    // mistaken for a "clear the whole location" request, and the precise
+    // coordinates must survive even though a ZIP gets derived from them.
+    mockFindOne.mockResolvedValueOnce(null).mockResolvedValueOnce({
+      settings: {
+        location_zip: "80544",
+        location_lat: 40.1,
+        location_lon: -105.2,
+      },
+    });
+
+    const app = await buildApp();
+    const res = await request(app)
+      .patch("/api/site-settings")
+      .send({
+        siteId: "42",
+        settings: {
+          location_lat: 40.1,
+          location_lon: -105.2,
           location_zip: null,
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.location_lat).toBe(40.1);
+    expect(res.body.data.location_lon).toBe(-105.2);
+    expect(mockSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        settings: expect.objectContaining({
+          location_zip: "80544",
           location_lat: 40.1,
           location_lon: -105.2,
         }),
