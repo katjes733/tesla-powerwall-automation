@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { geocodeUsZip } from "~/server/util/geocode";
+import { geocodeUsZip, reverseGeocodeToZip } from "~/server/util/geocode";
 
 describe("geocodeUsZip", () => {
   it("resolves lat/lon for a valid ZIP code", () => {
@@ -8,5 +8,16 @@ describe("geocodeUsZip", () => {
 
   it("returns null for an unrecognized ZIP code", () => {
     expect(geocodeUsZip("00000")).toBeNull();
+  });
+});
+
+describe("reverseGeocodeToZip", () => {
+  it("resolves the nearest ZIP for a real US coordinate", () => {
+    // Niwot, CO (Boulder area) — within the initial 10-mile search radius.
+    expect(reverseGeocodeToZip(40.1, -105.2)).toBe("80544");
+  });
+
+  it("returns null for coordinates with no nearby ZIP (open ocean)", () => {
+    expect(reverseGeocodeToZip(0, 0)).toBeNull();
   });
 });
