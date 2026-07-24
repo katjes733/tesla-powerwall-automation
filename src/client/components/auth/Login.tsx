@@ -10,9 +10,12 @@ import FaceIcon from "@mui/icons-material/Face";
 import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useNotification } from "../notification/NotificationContext";
+import { WEBAUTHN_CREDENTIAL_STORAGE_KEY } from "./AuthContext";
 import axios from "axios";
 import {
   platformAuthenticatorIsAvailable,
+  browserSupportsWebAuthnAutofill,
+  WebAuthnAbortService,
   WebAuthnError,
 } from "@simplewebauthn/browser";
 
@@ -52,7 +55,10 @@ const LoginForm = React.memo(
           onChange={onEmailChange}
           onKeyDown={handleKeyDown}
           slotProps={{
-            htmlInput: { autoComplete: "email" },
+            // The "webauthn" token (appended to the field's normal "email"
+            // autofill hint) is what makes the browser eligible to show a
+            // Conditional UI passkey suggestion in this input.
+            htmlInput: { autoComplete: "email webauthn" },
           }}
         />
         <TextField
@@ -237,6 +243,13 @@ export default function Login() {
   const [signup, setSignup] = useState(false);
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
   const [passkeyPending, setPasskeyPending] = useState(false);
+  // GitHub's own passkey UI follows the same rule: only show a dedicated
+  // "sign in with a passkey" button once this browser has actually used one
+  // before, rather than whenever the platform merely supports Face ID/Touch
+  // ID/Windows Hello in the abstract.
+  const [hasUsedPasskeyOnDevice] = useState(
+    () => !!localStorage.getItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY),
+  );
   const [signupStep, setSignupStep] = useState(1);
   const [signupCode, setSignupCode] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
@@ -267,6 +280,33 @@ export default function Login() {
       cancelled = true;
     };
   }, []);
+
+  // Conditional UI: the browser surfaces a matching passkey as an autofill
+  // suggestion directly in the email field above (no button, no prompt)
+  // whenever one exists on this device — this call just sits pending in the
+  // background until the user picks a suggestion, and is a no-op if they
+  // type a password instead. It complements, rather than replaces, the
+  // manual "Sign in with Face ID" button below (not every browser supports
+  // Conditional UI, and a synced passkey from another device may still work
+  // there even without one). Starting any other WebAuthn ceremony (the
+  // manual button, or the auto-refocus attempt in AuthContext) automatically
+  // supersedes this pending request — @simplewebauthn/browser's shared abort
+  // service handles that for us.
+  useEffect(() => {
+    if (signup) return;
+    let cancelled = false;
+    browserSupportsWebAuthnAutofill().then((supported) => {
+      if (cancelled || !supported) return;
+      loginWithPasskey({ silent: true, autofill: true }).catch(() => {
+        // Routine: superseded by another ceremony, or the tab/page went away
+        // before the user picked a suggestion.
+      });
+    });
+    return () => {
+      cancelled = true;
+      WebAuthnAbortService.cancelCeremony();
+    };
+  }, [signup, loginWithPasskey]);
 
   const handlePasskeyLogin = useCallback(async () => {
     setPasskeyPending(true);
@@ -576,7 +616,7 @@ export default function Login() {
         <Typography variant="h5" align="center" mb={2}>
           {signup ? "Sign up" : "Login"}
         </Typography>
-        {!signup && passkeyAvailable && (
+        {!signup && passkeyAvailable && hasUsedPasskeyOnDevice && (
           <Box mb={2}>
             <Button
               variant="outlined"

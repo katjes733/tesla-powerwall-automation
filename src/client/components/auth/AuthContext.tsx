@@ -40,7 +40,10 @@ export interface SessionUser {
 interface AuthContextType {
   user: SessionUser | null;
   login: (username: string, password: string) => Promise<void>;
-  loginWithPasskey: (opts?: { silent?: boolean }) => Promise<void>;
+  loginWithPasskey: (opts?: {
+    silent?: boolean;
+    autofill?: boolean;
+  }) => Promise<void>;
   extendSession: () => Promise<void>;
   logout: () => Promise<void>;
   newSessionId: () => void;
@@ -87,47 +90,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setSessionId(null);
   };
 
-  // `silent` is set by the auto-refocus effect below: a background attempt
-  // must not flash the full-screen loading backdrop or log routine
-  // cancellations/blocks (the user cancelling the OS prompt, or Safari
-  // refusing a second gesture-less attempt in the same tab) as errors.
-  const loginWithPasskey = useCallback(async (opts?: { silent?: boolean }) => {
-    const silent = opts?.silent ?? false;
-    if (!silent) setAuthPending(true);
-    try {
-      const { data: options } = await axiosInstance.post(
-        "/api/webauthn/login/options",
-        {},
-        { withCredentials: true },
-      );
-      const assertion = await startAuthentication({ optionsJSON: options });
-      const response = await axiosInstance.post(
-        "/api/webauthn/login/verify",
-        assertion,
-        { withCredentials: true },
-      );
-      localStorage.setItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY, assertion.id);
-      setUser(response.data.user);
-      setSessionExpiry(response.data.sessionExpiry);
-      const newSessionId = uuidv4();
-      sessionStorage.setItem("tabSessionId", newSessionId);
-      setSessionId(newSessionId);
-      bcRef.current?.postMessage({
-        type: "login",
-        sessionExpiry: response.data.sessionExpiry,
-      });
-    } catch (error: any) {
-      if (!silent) {
-        console.error(
-          "Passkey login error:",
-          error.response?.data?.error || error.message,
+  // `silent` is set by the auto-refocus effect below (and implied by
+  // `autofill`): a background attempt must not flash the full-screen loading
+  // backdrop or log routine cancellations/blocks (the user cancelling the OS
+  // prompt, Safari refusing a second gesture-less attempt in the same tab,
+  // or a conditional-UI request getting superseded by another ceremony) as
+  // errors. `autofill` requests Conditional UI (the browser's native
+  // passkey-in-the-username-field autofill) instead of an immediate modal
+  // prompt — this call stays pending in the background until the user picks
+  // a suggestion, so it must never block the UI or surface as an error.
+  const loginWithPasskey = useCallback(
+    async (opts?: { silent?: boolean; autofill?: boolean }) => {
+      const silent = opts?.silent ?? opts?.autofill ?? false;
+      if (!silent) setAuthPending(true);
+      try {
+        const { data: options } = await axiosInstance.post(
+          "/api/webauthn/login/options",
+          {},
+          { withCredentials: true },
         );
+        const assertion = await startAuthentication({
+          optionsJSON: options,
+          useBrowserAutofill: opts?.autofill ?? false,
+        });
+        const response = await axiosInstance.post(
+          "/api/webauthn/login/verify",
+          assertion,
+          { withCredentials: true },
+        );
+        localStorage.setItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY, assertion.id);
+        setUser(response.data.user);
+        setSessionExpiry(response.data.sessionExpiry);
+        const newSessionId = uuidv4();
+        sessionStorage.setItem("tabSessionId", newSessionId);
+        setSessionId(newSessionId);
+        bcRef.current?.postMessage({
+          type: "login",
+          sessionExpiry: response.data.sessionExpiry,
+        });
+      } catch (error: any) {
+        if (!silent) {
+          console.error(
+            "Passkey login error:",
+            error.response?.data?.error || error.message,
+          );
+        }
+        throw error;
+      } finally {
+        if (!silent) setAuthPending(false);
       }
-      throw error;
-    } finally {
-      if (!silent) setAuthPending(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
   const attemptingPasskeyRef = useRef(false);
 

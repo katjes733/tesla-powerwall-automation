@@ -79,6 +79,8 @@ jobs:
             -e SSL_KEY_PATH=ssl/key.pem \
             -e SSL_CERT_PATH=ssl/cert.pem \
             -e ALLOWED_ORIGINS="${{ secrets.ALLOWED_ORIGINS }}" \
+            -e WEBAUTHN_RP_ID="${{ secrets.WEBAUTHN_RP_ID }}" \
+            -e WEBAUTHN_EXPECTED_ORIGINS="${{ secrets.WEBAUTHN_EXPECTED_ORIGINS }}" \
             -e SCHEDULED_JOBS_DISABLED=false \
             -e DRY_RUN=false \
             192.168.2.106:5000/tesla-powerwall-automation:latest
