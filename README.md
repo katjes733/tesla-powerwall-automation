@@ -11,6 +11,7 @@
     - [Exposing the app over the internet (WAN access)](#exposing-the-app-over-the-internet-wan-access)
     - [Environment variables](#environment-variables)
     - [Sessions](#sessions)
+    - [Face ID / Passkey login (WebAuthn)](#face-id--passkey-login-webauthn)
   - [Tesla Fleet API onboarding](#tesla-fleet-api-onboarding)
     - [Preparation](#preparation)
       - [Project Site](#project-site)
@@ -211,6 +212,8 @@ The full list of variables is in `env/sample.env`. The essentials:
 | `DRY_RUN` | — | Set to `true` to log intended API calls without executing them |
 | `SESSION_SECRET` | — | HTTP session secret (defaults to a built-in value if unset) |
 | `ALLOWED_ORIGINS` | — | Comma-separated browser origins the API will accept cross-origin requests from. Default: `http://localhost:5173,https://localhost:5173`. See note below. |
+| `WEBAUTHN_RP_ID` | — | Registrable domain (no scheme/port) for Face ID / passkey login. Defaults to `localhost` in development. See [Face ID / Passkey login](#face-id--passkey-login-webauthn) below. |
+| `WEBAUTHN_EXPECTED_ORIGINS` | — | Comma-separated full origins allowed to complete a WebAuthn ceremony. Defaults to `https://localhost:5173` in development. |
 
 > **`ALLOWED_ORIGINS` and Docker**
 >
@@ -225,6 +228,15 @@ The full list of variables is in `env/sample.env`. The essentials:
 ### Sessions
 
 The app uses server-side sessions backed by Redis with a maximum lifetime of 4 hours. Independently of that, the browser client tracks user activity (mouse movement, clicks, keyboard, scroll) and automatically logs out after **1 hour of inactivity**, redirecting to the login page. The client also polls the session endpoint every 2 minutes so that an invalidated session (e.g. after a server restart or Redis flush) is detected promptly even on pages that make no other API calls.
+
+### Face ID / Passkey login (WebAuthn)
+
+Once a user has registered a passkey from Account Settings, they can sign in with Face ID, Touch ID, Windows Hello, or another platform authenticator instead of their password.
+
+WebAuthn ties every passkey to an `rpID` — a registrable domain name. Two constraints follow directly from the spec, not from anything configurable:
+
+- `WEBAUTHN_RP_ID` **cannot be an IP address**. If you only ever reach this app via a raw LAN IP (e.g. `https://192.168.2.108`), Face ID simply won't be available there — password login remains the fallback. Set up a resolvable hostname for LAN access if you want Face ID to work at home too.
+- A passkey registered while the `rpID` doesn't cover the origin you're currently on won't be offered. If the app is reachable at multiple hostnames that are all subdomains of the same domain (e.g. `tpa.example.com`, `app.example.com`), set `WEBAUTHN_RP_ID` to the shared parent domain (`example.com`) so a passkey registered on any one of them works on all of them. List every one of those full origins in `WEBAUTHN_EXPECTED_ORIGINS`.
 
 ## Tesla Fleet API onboarding
 

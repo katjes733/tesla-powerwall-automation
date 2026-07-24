@@ -1471,8 +1471,7 @@ export class Fleet {
       product.energy_site_id.toString(),
     );
     const calibrationData = calibration?.calibration_data as
-      | IGridChargeRateCalibrationData
-      | undefined;
+      IGridChargeRateCalibrationData | undefined;
     const effectiveChargeRateKw = calibrationData?.kw ?? chargeRateKw;
     const chargeRateSource: "calibrated" | "formula" =
       calibrationData?.kw !== undefined ? "calibrated" : "formula";

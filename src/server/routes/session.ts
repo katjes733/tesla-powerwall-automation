@@ -3,78 +3,15 @@ import argon2 from "argon2";
 import AppDataSource from "~/server/database/datasource";
 import type { IUser } from "~/server/database/models/user";
 import { loginLimiter } from "~/server/middleware/rateLimiter";
-import { redis } from "~/server/util/redis";
 import { maskEmail } from "~/server/util/maskEmail";
 import { validateBody } from "~/server/middleware/validateBody";
 import { LoginSchema } from "~/shared/schemas/auth";
-import { resolveActor } from "~/server/util/resolveActor";
 import { getPendingSignup } from "~/server/util/pendingSignup";
-
-// Resolves the extra permission fields the client needs alongside the login
-// identity. A login with no accessible account yet (a brand-new self-signup
-// owner who hasn't completed Tesla OAuth) is a legitimate transient state, not
-// a login failure — it's reported with accountLinked: false so the client
-// restricts them to the Maintenance page until they finish linking. Any other
-// resolution error (ambiguous / not_authorized_for_account) still returns null.
-async function buildSessionUser(loginEmail: string) {
-  const result = await resolveActor(loginEmail);
-  if ("error" in result) {
-    if (result.error !== "no_access") return null;
-    return {
-      loginEmail,
-      teslaAccountEmail: loginEmail,
-      accountType: "owner" as const,
-      profile: "admin" as const,
-      siteIds: "*" as const,
-      accountLinked: false,
-    };
-  }
-  return {
-    loginEmail: result.loginEmail,
-    teslaAccountEmail: result.accountEmail,
-    accountType:
-      result.source === "owner" ? ("owner" as const) : ("delegate" as const),
-    profile: result.profile,
-    siteIds: result.siteIds,
-    accountLinked: true,
-  };
-}
-
-const LOCKOUT_MAX = 5;
-const LOCKOUT_TTL = 15 * 60; // seconds
-
-function lockoutKey(email: string) {
-  return `lockout:${email}`;
-}
-
-async function isLockedOut(email: string): Promise<boolean> {
-  try {
-    const count = await redis.get(lockoutKey(email));
-    return count !== null && parseInt(count, 10) >= LOCKOUT_MAX;
-  } catch {
-    return false; // fail open — don't block login if Redis is unavailable
-  }
-}
-
-async function recordFailure(email: string): Promise<void> {
-  try {
-    const key = lockoutKey(email);
-    const count = await redis.incr(key);
-    if (count === 1) {
-      await redis.expire(key, LOCKOUT_TTL);
-    }
-  } catch {
-    // Redis unavailable — skip silently
-  }
-}
-
-async function clearLockout(email: string): Promise<void> {
-  try {
-    await redis.del(lockoutKey(email));
-  } catch {
-    // Redis unavailable — skip silently
-  }
-}
+import { isLockedOut, recordFailure } from "~/server/util/authLockout";
+import {
+  buildSessionUser,
+  establishSession,
+} from "~/server/util/sessionEstablish";
 
 // Extend express-session types to include 'expiry'
 declare module "express-session" {
@@ -155,12 +92,7 @@ router.post(
         return;
       }
 
-      await clearLockout(email);
-      req.session.user = email;
-      if (!req.session.expiry) {
-        req.session.expiry =
-          Date.now() + (req.session.cookie.maxAge || 3600000);
-      }
+      const result = await establishSession(req, email);
       authLog.info(
         {
           event: "auth.login.success",
@@ -170,11 +102,7 @@ router.post(
         },
         "Login successful",
       );
-      res.json({
-        message: "Logged in",
-        user: await buildSessionUser(email),
-        sessionExpiry: req.session.expiry,
-      });
+      res.json(result);
       return;
     } catch (error: any) {
       authLog.error(

@@ -91,6 +91,10 @@ export const READ_PROFILE: ActionSchema = {
     apply: "read",
   },
   siteSettings: { access: "write", write: "read" },
+  // Managing your own passkeys/Face ID is a personal-account-security action,
+  // not a site permission — every profile gets full access to it, the same
+  // way `powerwall.access` above is always "write" regardless of role.
+  account: { access: "write" },
   // maintenance, userAdmin, health: omitted entirely — every leaf resolves to "none" (hidden)
 };
 
@@ -191,6 +195,7 @@ export const WRITE_PROFILE: ActionSchema = {
   // maintenance/userAdmin below) since a read-only delegate shouldn't be able
   // to view or edit their own notification preferences at all.
   notificationPreferences: { access: "write" },
+  account: { access: "write" },
   // maintenance, userAdmin: still omitted — still "none" for Write
 };
 

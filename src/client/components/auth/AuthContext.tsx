@@ -11,11 +11,20 @@ import {
 } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from "react-router-dom";
+import {
+  startAuthentication,
+  platformAuthenticatorIsAvailable,
+} from "@simplewebauthn/browser";
 import { getElementState } from "~/shared/permissions/profile";
 import type { AccessLevel, ActionKey } from "~/shared/permissions/schema";
 import type { ProfileName } from "~/shared/permissions/profile";
 
 export const axiosInstance = axios.create({ timeout: 5000 });
+
+// Stashed on successful passkey registration/login so the Account Settings
+// credential list can tag "This device" and the auto-refocus sign-in below
+// only fires for devices that have actually enrolled a passkey before.
+export const WEBAUTHN_CREDENTIAL_STORAGE_KEY = "webauthnLastCredentialId";
 
 export interface SessionUser {
   loginEmail: string;
@@ -31,6 +40,7 @@ export interface SessionUser {
 interface AuthContextType {
   user: SessionUser | null;
   login: (username: string, password: string) => Promise<void>;
+  loginWithPasskey: (opts?: { silent?: boolean }) => Promise<void>;
   extendSession: () => Promise<void>;
   logout: () => Promise<void>;
   newSessionId: () => void;
@@ -46,6 +56,7 @@ interface AuthContextType {
 export const AuthContext = createContext<AuthContextType>({
   user: null,
   login: async () => {},
+  loginWithPasskey: async () => {},
   extendSession: async () => {},
   logout: async () => {},
   newSessionId: () => {},
@@ -75,6 +86,66 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     sessionStorage.removeItem("chatHistory");
     setSessionId(null);
   };
+
+  // `silent` is set by the auto-refocus effect below: a background attempt
+  // must not flash the full-screen loading backdrop or log routine
+  // cancellations/blocks (the user cancelling the OS prompt, or Safari
+  // refusing a second gesture-less attempt in the same tab) as errors.
+  const loginWithPasskey = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    if (!silent) setAuthPending(true);
+    try {
+      const { data: options } = await axiosInstance.post(
+        "/api/webauthn/login/options",
+        {},
+        { withCredentials: true },
+      );
+      const assertion = await startAuthentication({ optionsJSON: options });
+      const response = await axiosInstance.post(
+        "/api/webauthn/login/verify",
+        assertion,
+        { withCredentials: true },
+      );
+      localStorage.setItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY, assertion.id);
+      setUser(response.data.user);
+      setSessionExpiry(response.data.sessionExpiry);
+      const newSessionId = uuidv4();
+      sessionStorage.setItem("tabSessionId", newSessionId);
+      setSessionId(newSessionId);
+      bcRef.current?.postMessage({
+        type: "login",
+        sessionExpiry: response.data.sessionExpiry,
+      });
+    } catch (error: any) {
+      if (!silent) {
+        console.error(
+          "Passkey login error:",
+          error.response?.data?.error || error.message,
+        );
+      }
+      throw error;
+    } finally {
+      if (!silent) setAuthPending(false);
+    }
+  }, []);
+
+  const attemptingPasskeyRef = useRef(false);
+
+  const attemptSilentPasskeyLogin = useCallback(async () => {
+    if (attemptingPasskeyRef.current) return;
+    if (!localStorage.getItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY)) return;
+    if (!(await platformAuthenticatorIsAvailable())) return;
+    attemptingPasskeyRef.current = true;
+    try {
+      await loginWithPasskey({ silent: true });
+    } catch {
+      // Routine: cancelled, no matching passkey on this device, or blocked
+      // by the browser for lacking a user gesture — the manual "Sign in
+      // with Face ID" button on Login.tsx remains as the guaranteed path.
+    } finally {
+      attemptingPasskeyRef.current = false;
+    }
+  }, [loginWithPasskey]);
 
   useEffect(() => {
     const channel = new BroadcastChannel("auth_channel");
@@ -144,11 +215,49 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       .catch(() => {
         setUser(null);
         setSessionExpiry(null);
+        // Treat a fresh, logged-out page load the same as a native app's
+        // cold-launch Face ID prompt — a no-op if this device never
+        // enrolled a passkey (see the localStorage guard in the function).
+        attemptSilentPasskeyLogin();
       })
       .finally(() => {
         setLoading(false);
       });
-  }, []);
+  }, [attemptSilentPasskeyLogin]);
+
+  // Auto sign-in on refocus: only reacts to an actual hidden→visible
+  // transition (not "any time the login screen is showing"), so an explicit
+  // Logout tap while the tab stays in the foreground does not re-trigger
+  // Face ID — only backgrounding and returning afterward does.
+  useEffect(() => {
+    let wasHidden = false;
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        wasHidden = true;
+        return;
+      }
+      if (document.visibilityState !== "visible" || !wasHidden) return;
+      wasHidden = false;
+      axiosInstance
+        .get("/api/session/me", { withCredentials: true })
+        .then((response) => {
+          setUser(response.data.user);
+          if (response.data.sessionExpiry) {
+            setSessionExpiry(response.data.sessionExpiry);
+          }
+        })
+        .catch((error) => {
+          if (error.response?.status === 401) {
+            logoutActions();
+            if (window.location.pathname !== "/login") navigate("/login");
+            attemptSilentPasskeyLogin();
+          }
+        });
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [attemptSilentPasskeyLogin, navigate]);
 
   useEffect(() => {
     if (!user) return;
@@ -351,6 +460,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         value={{
           user,
           login,
+          loginWithPasskey,
           extendSession,
           logout,
           newSessionId,

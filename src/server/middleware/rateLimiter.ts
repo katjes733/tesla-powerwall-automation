@@ -54,3 +54,19 @@ export const verifyCodeLimiter = rateLimit({
     message: "Too many verification attempts, try again later",
   },
 });
+
+// Keyed by IP, not email — the discoverable/usernameless WebAuthn login flow
+// has no email in the request to key on.
+export const webauthnLoginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  keyGenerator: (req: Request) => ipKeyGenerator(req.ip ?? "unknown"),
+  store: redisStore("rl:webauthn-login:"),
+  passOnStoreError: false,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: "Too many login attempts, try again later",
+  },
+});

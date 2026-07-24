@@ -42,9 +42,12 @@ const NAV_ITEMS: NavItem[] = [
   { path: "/health", label: "App Health", action: "health.access" },
 ];
 
-const PAGE_TITLES: Record<string, string> = Object.fromEntries(
-  NAV_ITEMS.map((item) => [item.path, item.label]),
-);
+const PAGE_TITLES: Record<string, string> = {
+  ...Object.fromEntries(NAV_ITEMS.map((item) => [item.path, item.label])),
+  // Reachable from the avatar menu rather than the main nav, so it's kept
+  // out of NAV_ITEMS but still needs a mobile header title.
+  "/account": "Account Settings",
+};
 
 export default function NavMenu() {
   const navigate = useNavigate();
@@ -94,6 +97,11 @@ export default function NavMenu() {
         console.error("Logout failed:", error);
       });
   }, [handleUserMenuClose, logout, navigate]);
+
+  const handleAccountSettings = useCallback(() => {
+    handleUserMenuClose();
+    navigate("/account");
+  }, [handleUserMenuClose, navigate]);
 
   const handleNavigate = useCallback(
     (path: string) => {
@@ -234,6 +242,9 @@ export default function NavMenu() {
                   </Typography>
                 </MenuItem>
                 <Divider />
+                <MenuItem onClick={handleAccountSettings}>
+                  Account Settings
+                </MenuItem>
                 <MenuItem onClick={handleLogout}>Logout</MenuItem>
               </Menu>
             </>

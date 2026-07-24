@@ -1,10 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 
 export type PeriodType =
-  | "ON_PEAK"
-  | "OFF_PEAK"
-  | "PARTIAL_PEAK"
-  | "SUPER_OFF_PEAK";
+  "ON_PEAK" | "OFF_PEAK" | "PARTIAL_PEAK" | "SUPER_OFF_PEAK";
 
 export const ALL_PERIOD_TYPES: PeriodType[] = [
   "ON_PEAK",
