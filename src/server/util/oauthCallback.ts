@@ -7,14 +7,10 @@ export interface OAuthState {
 }
 
 export type OAuthValidationError =
-  | "missing_params"
-  | "session_expired"
-  | "invalid_state"
-  | "expired";
+  "missing_params" | "session_expired" | "invalid_state" | "expired";
 
 export type OAuthValidationResult =
-  | { ok: true; email: string }
-  | { ok: false; code: OAuthValidationError };
+  { ok: true; email: string } | { ok: false; code: OAuthValidationError };
 
 export function validateOAuthState(
   query: { code?: string; state?: string },
@@ -39,8 +35,7 @@ export function validateOAuthState(
 export type OAuthExchangeError = "exchange_failed" | "save_failed";
 
 export type OAuthExchangeResult =
-  | { ok: true }
-  | { ok: false; code: OAuthExchangeError };
+  { ok: true } | { ok: false; code: OAuthExchangeError };
 
 export async function exchangeAndSaveToken(opts: {
   code: string;

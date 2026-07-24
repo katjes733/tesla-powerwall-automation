@@ -3,12 +3,18 @@ import { useAuth } from "./AuthContext";
 import Box from "@mui/material/Box";
 import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
+import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
+import FaceIcon from "@mui/icons-material/Face";
 import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useNotification } from "../notification/NotificationContext";
 import axios from "axios";
+import {
+  platformAuthenticatorIsAvailable,
+  WebAuthnError,
+} from "@simplewebauthn/browser";
 
 type LoginFormProps = {
   email: string;
@@ -224,11 +230,13 @@ const SignupForm = React.memo(
 );
 
 export default function Login() {
-  const { user, login, loading } = useAuth();
+  const { user, login, loginWithPasskey, loading } = useAuth();
   const { showNotification } = useNotification();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [signup, setSignup] = useState(false);
+  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+  const [passkeyPending, setPasskeyPending] = useState(false);
   const [signupStep, setSignupStep] = useState(1);
   const [signupCode, setSignupCode] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
@@ -249,6 +257,38 @@ export default function Login() {
       navigate("/");
     }
   }, [user, navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    platformAuthenticatorIsAvailable().then((available) => {
+      if (!cancelled) setPasskeyAvailable(available);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handlePasskeyLogin = useCallback(async () => {
+    setPasskeyPending(true);
+    try {
+      await loginWithPasskey();
+    } catch (error: any) {
+      // A user cancelling the OS Face ID/Touch ID prompt isn't a failure
+      // worth surfacing as an error toast.
+      if (!(
+        error instanceof WebAuthnError &&
+        error.code === "ERROR_CEREMONY_ABORTED"
+      )) {
+        showNotification(
+          error.response?.data?.error || error.message || "Passkey login error",
+          "error",
+          5000,
+        );
+      }
+    } finally {
+      setPasskeyPending(false);
+    }
+  }, [loginWithPasskey, showNotification]);
 
   // Deep link from an email: ?signup=1&email=... (a signup/invite code
   // waiting to be entered) jumps straight to the "enter code + password"
@@ -536,6 +576,21 @@ export default function Login() {
         <Typography variant="h5" align="center" mb={2}>
           {signup ? "Sign up" : "Login"}
         </Typography>
+        {!signup && passkeyAvailable && (
+          <Box mb={2}>
+            <Button
+              variant="outlined"
+              color="primary"
+              fullWidth
+              startIcon={<FaceIcon />}
+              onClick={handlePasskeyLogin}
+              disabled={passkeyPending}
+            >
+              {passkeyPending ? "Waiting for Face ID…" : "Sign in with Face ID"}
+            </Button>
+            <Divider sx={{ mt: 2 }}>or</Divider>
+          </Box>
+        )}
         {signup ? (
           <SignupForm
             email={email}

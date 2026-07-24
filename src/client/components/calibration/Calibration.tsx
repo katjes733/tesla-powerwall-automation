@@ -100,11 +100,7 @@ interface CurveStatusResponse {
 }
 
 type OneTimeSchedulePhase =
-  | "pending"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "expired";
+  "pending" | "running" | "succeeded" | "failed" | "expired";
 
 interface OneTimeScheduleStatus {
   id: string;

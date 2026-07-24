@@ -149,6 +149,7 @@ export interface ActionSchema {
   siteSettings?: { access?: AccessLevel; write?: AccessLevel };
   health?: { access?: AccessLevel };
   notificationPreferences?: { access?: AccessLevel };
+  account?: { access?: AccessLevel };
 }
 
 // Recursive dotted-path union over the schema — "schedule.dialog.tabs.time.timePicker" |

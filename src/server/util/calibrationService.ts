@@ -31,11 +31,7 @@ export const CALIBRATION_SCHEDULE_ACTIONS = new Set([
 ]);
 
 export type OneTimeSchedulePhase =
-  | "pending"
-  | "running"
-  | "succeeded"
-  | "failed"
-  | "expired";
+  "pending" | "running" | "succeeded" | "failed" | "expired";
 
 // A one-time calibration schedule row is never reused across different
 // scheduled moments (a fresh Schedule row is created per booking), so these

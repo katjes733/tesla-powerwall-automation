@@ -21,6 +21,7 @@ import EnergyHistory from "./components/history/EnergyHistory";
 import Maintenance from "./components/maintenance/Maintenance";
 import UserAdmin from "./components/userAdmin/UserAdmin";
 import NotificationPreferences from "./components/notificationPreferences/NotificationPreferences";
+import AccountSettings from "./components/account/AccountSettings";
 import type { ActionKey } from "~/shared/permissions/schema";
 
 type ProtectedRouteProps = {
@@ -145,6 +146,14 @@ function App() {
                   element={
                     <ProtectedRoute requiredAction="notificationPreferences.access">
                       <NotificationPreferences />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/account"
+                  element={
+                    <ProtectedRoute requiredAction="account.access">
+                      <AccountSettings />
                     </ProtectedRoute>
                   }
                 />
