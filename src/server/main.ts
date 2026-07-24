@@ -29,7 +29,10 @@ import {
   validateOAuthState,
   exchangeAndSaveToken,
 } from "~/server/util/oauthCallback";
-import { getPublicOrigin } from "~/server/util/requestOrigin";
+import {
+  getPublicOrigin,
+  getWebauthnConfig,
+} from "~/server/util/requestOrigin";
 import { materializePendingSignupIfAny } from "~/server/util/pendingSignup";
 import cors from "cors";
 import helmet from "helmet";
@@ -113,6 +116,12 @@ if (!process.env.TESLA_CLIENT_ID || !process.env.TESLA_CLIENT_SECRET) {
     "TESLA_CLIENT_ID and TESLA_CLIENT_SECRET environment variables are required",
   );
 }
+
+// Fail fast on a missing/invalid WEBAUTHN_RP_ID / WEBAUTHN_EXPECTED_ORIGINS
+// at boot, the same as the other required config above — otherwise the
+// misconfiguration only surfaces as a 500 the first time someone actually
+// tries to use Face ID/passkey login.
+getWebauthnConfig();
 
 const sslEnabled = process.env.SSL_ENABLED === "true";
 if (!sslEnabled && process.env.NODE_ENV !== "development") {
