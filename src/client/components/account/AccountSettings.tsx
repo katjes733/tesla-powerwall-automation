@@ -18,15 +18,17 @@ import {
 } from "@mui/material";
 import DeleteIcon from "@mui/icons-material/Delete";
 import FaceIcon from "@mui/icons-material/Face";
+import KeyIcon from "@mui/icons-material/Key";
 import {
-  startRegistration,
   platformAuthenticatorIsAvailable,
   WebAuthnError,
 } from "@simplewebauthn/browser";
 import {
   axiosInstance,
+  useAuth,
   WEBAUTHN_CREDENTIAL_STORAGE_KEY,
 } from "~/client/components/auth/AuthContext";
+import { getPasskeyLabel } from "~/client/components/auth/passkeyLabel";
 import { useNotification } from "~/client/components/notification/NotificationContext";
 
 interface PasskeyCredential {
@@ -49,6 +51,7 @@ function formatDate(value: string | null) {
 // passkeys today, other self-service preferences later — as distinct from
 // site/schedule settings gated by the permission profile system.
 export default function AccountSettings() {
+  const { registerPasskey } = useAuth();
   const { showNotification } = useNotification();
   const [credentials, setCredentials] = useState<PasskeyCredential[] | null>(
     null,
@@ -58,6 +61,7 @@ export default function AccountSettings() {
   const [nickname, setNickname] = useState("");
   const [registering, setRegistering] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [passkeyLabel] = useState(getPasskeyLabel);
 
   const load = useCallback(() => {
     axiosInstance
@@ -77,21 +81,13 @@ export default function AccountSettings() {
       const available = await platformAuthenticatorIsAvailable();
       if (!available) {
         showNotification(
-          "This device/browser doesn't support Face ID, Touch ID, or Windows Hello",
+          "This device/browser doesn't support Face ID or another passkey method",
           "error",
         );
         return;
       }
-      const { data: options } = await axiosInstance.post(
-        "/api/webauthn/register/options",
-      );
-      const attestation = await startRegistration({ optionsJSON: options });
-      await axiosInstance.post("/api/webauthn/register/verify", {
-        ...attestation,
-        nickname: nickname.trim() || undefined,
-      });
-      localStorage.setItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY, attestation.id);
-      setThisDeviceId(attestation.id);
+      await registerPasskey(nickname.trim() || undefined);
+      setThisDeviceId(localStorage.getItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY));
       setAddOpen(false);
       setNickname("");
       showNotification("Passkey added", "success");
@@ -112,21 +108,29 @@ export default function AccountSettings() {
     } finally {
       setRegistering(false);
     }
-  }, [nickname, showNotification, load]);
+  }, [nickname, showNotification, load, registerPasskey]);
 
   const handleDelete = useCallback(
-    (id: string) => {
+    (id: string, credentialId: string) => {
       setDeletingId(id);
       axiosInstance
         .delete(`/api/webauthn/credentials/${id}`)
         .then(() => {
+          // Removing the credential this browser itself uses — clear the
+          // local marker too, so this device's login button/Conditional UI
+          // and the post-login "set up a passkey?" prompt correctly treat
+          // it as no longer enrolled, rather than pointing at a dead credential.
+          if (credentialId === thisDeviceId) {
+            localStorage.removeItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY);
+            setThisDeviceId(null);
+          }
           showNotification("Passkey removed", "success");
           load();
         })
         .catch(() => showNotification("Failed to remove passkey", "error"))
         .finally(() => setDeletingId(null));
     },
-    [showNotification, load],
+    [showNotification, load, thisDeviceId],
   );
 
   return (
@@ -149,18 +153,17 @@ export default function AccountSettings() {
           }}
         >
           <Box>
-            <Typography variant="h6">Face ID & Passkeys</Typography>
+            <Typography variant="h6">Passkeys</Typography>
             <Typography variant="body2" color="text.secondary">
-              Sign in with Face ID, Touch ID, Windows Hello, or another device
-              passkey, instead of your password.
+              Sign in with {passkeyLabel} instead of your password.
             </Typography>
           </Box>
           <Button
             variant="contained"
-            startIcon={<FaceIcon />}
+            startIcon={passkeyLabel === "Face ID" ? <FaceIcon /> : <KeyIcon />}
             onClick={() => setAddOpen(true)}
           >
-            Add Face ID
+            Add {passkeyLabel === "Face ID" ? "Face ID" : "a Passkey"}
           </Button>
         </Box>
         {credentials === null ? (
@@ -180,7 +183,7 @@ export default function AccountSettings() {
                   <IconButton
                     edge="end"
                     aria-label="Remove passkey"
-                    onClick={() => handleDelete(cred.id)}
+                    onClick={() => handleDelete(cred.id, cred.credentialId)}
                     disabled={deletingId === cred.id}
                   >
                     <DeleteIcon />
@@ -221,8 +224,7 @@ export default function AccountSettings() {
         <DialogTitle>Add a passkey</DialogTitle>
         <DialogContent>
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-            You'll be prompted by your browser/device to use Face ID, Touch ID,
-            Windows Hello, or another authenticator.
+            You'll be prompted by your browser/device to use {passkeyLabel}.
           </Typography>
           <TextField
             label="Name (optional)"

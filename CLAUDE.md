@@ -262,6 +262,10 @@ Security issues that were consciously assessed and accepted rather than fixed. D
 
 Node.js / Bun validate TLS certificates by default (`rejectUnauthorized: true`). A custom agent with the same default adds no protection: it cannot defend against a compromised OS trust store (the only meaningful upgrade would be certificate pinning, which is brittle and breaks silently on Tesla cert rotation). There is no `rejectUnauthorized: false` anywhere in the codebase.
 
+**`react-router` `>=7.12.0 <8.3.0` — GHSA-qwww-vcr4-c8h2, "RSC Mode CSRF Bypass Allows Action Execution Before 400 Response"** *(assessed 2026-07-24, deferred)*
+
+`bun audit` flags every published 7.x release (7.18.1, the newest, included) — the fix only lands in react-router v8. The vulnerable code path is React Server Components ("RSC") mode; this app is a plain Vite SPA using `react-router-dom`'s client-side `Routes`/`Route`/`useNavigate` APIs and never touches RSC, so the actual exploitability here is very low regardless. Fixing it requires a major-version bump (v7 → v8) across `App.tsx`, `Login.tsx`, `NavMenu.tsx`, and every other router-consuming component — deliberately deferred as its own dedicated migration rather than bundled into unrelated work. Revisit as a standalone task; re-raising this same finding without a v8 migration plan in hand is not useful.
+
 ## UI / Frontend conventions
 
 ### UI verification workflow

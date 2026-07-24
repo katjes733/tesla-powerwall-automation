@@ -13,6 +13,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from "react-router-dom";
 import {
   startAuthentication,
+  startRegistration,
   platformAuthenticatorIsAvailable,
 } from "@simplewebauthn/browser";
 import { getElementState } from "~/shared/permissions/profile";
@@ -25,6 +26,11 @@ export const axiosInstance = axios.create({ timeout: 5000 });
 // credential list can tag "This device" and the auto-refocus sign-in below
 // only fires for devices that have actually enrolled a passkey before.
 export const WEBAUTHN_CREDENTIAL_STORAGE_KEY = "webauthnLastCredentialId";
+
+// Set when the user picks "Don't ask again" on the post-login "set up a
+// passkey?" prompt — checked alongside WEBAUTHN_CREDENTIAL_STORAGE_KEY so a
+// declined offer doesn't get re-asked on every future password login.
+export const WEBAUTHN_PROMPT_DISMISSED_KEY = "webauthnPromptDismissed";
 
 export interface SessionUser {
   loginEmail: string;
@@ -44,6 +50,7 @@ interface AuthContextType {
     silent?: boolean;
     autofill?: boolean;
   }) => Promise<void>;
+  registerPasskey: (nickname?: string) => Promise<void>;
   extendSession: () => Promise<void>;
   logout: () => Promise<void>;
   newSessionId: () => void;
@@ -54,12 +61,16 @@ interface AuthContextType {
   getElementState: (action: ActionKey) => AccessLevel;
   hasSiteAccess: (siteId: string | null | undefined) => boolean;
   isAdmin: boolean;
+  passkeyPromptOpen: boolean;
+  closePasskeyPrompt: () => void;
+  dismissPasskeyPromptPermanently: () => void;
 }
 
 export const AuthContext = createContext<AuthContextType>({
   user: null,
   login: async () => {},
   loginWithPasskey: async () => {},
+  registerPasskey: async () => {},
   extendSession: async () => {},
   logout: async () => {},
   newSessionId: () => {},
@@ -70,6 +81,9 @@ export const AuthContext = createContext<AuthContextType>({
   getElementState: () => "none",
   hasSiteAccess: () => false,
   isAdmin: false,
+  passkeyPromptOpen: false,
+  closePasskeyPrompt: () => {},
+  dismissPasskeyPromptPermanently: () => {},
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
@@ -79,6 +93,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [loading, setLoading] = useState(true);
   const [authPending, setAuthPending] = useState(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
+  const [passkeyPromptOpen, setPasskeyPromptOpen] = useState(false);
 
   const bcRef = useRef<BroadcastChannel | null>(null);
 
@@ -142,6 +157,33 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     },
     [],
   );
+
+  // Shared by the post-login "set up a passkey?" prompt and Account
+  // Settings' "Add a passkey" flow, so both go through the exact same
+  // registration ceremony rather than duplicating it.
+  const registerPasskey = useCallback(async (nickname?: string) => {
+    const { data: options } = await axiosInstance.post(
+      "/api/webauthn/register/options",
+      {},
+      { withCredentials: true },
+    );
+    const attestation = await startRegistration({ optionsJSON: options });
+    await axiosInstance.post(
+      "/api/webauthn/register/verify",
+      { ...attestation, nickname },
+      { withCredentials: true },
+    );
+    localStorage.setItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY, attestation.id);
+  }, []);
+
+  const closePasskeyPrompt = useCallback(() => {
+    setPasskeyPromptOpen(false);
+  }, []);
+
+  const dismissPasskeyPromptPermanently = useCallback(() => {
+    localStorage.setItem(WEBAUTHN_PROMPT_DISMISSED_KEY, "1");
+    setPasskeyPromptOpen(false);
+  }, []);
 
   const attemptingPasskeyRef = useRef(false);
 
@@ -345,6 +387,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         type: "login",
         sessionExpiry: response.data.sessionExpiry,
       });
+
+      // Offer to set up a passkey right after a password login — but only
+      // if this device hasn't already got one (a passkey login already
+      // stashes this same marker, so that path never reaches here) and the
+      // user hasn't previously declined via "Don't ask again".
+      if (
+        !localStorage.getItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY) &&
+        !localStorage.getItem(WEBAUTHN_PROMPT_DISMISSED_KEY) &&
+        (await platformAuthenticatorIsAvailable())
+      ) {
+        setPasskeyPromptOpen(true);
+      }
     } catch (error: any) {
       console.error(
         "Login error:",
@@ -475,6 +529,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           user,
           login,
           loginWithPasskey,
+          registerPasskey,
           extendSession,
           logout,
           newSessionId,
@@ -485,6 +540,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           getElementState: getElementStateForUser,
           hasSiteAccess,
           isAdmin,
+          passkeyPromptOpen,
+          closePasskeyPrompt,
+          dismissPasskeyPromptPermanently,
         }}
       >
         {children}

@@ -22,6 +22,7 @@ import Maintenance from "./components/maintenance/Maintenance";
 import UserAdmin from "./components/userAdmin/UserAdmin";
 import NotificationPreferences from "./components/notificationPreferences/NotificationPreferences";
 import AccountSettings from "./components/account/AccountSettings";
+import PasskeyPrompt from "./components/auth/PasskeyPrompt";
 import type { ActionKey } from "~/shared/permissions/schema";
 
 type ProtectedRouteProps = {
@@ -161,6 +162,7 @@ function App() {
               </Routes>
             </MainContainer>
             <Footer />
+            <PasskeyPrompt />
           </NotificationProvider>
         </AuthProvider>
       </ThemeProvider>

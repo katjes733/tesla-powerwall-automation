@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 
 const mockGet = vi.fn();
@@ -17,14 +18,39 @@ vi.mock("axios", () => ({
 }));
 
 const mockStartAuthentication = vi.fn();
+const mockStartRegistration = vi.fn();
 const mockPlatformAuthenticatorIsAvailable = vi.fn();
 vi.mock("@simplewebauthn/browser", () => ({
   startAuthentication: (...args: unknown[]) => mockStartAuthentication(...args),
+  startRegistration: (...args: unknown[]) => mockStartRegistration(...args),
   platformAuthenticatorIsAvailable: (...args: unknown[]) =>
     mockPlatformAuthenticatorIsAvailable(...args),
 }));
 
-import { AuthProvider } from "~/client/components/auth/AuthContext";
+import { AuthProvider, useAuth } from "~/client/components/auth/AuthContext";
+
+function Harness() {
+  const {
+    login,
+    registerPasskey,
+    passkeyPromptOpen,
+    closePasskeyPrompt,
+    dismissPasskeyPromptPermanently,
+  } = useAuth();
+  return (
+    <div>
+      <div data-testid="prompt-open">{String(passkeyPromptOpen)}</div>
+      <button onClick={() => login("owner@example.com", "pw").catch(() => {})}>
+        login
+      </button>
+      <button onClick={() => registerPasskey("nickname").catch(() => {})}>
+        register
+      </button>
+      <button onClick={closePasskeyPrompt}>close</button>
+      <button onClick={dismissPasskeyPromptPermanently}>dismiss</button>
+    </div>
+  );
+}
 
 function setVisibility(state: "visible" | "hidden") {
   Object.defineProperty(document, "visibilityState", {
@@ -147,5 +173,143 @@ describe("AuthContext auto sign-in on refocus", () => {
       expect.anything(),
       expect.anything(),
     );
+  });
+});
+
+function renderHarness() {
+  return render(
+    <MemoryRouter>
+      <AuthProvider>
+        <Harness />
+      </AuthProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("registerPasskey", () => {
+  it("posts options, starts registration, posts verify, and stashes the credential id", async () => {
+    mockPost.mockImplementation((url: string) => {
+      if (url === "/api/webauthn/register/options") {
+        return Promise.resolve({ data: { challenge: "c" } });
+      }
+      if (url === "/api/webauthn/register/verify") {
+        return Promise.resolve({ data: { verified: true } });
+      }
+      return Promise.reject(new Error(`unexpected POST ${url}`));
+    });
+    mockStartRegistration.mockResolvedValue({ id: "cred-x" });
+
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "register" }));
+
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/api/webauthn/register/verify",
+        expect.objectContaining({ id: "cred-x", nickname: "nickname" }),
+        expect.anything(),
+      ),
+    );
+    expect(localStorage.getItem("webauthnLastCredentialId")).toBe("cred-x");
+  });
+});
+
+describe("post-login passkey prompt", () => {
+  function mockSuccessfulPasswordLogin() {
+    mockPost.mockImplementation((url: string) => {
+      if (url === "/api/session/login") {
+        return Promise.resolve({
+          data: {
+            user: { loginEmail: "owner@example.com" },
+            sessionExpiry: 123,
+          },
+        });
+      }
+      return Promise.reject(new Error(`unexpected POST ${url}`));
+    });
+  }
+
+  async function clickLogin() {
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "login" }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(
+        "/api/session/login",
+        expect.anything(),
+        expect.anything(),
+      ),
+    );
+    return user;
+  }
+
+  it("opens after a password login when eligible", async () => {
+    mockSuccessfulPasswordLogin();
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    await clickLogin();
+    await waitFor(() =>
+      expect(screen.getByTestId("prompt-open")).toHaveTextContent("true"),
+    );
+  });
+
+  it("does not open when this device already has a passkey", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "cred-1");
+    mockSuccessfulPasswordLogin();
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    await clickLogin();
+    expect(screen.getByTestId("prompt-open")).toHaveTextContent("false");
+  });
+
+  it("does not open when previously dismissed", async () => {
+    localStorage.setItem("webauthnPromptDismissed", "1");
+    mockSuccessfulPasswordLogin();
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    await clickLogin();
+    expect(screen.getByTestId("prompt-open")).toHaveTextContent("false");
+  });
+
+  it("does not open when no platform authenticator is available", async () => {
+    mockSuccessfulPasswordLogin();
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(false);
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    await clickLogin();
+    expect(screen.getByTestId("prompt-open")).toHaveTextContent("false");
+  });
+
+  it("dismissPasskeyPromptPermanently sets the localStorage flag and closes the prompt", async () => {
+    mockSuccessfulPasswordLogin();
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    const user = await clickLogin();
+    await waitFor(() =>
+      expect(screen.getByTestId("prompt-open")).toHaveTextContent("true"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "dismiss" }));
+    expect(screen.getByTestId("prompt-open")).toHaveTextContent("false");
+    expect(localStorage.getItem("webauthnPromptDismissed")).toBe("1");
+  });
+
+  it("closePasskeyPrompt closes without setting the dismissed flag", async () => {
+    mockSuccessfulPasswordLogin();
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    const user = await clickLogin();
+    await waitFor(() =>
+      expect(screen.getByTestId("prompt-open")).toHaveTextContent("true"),
+    );
+
+    await user.click(screen.getByRole("button", { name: "close" }));
+    expect(screen.getByTestId("prompt-open")).toHaveTextContent("false");
+    expect(localStorage.getItem("webauthnPromptDismissed")).toBeNull();
   });
 });
