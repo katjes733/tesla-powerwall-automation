@@ -338,9 +338,16 @@ describe("calculateGridChargeHours — curve path", () => {
   });
 
   it("solar covers high-SOC CV steps: those steps are skipped, hours is much less than buggy result", () => {
-    // solarRateKw = 1.5 / (2/10) = 7.5 kW.
-    // Curve: batteryCapKw=10 for SOC 90-92 (> 7.5 → grid); drops to 5 at SOC 93 (< 7.5 → skip).
-    // Crossover at ~92.5 SOC (7.5 kW); step at 92.5 is exactly ≤ solarRateKw → also skipped.
+    // Seed hours is curve-aware (solar-blind): sum of stepEnergy/batteryCapKw
+    // over all 8 steps (90..93.5) = 5×(0.25/10) + (0.25/7.5) + 2×(0.25/5)
+    // = 0.125 + 0.03333 + 0.1 = 0.25833 h.
+    // solarRateKw = 1.5 / 0.25833 ≈ 5.806 kW — well below the flat-rate seed's
+    // 7.5 kW, because the seed now reflects the real (tapered) 5 kW rate at
+    // SOC 93+ instead of assuming the full 10 kW nominal rate throughout.
+    // Curve: batteryCapKw=10 for SOC 90-92 (> 5.806 → grid); step at 92.5
+    // interpolates to 7.5 kW (> 5.806 → still grid, unlike the old flat seed
+    // which put the crossover exactly at 92.5); drops to 5 at SOC 93
+    // (≤ 5.806 → skipped, solar covers it).
     const curve = makeCurve([
       { soc_percent: 90, battery_kw: 10 },
       { soc_percent: 92, battery_kw: 10 },
@@ -349,18 +356,18 @@ describe("calculateGridChargeHours — curve path", () => {
     ]);
     const { hours, solarCoversAboveSocPct } = calculateGridChargeHours(
       2, // energyNeededKwh (capacityKwh = 2/0.04 = 50 kWh)
-      1.5, // estimatedSolarKwh → solarRateKw = 7.5 kW
+      1.5, // estimatedSolarKwh → solarRateKw ≈ 5.806 kW
       90, // currentSoc
       94, // targetSoc (8 steps: 90, 90.5, …, 93.5)
       10, // chargeRateKw
       curve,
     );
-    // 5 grid steps (SOC 90..92) × (0.25 kWh / 10 kW) = 0.125 h + startup
+    // 6 grid steps (SOC 90..92.5): 5×(0.25/10) + (0.25/7.5) = 0.15833 h + startup.
     // Old buggy code would produce ~8 h (dividing by near-zero gridRateKw for high-SOC steps).
-    expect(hours).toBeCloseTo(0.125 + STARTUP_HOURS, 3);
+    expect(hours).toBeCloseTo(0.15833 + STARTUP_HOURS, 3);
     expect(hours).toBeLessThan(1);
-    // First skipped step is at SOC 92.5 (interpolated to exactly 7.5 kW = solarRateKw).
-    expect(solarCoversAboveSocPct).toBe(92.5);
+    // First skipped step is now SOC 93 (5 kW ≤ solarRateKw), not 92.5.
+    expect(solarCoversAboveSocPct).toBe(93);
   });
 
   it("below the curve's lowest bin: uses chargeRateKw instead of extrapolating a possibly-noisy edge bin", () => {

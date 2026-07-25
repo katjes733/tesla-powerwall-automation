@@ -1591,10 +1591,15 @@ export class Fleet {
               .minutes(closeMinute)
               .seconds(0)
               .milliseconds(0);
-            if (
-              windowCloseOnPeakDay.isAfter(now) &&
-              windowCloseOnPeakDay.isBefore(effectiveDeadline)
-            ) {
+            // Deliberately no `.isAfter(now)` guard here: once `now` reaches
+            // or passes today's window close, the close time is still the
+            // tighter (and now-elapsed) constraint and must keep anchoring
+            // the deadline. Requiring it to be in the future silently
+            // reverted the deadline to the later peak-based one for the
+            // rest of the day, making the plan behave as if the window
+            // never closed (bogus post-close "grid starts at HH:MM"
+            // messages, since fixed).
+            if (windowCloseOnPeakDay.isBefore(effectiveDeadline)) {
               effectiveDeadline = windowCloseOnPeakDay
                 .clone()
                 .subtract(PEAK_BUFFER_MINUTES, "minutes");
@@ -1721,6 +1726,13 @@ export class Fleet {
               reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW${taperNote} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})${shortfallNote}`;
             } else if (!nowIsAtOrAfterLatestStart) {
               desired = "disabled";
+              // Being in "waiting" while already outside the window (should
+              // only happen transiently, e.g. right at window close before
+              // the deadline math catches up) must still force the disable
+              // call — grid charging that's currently on has no other
+              // branch that will turn it off until "blocked_window" is
+              // reached, which can lag behind the window actually closing.
+              disableRequired = !withinWindow;
               situation = "waiting";
               gridStartAt = latestGridStart.toISOString();
               reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)}${taperNote} (${solarLabel}, peak at ${formatScheduledTime(nextPeakStart, now)})${shortfallNote}`;
@@ -1891,6 +1903,10 @@ export class Fleet {
             reason = `grid charging needed — ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW${taperNote} (${solarLabel}, deadline ${window.to})${shortfallNote}`;
           } else if (!nowIsAtOrAfterLatestStart) {
             desired = "disabled";
+            // See the TOU-mode branch above — "waiting" while already
+            // outside the window must still force the disable call rather
+            // than leaving grid charging running until "blocked_window".
+            disableRequired = !withinWindow;
             situation = "waiting";
             gridStartAt = latestGridStart.toISOString();
             reason = `waiting — grid will contribute ${gridEnergyKwh.toFixed(2)}kWh at ${effectiveRateKw}kW starting ${formatScheduledTime(latestGridStart, now)}${taperNote} (${solarLabel}, deadline ${window.to})${shortfallNote}`;

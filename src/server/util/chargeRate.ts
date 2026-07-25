@@ -192,15 +192,28 @@ function calculateGridChargeHoursCurve(
       ? energyNeededKwh / (totalSocDelta / 100)
       : CAPACITY_KWH_FALLBACK;
 
-  // Seed hours for solar rate estimate: rough estimate using chargeRateKw.
-  const seedHours =
-    ((totalSocDelta / 100) * capacityKwh) / Math.max(0.1, chargeRateKw);
-  const solarRateKw = seedHours > 0 ? estimatedSolarKwh / seedHours : 0;
-
   let totalChargeHours = 0;
   let solarCoversAboveSocPct: number | undefined;
   const steps = Math.ceil(totalSocDelta / CURVE_STEP_SOC);
   const stepEnergyKwh = capacityKwh * (CURVE_STEP_SOC / 100);
+
+  // Seed hours for the solar rate estimate: sum the curve's own per-step
+  // acceptance rate across the whole SOC range (solar-blind). Seeding off
+  // the flat nominal chargeRateKw instead ignored the CV taper — once
+  // currentSocPercent is above HIGH_SOC_TAPER_SOC_PERCENT, the real
+  // acceptance rate there is far below chargeRateKw, so that seed produced
+  // an artificially short duration. Dividing estimatedSolarKwh by it then
+  // inflated solarRateKw enough to make solar appear to "cover" every
+  // remaining tapered step below (batteryCapKw <= solarRateKw) even when
+  // live solar surplus was near zero, collapsing totalChargeHours to
+  // ~startupBufferHours and reporting a bogus near-zero grid duration.
+  let seedHours = 0;
+  for (let i = 0; i < steps; i++) {
+    const soc = currentSocPercent + i * CURVE_STEP_SOC;
+    const batteryCapKw = lookupBatteryRateKw(soc, curve.bins, chargeRateKw);
+    seedHours += stepEnergyKwh / Math.max(0.1, batteryCapKw);
+  }
+  const solarRateKw = seedHours > 0 ? estimatedSolarKwh / seedHours : 0;
 
   for (let i = 0; i < steps; i++) {
     const soc = currentSocPercent + i * CURVE_STEP_SOC;
