@@ -26,12 +26,70 @@ const SOLAR_RECENT_WINDOW_MIN_KWH = 0.5;
 const SCALING_MIN = 0.1;
 const SCALING_MAX = 2.0;
 const MIN_VALID_DAYS = 3;
-const INTERVAL_HOURS = 5 / 60; // Tesla history is 5-minute intervals
+const INTERVAL_MINUTES = 5; // Tesla history sample spacing
+const INTERVAL_HOURS = INTERVAL_MINUTES / 60;
 // Conservative discount applied to the historical forecast before comparing
 // it against energy needed. Accounts for forecast error and day-to-day
 // variability; ensures grid charging isn't skipped on a slightly optimistic
 // forecast. Adjust here to tune how aggressively the algorithm relies on solar.
 export const SOLAR_FORECAST_DISCOUNT = 0.9;
+
+interface WindowEnergy {
+  energyKwh: number;
+  hadOverlap: boolean;
+}
+
+// Integrates solar energy over [fromMins, toMins) by overlapping each
+// reading's own INTERVAL_MINUTES-wide bucket against the window, rather
+// than requiring a reading's todMins to fall strictly inside it. Tesla
+// history is on a fixed 5-minute grid, so as a window narrows near a
+// deadline (down to a couple of minutes) a strict-membership filter
+// frequently catches zero grid points depending on alignment, flickering
+// the forecast between historical and linear-fallback tick to tick.
+// Overlap integration is continuous in window width and degrades
+// gracefully to a fraction of a single bucket instead of nothing.
+function windowEnergyKwh(
+  readings: { todMins: number; solarKw: number }[],
+  fromMins: number,
+  toMins: number,
+): WindowEnergy {
+  let energyKwh = 0;
+  let hadOverlap = false;
+  for (const r of readings) {
+    const bucketStart = r.todMins;
+    const bucketEnd = r.todMins + INTERVAL_MINUTES;
+    const overlapMins =
+      Math.min(bucketEnd, toMins) - Math.max(bucketStart, fromMins);
+    if (overlapMins > 0) {
+      hadOverlap = true;
+      energyKwh += r.solarKw * (overlapMins / 60);
+    }
+  }
+  return { energyKwh, hadOverlap };
+}
+
+// dayGap >= 1 approximates the multi-day span as "tail of now's day, from
+// nowMins to midnight" unioned with "head of peakStart's day, from midnight
+// to peakMins" — both mapped onto this SAME historical date's 24h of
+// readings. Whenever peakMins > nowMins those two spans overlap (e.g. now
+// 08:00, peakStart "next calendar day" 10:00 — the two ranges between them
+// already cover the entire day), so they can't simply be summed without
+// double-counting that overlap; the whole day's energy instead has the
+// (possibly-empty) excluded gap [peakMins, nowMins) subtracted out, which is
+// correct whether or not that gap is empty.
+function tailHeadUnionEnergyKwh(
+  readings: { todMins: number; solarKw: number }[],
+  nowMins: number,
+  peakMins: number,
+): WindowEnergy {
+  const wholeDay = windowEnergyKwh(readings, 0, 24 * 60);
+  if (peakMins >= nowMins) return wholeDay;
+  const gap = windowEnergyKwh(readings, peakMins, nowMins);
+  return {
+    energyKwh: wholeDay.energyKwh - gap.energyKwh,
+    hadOverlap: wholeDay.hadOverlap,
+  };
+}
 
 /**
  * Estimates solar energy (kWh) between now and peakStart using historical
@@ -58,7 +116,13 @@ export function estimateSolarKwhFromHistory(
   // only time-of-day minutes below can't tell those apart, since a same-day
   // "already passed" case and a next-day wrap look identical once the date is
   // dropped. Deciding it here, with full date info, avoids that ambiguity.
-  if (!peakStart.isAfter(now)) return null;
+  // That's also not "insufficient data" — it's an unambiguous zero remaining
+  // window — so report it as such rather than returning null and forcing
+  // the caller into an unreliable-looking linear-fallback label for what is
+  // actually a known, exact answer.
+  if (!peakStart.isAfter(now)) {
+    return { estimatedKwh: 0, scalingFactor: 1.0, daysUsed: 0 };
+  }
 
   const nowMins = now.hours() * 60 + now.minutes();
   const peakMins = peakStart.hours() * 60 + peakStart.minutes();
@@ -114,23 +178,15 @@ export function estimateSolarKwhFromHistory(
     // instead would mis-select the same-day slice whenever dayGap >= 1 but
     // now's time-of-day happens to be <= peakStart's, e.g. Mon 08:00 → Tue
     // 10:00, capturing almost none of the real solar day).
-    const windowReadings = readings.filter((r) =>
+    const { energyKwh, hadOverlap } =
       dayGap === 0
-        ? r.todMins >= nowMins && r.todMins < peakMins
-        : r.todMins >= nowMins || r.todMins < peakMins,
-    );
-    // Skip days with no readings in the window or where solar was zero throughout
-    // (e.g. night-time windows, fully overcast days, data outages).
-    if (
-      windowReadings.length === 0 ||
-      windowReadings.every((r) => r.solarKw === 0)
-    )
-      continue;
-
-    const energyKwh = windowReadings.reduce(
-      (sum, r) => sum + r.solarKw * INTERVAL_HOURS,
-      0,
-    );
+        ? windowEnergyKwh(readings, nowMins, peakMins)
+        : tailHeadUnionEnergyKwh(readings, nowMins, peakMins);
+    // Skip days with no data overlapping the window at all, or where solar
+    // was zero throughout (e.g. night-time windows, fully overcast days,
+    // data outages) — same as the original strict-membership filter, just
+    // measured via overlap instead of exact todMins matches.
+    if (!hadOverlap || Math.abs(energyKwh) < 1e-9) continue;
     dailyEnergies.push(energyKwh);
 
     // When peakStart is on a later calendar date, any fully-intervening

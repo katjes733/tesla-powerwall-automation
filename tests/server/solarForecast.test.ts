@@ -168,6 +168,22 @@ describe("estimateSolarKwhFromHistory", () => {
   });
 
   describe("edge cases", () => {
+    it("returns a proportional (non-null) estimate for a window narrower than the 5-minute data grid", () => {
+      // Regression: as a deadline approaches, [now, deadline) shrinks well
+      // below the 5-minute reading grid. A strict todMins-membership filter
+      // would catch zero grid points here (the only nearby reading is at
+      // 12:00, outside a window starting at 12:01) and flicker to null tick
+      // to tick depending on alignment. Overlap integration instead credits
+      // the 2 minutes of the 12:00 bucket that fall inside the window.
+      const now = moment.tz("2026-06-08 12:01", TZ);
+      const peak = moment.tz("2026-06-08 12:03", TZ);
+      const result = estimateSolarKwhFromHistory(sunnySeven(), now, peak, TZ);
+      expect(result).not.toBeNull();
+      expect(result!.daysUsed).toBe(7);
+      // 1 kW × (2 min / 60) = 0.0333 kWh.
+      expect(result!.estimatedKwh).toBeCloseTo(0.0333, 3);
+    });
+
     it("returns null when window falls entirely outside solar hours (all zero)", () => {
       // Window 22:00–23:00 — no solar in history. Days are rejected, <3 valid.
       const data = sunnySeven();
@@ -176,11 +192,13 @@ describe("estimateSolarKwhFromHistory", () => {
       expect(estimateSolarKwhFromHistory(data, now, peak, TZ)).toBeNull();
     });
 
-    it("returns null when now is at or after peakStart on the same day, instead of wrapping to a near-full-day window", () => {
+    it("returns a defined zero (not null) when now is at or after peakStart on the same day, instead of wrapping to a near-full-day window", () => {
       // Regression: peakStart 1 minute in the past used to be misread as an
       // overnight wrap (now > peakStart time-of-day), summing nearly the
       // entire day's historical solar instead of recognizing the window has
-      // already elapsed.
+      // already elapsed. An elapsed window is an unambiguous zero, not
+      // "insufficient data" — reporting it as a defined zero keeps the
+      // caller from mislabeling this as an unreliable linear-fallback.
       const now = moment.tz("2026-06-08 13:41", TZ);
       const peak = moment.tz("2026-06-08 13:40", TZ);
       expect(
@@ -190,10 +208,10 @@ describe("estimateSolarKwhFromHistory", () => {
           peak,
           TZ,
         ),
-      ).toBeNull();
+      ).toEqual({ estimatedKwh: 0, scalingFactor: 1.0, daysUsed: 0 });
     });
 
-    it("returns null when now equals peakStart exactly", () => {
+    it("returns a defined zero (not null) when now equals peakStart exactly", () => {
       const now = moment.tz("2026-06-08 13:40", TZ);
       const peak = moment.tz("2026-06-08 13:40", TZ);
       expect(
@@ -203,7 +221,7 @@ describe("estimateSolarKwhFromHistory", () => {
           peak,
           TZ,
         ),
-      ).toBeNull();
+      ).toEqual({ estimatedKwh: 0, scalingFactor: 1.0, daysUsed: 0 });
     });
 
     it("still computes a genuine overnight wrap when peakStart is tomorrow", () => {
