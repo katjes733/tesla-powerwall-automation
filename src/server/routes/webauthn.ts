@@ -173,7 +173,15 @@ router.post(
   },
 );
 
-router.post("/login/options", webauthnLoginLimiter, async (req, res, next) => {
+// Deliberately not rate-limited: this generates a random challenge only —
+// it verifies nothing, accepts no credential/username hint (the discoverable
+// flow sends none), and can't be used to enumerate accounts. Automatic,
+// non-interactive callers (Conditional UI on every Login.tsx mount, the
+// auto-refocus attempt on every app foreground) hit this endpoint far more
+// often than a real user ever taps "sign in" — sharing a strict budget with
+// /login/verify (the endpoint that actually matters for brute-force
+// protection) made ordinary background usage trip the limiter.
+router.post("/login/options", async (req, res, next) => {
   try {
     const { rpID } = getWebauthnConfig();
     const options = await generateAuthenticationOptions({

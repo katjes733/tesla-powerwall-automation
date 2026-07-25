@@ -144,6 +144,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           sessionExpiry: response.data.sessionExpiry,
         });
       } catch (error: any) {
+        // The credential this device remembers no longer exists server-side
+        // (e.g. removed from Account Settings on a different device, or a
+        // stale marker from before this device's own removal wasn't cleared
+        // for some other reason) — self-heal so the button/Conditional UI
+        // stop offering a dead credential on every future visit instead of
+        // repeatedly failing the same way.
+        if (error.response?.status === 401) {
+          localStorage.removeItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY);
+        }
         if (!silent) {
           console.error(
             "Passkey login error:",
