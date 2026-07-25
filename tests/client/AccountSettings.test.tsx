@@ -123,7 +123,7 @@ describe("AccountSettings", () => {
     );
   });
 
-  it("removes a passkey", async () => {
+  it("removes a passkey and warns it may still linger in the device's password manager", async () => {
     mockDelete.mockResolvedValue({ data: { message: "Passkey removed" } });
     const user = userEvent.setup();
     render(<AccountSettings />);
@@ -135,6 +135,11 @@ describe("AccountSettings", () => {
       expect(mockDelete).toHaveBeenCalledWith(
         "/api/webauthn/credentials/row-1",
       ),
+    );
+    expect(showNotification).toHaveBeenCalledWith(
+      expect.stringContaining("password manager"),
+      "success",
+      8000,
     );
   });
 
