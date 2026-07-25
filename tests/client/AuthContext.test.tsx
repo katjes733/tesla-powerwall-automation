@@ -20,11 +20,22 @@ vi.mock("axios", () => ({
 const mockStartAuthentication = vi.fn();
 const mockStartRegistration = vi.fn();
 const mockPlatformAuthenticatorIsAvailable = vi.fn();
+const { MockWebAuthnError } = vi.hoisted(() => {
+  class MockWebAuthnError extends Error {
+    code: string;
+    constructor(code: string) {
+      super(code);
+      this.code = code;
+    }
+  }
+  return { MockWebAuthnError };
+});
 vi.mock("@simplewebauthn/browser", () => ({
   startAuthentication: (...args: unknown[]) => mockStartAuthentication(...args),
   startRegistration: (...args: unknown[]) => mockStartRegistration(...args),
   platformAuthenticatorIsAvailable: (...args: unknown[]) =>
     mockPlatformAuthenticatorIsAvailable(...args),
+  WebAuthnError: MockWebAuthnError,
 }));
 
 import { AuthProvider, useAuth } from "~/client/components/auth/AuthContext";
@@ -237,6 +248,28 @@ describe("loginWithPasskey self-healing", () => {
       return Promise.reject(new Error(`unexpected POST ${url}`));
     });
     mockStartAuthentication.mockResolvedValue({ id: "stale-cred" });
+
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "loginWithPasskey" }));
+
+    await waitFor(() =>
+      expect(localStorage.getItem("webauthnLastCredentialId")).toBeNull(),
+    );
+  });
+
+  it("clears the stale local marker when the browser itself reports no usable credential (client-side NotAllowedError, never reaches the server)", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "stale-cred");
+    mockPost.mockImplementation((url: string) => {
+      if (url === "/api/webauthn/login/options") {
+        return Promise.resolve({ data: { challenge: "c" } });
+      }
+      return Promise.reject(new Error(`unexpected POST ${url}`));
+    });
+    mockStartAuthentication.mockRejectedValue(
+      new MockWebAuthnError("ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY"),
+    );
 
     renderHarness();
     await waitFor(() => expect(mockGet).toHaveBeenCalled());
