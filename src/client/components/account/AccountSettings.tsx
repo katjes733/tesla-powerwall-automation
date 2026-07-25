@@ -28,7 +28,10 @@ import {
   useAuth,
   WEBAUTHN_CREDENTIAL_STORAGE_KEY,
 } from "~/client/components/auth/AuthContext";
-import { getPasskeyLabel } from "~/client/components/auth/passkeyLabel";
+import {
+  getPasskeyLabel,
+  getDefaultPasskeyName,
+} from "~/client/components/auth/passkeyLabel";
 import { useNotification } from "~/client/components/notification/NotificationContext";
 
 interface PasskeyCredential {
@@ -58,7 +61,7 @@ export default function AccountSettings() {
   );
   const [thisDeviceId, setThisDeviceId] = useState<string | null>(null);
   const [addOpen, setAddOpen] = useState(false);
-  const [nickname, setNickname] = useState("");
+  const [nickname, setNickname] = useState(getDefaultPasskeyName);
   const [registering, setRegistering] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [passkeyLabel] = useState(getPasskeyLabel);
@@ -89,7 +92,7 @@ export default function AccountSettings() {
       await registerPasskey(nickname.trim() || undefined);
       setThisDeviceId(localStorage.getItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY));
       setAddOpen(false);
-      setNickname("");
+      setNickname(getDefaultPasskeyName());
       showNotification("Passkey added", "success");
       load();
     } catch (error: any) {
@@ -227,8 +230,7 @@ export default function AccountSettings() {
             You'll be prompted by your browser/device to use {passkeyLabel}.
           </Typography>
           <TextField
-            label="Name (optional)"
-            placeholder="e.g. iPhone Face ID"
+            label="Name"
             fullWidth
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}

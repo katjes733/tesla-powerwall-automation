@@ -5,12 +5,13 @@ import {
   DialogActions,
   DialogContent,
   DialogTitle,
+  TextField,
   Typography,
 } from "@mui/material";
 import { WebAuthnError } from "@simplewebauthn/browser";
 import { useAuth } from "./AuthContext";
 import { useNotification } from "~/client/components/notification/NotificationContext";
-import { getPasskeyLabel } from "./passkeyLabel";
+import { getPasskeyLabel, getDefaultPasskeyName } from "./passkeyLabel";
 
 // Rendered once, globally (see App.tsx) rather than from Login.tsx — Login
 // already navigates away the instant a password login succeeds, so this
@@ -27,11 +28,12 @@ export default function PasskeyPrompt() {
   const { showNotification } = useNotification();
   const [registering, setRegistering] = useState(false);
   const [passkeyLabel] = useState(getPasskeyLabel);
+  const [nickname, setNickname] = useState(getDefaultPasskeyName);
 
   const handleSetUp = useCallback(async () => {
     setRegistering(true);
     try {
-      await registerPasskey();
+      await registerPasskey(nickname.trim() || undefined);
       showNotification(
         passkeyLabel === "Face ID" ? "Face ID set up" : "Passkey set up",
         "success",
@@ -55,7 +57,13 @@ export default function PasskeyPrompt() {
     } finally {
       setRegistering(false);
     }
-  }, [registerPasskey, showNotification, passkeyLabel, closePasskeyPrompt]);
+  }, [
+    registerPasskey,
+    showNotification,
+    passkeyLabel,
+    closePasskeyPrompt,
+    nickname,
+  ]);
 
   return (
     <Dialog
@@ -64,10 +72,17 @@ export default function PasskeyPrompt() {
     >
       <DialogTitle>Set up {passkeyLabel} for faster sign-in?</DialogTitle>
       <DialogContent>
-        <Typography variant="body2" color="text.secondary">
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           Next time, sign in with {passkeyLabel} instead of typing your
           password. You can add or remove this anytime from Account Settings.
         </Typography>
+        <TextField
+          label="Name"
+          fullWidth
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          disabled={registering}
+        />
       </DialogContent>
       <DialogActions
         sx={{

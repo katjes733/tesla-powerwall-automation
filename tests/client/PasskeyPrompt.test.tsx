@@ -64,16 +64,38 @@ describe("PasskeyPrompt", () => {
     ).toBeInTheDocument();
   });
 
-  it("registers a passkey and closes on success", async () => {
+  it("pre-fills the name field with a device-derived default", () => {
+    render(<PasskeyPrompt />);
+    expect(screen.getByLabelText("Name")).toHaveValue("Safari on iPhone");
+  });
+
+  it("registers a passkey using the pre-filled default name", async () => {
     mockRegisterPasskey.mockResolvedValue(undefined);
     const user = userEvent.setup();
     render(<PasskeyPrompt />);
 
     await user.click(screen.getByRole("button", { name: /set up face id/i }));
 
-    await waitFor(() => expect(mockRegisterPasskey).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(mockRegisterPasskey).toHaveBeenCalledWith("Safari on iPhone"),
+    );
     expect(showNotification).toHaveBeenCalledWith("Face ID set up", "success");
     expect(mockClosePasskeyPrompt).toHaveBeenCalled();
+  });
+
+  it("registers using an edited name when the user overwrites the default", async () => {
+    mockRegisterPasskey.mockResolvedValue(undefined);
+    const user = userEvent.setup();
+    render(<PasskeyPrompt />);
+
+    const nameField = screen.getByLabelText("Name");
+    await user.clear(nameField);
+    await user.type(nameField, "My phone");
+    await user.click(screen.getByRole("button", { name: /set up face id/i }));
+
+    await waitFor(() =>
+      expect(mockRegisterPasskey).toHaveBeenCalledWith("My phone"),
+    );
   });
 
   it("keeps the dialog open (no error toast) when the user cancels the OS prompt", async () => {
