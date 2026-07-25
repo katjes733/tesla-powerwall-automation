@@ -7,10 +7,12 @@ import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
 import Paper from "@mui/material/Paper";
 import FaceIcon from "@mui/icons-material/Face";
+import KeyIcon from "@mui/icons-material/Key";
 import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useNotification } from "../notification/NotificationContext";
 import { WEBAUTHN_CREDENTIAL_STORAGE_KEY } from "./AuthContext";
+import { getPasskeyLabel } from "./passkeyLabel";
 import axios from "axios";
 import {
   platformAuthenticatorIsAvailable,
@@ -243,6 +245,7 @@ export default function Login() {
   const [signup, setSignup] = useState(false);
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
   const [passkeyPending, setPasskeyPending] = useState(false);
+  const [passkeyLabel] = useState(getPasskeyLabel);
   // GitHub's own passkey UI follows the same rule: only show a dedicated
   // "sign in with a passkey" button once this browser has actually used one
   // before, rather than whenever the platform merely supports Face ID/Touch
@@ -622,11 +625,15 @@ export default function Login() {
               variant="outlined"
               color="primary"
               fullWidth
-              startIcon={<FaceIcon />}
+              startIcon={
+                passkeyLabel === "Face ID" ? <FaceIcon /> : <KeyIcon />
+              }
               onClick={handlePasskeyLogin}
               disabled={passkeyPending}
             >
-              {passkeyPending ? "Waiting for Face ID…" : "Sign in with Face ID"}
+              {passkeyPending
+                ? `Waiting for ${passkeyLabel}…`
+                : `Sign in with ${passkeyLabel}`}
             </Button>
             <Divider sx={{ mt: 2 }}>or</Divider>
           </Box>

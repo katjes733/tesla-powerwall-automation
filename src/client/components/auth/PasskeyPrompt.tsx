@@ -1,0 +1,134 @@
+import { useCallback, useState } from "react";
+import {
+  Button,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  TextField,
+  Typography,
+} from "@mui/material";
+import { WebAuthnError } from "@simplewebauthn/browser";
+import { useAuth } from "./AuthContext";
+import { useNotification } from "~/client/components/notification/NotificationContext";
+import { getPasskeyLabel, getDefaultPasskeyName } from "./passkeyLabel";
+
+// Rendered once, globally (see App.tsx) rather than from Login.tsx — Login
+// already navigates away the instant a password login succeeds, so this
+// shows as an overlay on top of whatever page that navigation lands on,
+// satisfying "registration happens immediately, then the default page is
+// shown" without fighting that existing redirect.
+export default function PasskeyPrompt() {
+  const {
+    passkeyPromptOpen,
+    closePasskeyPrompt,
+    dismissPasskeyPromptPermanently,
+    registerPasskey,
+  } = useAuth();
+  const { showNotification } = useNotification();
+  const [registering, setRegistering] = useState(false);
+  const [passkeyLabel] = useState(getPasskeyLabel);
+  const [nickname, setNickname] = useState(getDefaultPasskeyName);
+
+  const handleSetUp = useCallback(async () => {
+    setRegistering(true);
+    try {
+      await registerPasskey(nickname.trim() || undefined);
+      showNotification(
+        passkeyLabel === "Face ID" ? "Face ID set up" : "Passkey set up",
+        "success",
+      );
+      closePasskeyPrompt();
+    } catch (error: any) {
+      // A user cancelling the OS prompt isn't a failure — leave the dialog
+      // open so they can just try again rather than re-triggering the whole
+      // post-login flow.
+      if (!(
+        error instanceof WebAuthnError &&
+        error.code === "ERROR_CEREMONY_ABORTED"
+      )) {
+        showNotification(
+          error.response?.data?.error ||
+            error.message ||
+            "Failed to set up passkey",
+          "error",
+        );
+      }
+    } finally {
+      setRegistering(false);
+    }
+  }, [
+    registerPasskey,
+    showNotification,
+    passkeyLabel,
+    closePasskeyPrompt,
+    nickname,
+  ]);
+
+  return (
+    <Dialog
+      open={passkeyPromptOpen}
+      onClose={() => !registering && closePasskeyPrompt()}
+    >
+      <DialogTitle>Set up {passkeyLabel} for faster sign-in?</DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Next time, sign in with {passkeyLabel} instead of typing your
+          password. You can add or remove this anytime from Account Settings.
+        </Typography>
+        <TextField
+          label="Name"
+          fullWidth
+          value={nickname}
+          onChange={(e) => setNickname(e.target.value)}
+          disabled={registering}
+        />
+      </DialogContent>
+      <DialogActions
+        sx={{
+          // On mobile, "column-reverse" puts the last DOM child (the
+          // primary action) on top — the button people should actually tap
+          // is no longer buried below two lower-priority dismiss buttons —
+          // while "Don't ask again" (the most consequential, least commonly
+          // wanted option) ends up at the very bottom. Desktop keeps the
+          // original single-row layout untouched.
+          flexDirection: { xs: "column-reverse", sm: "row" },
+          alignItems: { xs: "stretch", sm: "center" },
+          gap: 1,
+          // MUI's default DialogActions rule adds margin-left to every
+          // button but the first DOM child, for row-layout spacing. Combined
+          // with the width: 100% below, that shifts two of the three
+          // buttons right without shrinking them on mobile — flush against
+          // the dialog's edge on one side, doubled-up on the other. Cancel
+          // it only at xs (where gap: 1 above already spaces the stacked
+          // buttons correctly on its own); restore the original 8px at sm+
+          // so the existing single-row desktop spacing is untouched.
+          "& > :not(:first-of-type)": { marginLeft: { xs: 0, sm: 1 } },
+        }}
+      >
+        <Button
+          onClick={dismissPasskeyPromptPermanently}
+          disabled={registering}
+          sx={{ width: { xs: "100%", sm: "auto" } }}
+        >
+          Don't ask again
+        </Button>
+        <Button
+          onClick={closePasskeyPrompt}
+          disabled={registering}
+          sx={{ width: { xs: "100%", sm: "auto" } }}
+        >
+          Not now
+        </Button>
+        <Button
+          variant="contained"
+          onClick={handleSetUp}
+          disabled={registering}
+          sx={{ width: { xs: "100%", sm: "auto" } }}
+        >
+          {registering ? "Waiting…" : `Set up ${passkeyLabel}`}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}

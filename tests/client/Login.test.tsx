@@ -47,9 +47,24 @@ vi.mock("@simplewebauthn/browser", () => ({
 
 import Login from "~/client/components/auth/Login";
 
+const IPHONE_UA =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.5.2 Mobile/15E148 Safari/604.1";
+const MAC_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15";
+
+function setUserAgent(ua: string) {
+  Object.defineProperty(navigator, "userAgent", {
+    value: ua,
+    configurable: true,
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
+  // Label-adaptivity is exercised by its own dedicated tests below; default
+  // to an iPhone UA so the rest of this file's "Face ID" wording holds.
+  setUserAgent(IPHONE_UA);
   // Conditional UI is exercised by its own dedicated tests below; default it
   // off so it doesn't call loginWithPasskey unexpectedly in unrelated tests.
   mockBrowserSupportsWebAuthnAutofill.mockResolvedValue(false);
@@ -126,6 +141,31 @@ describe("Login — manual Face ID button", () => {
     expect(
       await screen.findByRole("button", { name: /sign in with face id/i }),
     ).toBeInTheDocument();
+  });
+});
+
+describe("Login — platform-adaptive passkey label", () => {
+  it("labels the button 'Face ID' on iOS", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "cred-1");
+    setUserAgent(IPHONE_UA);
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    renderLogin();
+    expect(
+      await screen.findByRole("button", { name: /sign in with face id/i }),
+    ).toBeInTheDocument();
+  });
+
+  it("falls back to the generic 'a passkey' label on non-iOS platforms", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "cred-1");
+    setUserAgent(MAC_UA);
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    renderLogin();
+    expect(
+      await screen.findByRole("button", { name: /sign in with a passkey/i }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /sign in with face id/i }),
+    ).not.toBeInTheDocument();
   });
 });
 

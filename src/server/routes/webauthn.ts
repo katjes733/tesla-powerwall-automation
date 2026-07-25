@@ -94,6 +94,14 @@ router.post(
     req.session.webauthnChallenge = undefined;
     try {
       if (!expectedChallenge) {
+        authLog.warn(
+          {
+            event: "auth.webauthn.register_verify_failed",
+            email: maskEmail(email),
+            reason: "no_challenge_in_session",
+          },
+          "Passkey registration failed: no challenge in progress for this session",
+        );
         res.status(400).json({ error: "No registration in progress" });
         return;
       }
@@ -113,6 +121,17 @@ router.post(
         expectedRPID: rpID,
       });
       if (!verification.verified || !verification.registrationInfo) {
+        authLog.warn(
+          {
+            event: "auth.webauthn.register_verify_failed",
+            userId: user.id,
+            email: maskEmail(email),
+            reason: "not_verified",
+            rpID,
+            expectedOrigin,
+          },
+          "Passkey registration failed: assertion not verified",
+        );
         res.status(400).json({ error: "Registration could not be verified" });
         return;
       }
@@ -178,6 +197,14 @@ router.post(
     const ip = req.ip;
     try {
       if (!expectedChallenge) {
+        authLog.warn(
+          {
+            event: "auth.login.failure",
+            ip,
+            reason: "webauthn_no_challenge_in_session",
+          },
+          "Passkey login failed: no challenge in progress for this session",
+        );
         res.status(400).json({ error: "No login in progress" });
         return;
       }
@@ -191,6 +218,14 @@ router.post(
             .findOneBy({ id: stored.user_id })
         : null;
       if (!stored || !user) {
+        authLog.warn(
+          {
+            event: "auth.login.failure",
+            ip,
+            reason: "webauthn_credential_not_recognized",
+          },
+          "Passkey login failed: credential not recognized",
+        );
         res.status(401).json({ error: "Passkey not recognized" });
         return;
       }
