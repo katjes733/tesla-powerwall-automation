@@ -71,6 +71,15 @@ const startupLog = logger.child({ service: "startup" });
 
 const app = express();
 
+// The production deployment always sits behind exactly one reverse-proxy hop
+// (Caddy). Without this, req.ip resolves to Caddy's own address for every
+// request instead of the real client from X-Forwarded-For — every rate
+// limiter's ipKeyGenerator(req.ip) then shares one bucket across every
+// device and every user, making 429s trivially easy to trigger from
+// unrelated traffic. In dev (no reverse proxy in front of Vite/Express),
+// this is harmless: there's no untrusted hop to spoof X-Forwarded-For from.
+app.set("trust proxy", 1);
+
 app.use(httpLogger);
 
 const allowedOrigins = (process.env.ALLOWED_ORIGINS || "http://localhost:5173")
@@ -340,9 +349,32 @@ app.get("/callback", async (req, res) => {
 
 if (process.env.NODE_ENV !== "development") {
   startupLog.info("Serving static files from 'public' directory");
-  app.use(express.static(path.join(process.cwd(), "public")));
+  // iOS home-screen/standalone PWAs are known to aggressively cache the
+  // top-level document even when Cache-Control would otherwise call for
+  // revalidation. Combined with vite.config.ts's emptyOutDir wiping old
+  // content-hashed asset filenames on every deploy, a client stuck on a
+  // stale cached index.html can end up silently running old code from
+  // before a feature existed, with no error to signal it — the assets it
+  // references may not even 404, since a sufficiently-cached client may
+  // never make a network request for them at all. index.html therefore
+  // gets an explicit no-store; the hashed assets it references are safe to
+  // cache indefinitely, since any content change gives them a new URL.
+  const NEVER_CACHE = "no-cache, no-store, must-revalidate";
+  app.use(
+    express.static(path.join(process.cwd(), "public"), {
+      setHeaders: (res, filePath) => {
+        if (path.basename(filePath) === "index.html") {
+          res.setHeader("Cache-Control", NEVER_CACHE);
+        } else if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+        }
+      },
+    }),
+  );
   app.use((_req, res) => {
-    res.sendFile(path.join(process.cwd(), "public", "index.html"));
+    res.sendFile(path.join(process.cwd(), "public", "index.html"), {
+      headers: { "Cache-Control": NEVER_CACHE },
+    });
   });
 } else {
   startupLog.info("Not in production mode");

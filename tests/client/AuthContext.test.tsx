@@ -32,6 +32,7 @@ import { AuthProvider, useAuth } from "~/client/components/auth/AuthContext";
 function Harness() {
   const {
     login,
+    loginWithPasskey,
     registerPasskey,
     passkeyPromptOpen,
     closePasskeyPrompt,
@@ -42,6 +43,9 @@ function Harness() {
       <div data-testid="prompt-open">{String(passkeyPromptOpen)}</div>
       <button onClick={() => login("owner@example.com", "pw").catch(() => {})}>
         login
+      </button>
+      <button onClick={() => loginWithPasskey().catch(() => {})}>
+        loginWithPasskey
       </button>
       <button onClick={() => registerPasskey("nickname").catch(() => {})}>
         register
@@ -212,6 +216,36 @@ describe("registerPasskey", () => {
       ),
     );
     expect(localStorage.getItem("webauthnLastCredentialId")).toBe("cred-x");
+  });
+});
+
+describe("loginWithPasskey self-healing", () => {
+  it("clears the stale local marker when the server rejects the credential (401)", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "stale-cred");
+    mockPost.mockImplementation((url: string) => {
+      if (url === "/api/webauthn/login/options") {
+        return Promise.resolve({ data: { challenge: "c" } });
+      }
+      if (url === "/api/webauthn/login/verify") {
+        const error: any = new Error("Unauthorized");
+        error.response = {
+          status: 401,
+          data: { error: "Passkey not recognized" },
+        };
+        return Promise.reject(error);
+      }
+      return Promise.reject(new Error(`unexpected POST ${url}`));
+    });
+    mockStartAuthentication.mockResolvedValue({ id: "stale-cred" });
+
+    renderHarness();
+    await waitFor(() => expect(mockGet).toHaveBeenCalled());
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("button", { name: "loginWithPasskey" }));
+
+    await waitFor(() =>
+      expect(localStorage.getItem("webauthnLastCredentialId")).toBeNull(),
+    );
   });
 });
 
