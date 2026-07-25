@@ -127,7 +127,18 @@ export default function AccountSettings() {
             localStorage.removeItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY);
             setThisDeviceId(null);
           }
-          showNotification("Passkey removed", "success");
+          // WebAuthn has no API for a website to tell the platform to
+          // forget a stored credential — removing it here only stops our
+          // server from accepting it. The entry itself lingers in the
+          // device's own password manager until removed there too, and a
+          // later "Add a passkey" will otherwise just create a second,
+          // indistinguishable-looking entry alongside the dead one, making
+          // the picker confusing next time someone signs in.
+          showNotification(
+            "Passkey removed. It may still be saved in that device's password manager (e.g. iOS Passwords, Google Password Manager) — remove it there too to avoid duplicate options next time you sign in.",
+            "success",
+            8000,
+          );
           load();
         })
         .catch(() => showNotification("Failed to remove passkey", "error"))
