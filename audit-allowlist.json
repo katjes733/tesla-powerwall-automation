@@ -1,0 +1,14 @@
+[
+  {
+    "id": "GHSA-qwww-vcr4-c8h2",
+    "package": "react-router",
+    "reason": "React Router: RSC Mode CSRF Bypass Allows Action Execution Before 400 Response. This app is a client-only SPA using react-router-dom's Routes/Route/useNavigate APIs and never touches React Server Components mode, so the vulnerable code path isn't reachable. The fix requires a major v7->v8 bump across App.tsx, Login.tsx, NavMenu.tsx, and every other router-consuming component; deferred as its own dedicated migration rather than bundled into unrelated work.",
+    "assessedDate": "2026-07-24"
+  },
+  {
+    "id": "GHSA-mh99-v99m-4gvg",
+    "package": "brace-expansion",
+    "reason": "brace-expansion: DoS via unbounded expansion length causing an out-of-memory process crash (CVE-2026-14257). Likely a bun audit false positive rather than a real unresolved vulnerability: the GitHub Advisory Database lists first_patched_version as 5.0.8, and bun.lock confirms the only 5.x resolution in the tree (via minimatch@10.2.5, used by eslint/nodemon/typescript-eslint) is already 5.0.8 -- also npm's current 'latest' dist-tag, so there is no newer version to update to. bun audit's own summary line (\"<=5.0.7\") matches the advisory's vulnerable range exactly, so it appears to be checking the loosely-declared \"^5.0.5\" semver range some dependency requests rather than the actual lockfile-pinned resolution, or its local advisory cache hadn't caught up yet (the advisory was published only hours before this was assessed). Re-check in a few days: re-run bun audit without this entry and remove it once it stops flagging an already-patched install.",
+    "assessedDate": "2026-07-24"
+  }
+]
