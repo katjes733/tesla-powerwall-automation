@@ -242,6 +242,53 @@ describe("Login — Conditional UI (passkey autofill)", () => {
     );
   });
 
+  it("hides the manual button when the background Conditional UI attempt discovers the marker is stale", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "cred-1");
+    // Control both promises manually so the button is deterministically
+    // visible before the background attempt rejects — with both mocks
+    // resolving/rejecting on the same microtask tick, React can batch the
+    // "become visible" and "hide again" updates into one, and the button
+    // would never actually be observed as visible, invalidating the test.
+    let resolvePlatformCheck: (available: boolean) => void;
+    mockPlatformAuthenticatorIsAvailable.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePlatformCheck = resolve;
+        }),
+    );
+    mockBrowserSupportsWebAuthnAutofill.mockResolvedValue(true);
+    let rejectLoginWithPasskey: (error: unknown) => void;
+    mockLoginWithPasskey.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectLoginWithPasskey = reject;
+        }),
+    );
+
+    renderLogin();
+    await waitFor(() =>
+      expect(mockLoginWithPasskey).toHaveBeenCalledWith({
+        silent: true,
+        autofill: true,
+      }),
+    );
+
+    resolvePlatformCheck!(true);
+    expect(
+      await screen.findByRole("button", { name: /sign in with face id/i }),
+    ).toBeInTheDocument();
+
+    const error: any = new Error("Unauthorized");
+    error.response = { status: 401, data: { error: "Passkey not recognized" } };
+    rejectLoginWithPasskey!(error);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /sign in with face id/i }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("does not start a passkey request when Conditional UI is unsupported", async () => {
     mockBrowserSupportsWebAuthnAutofill.mockResolvedValue(false);
     renderLogin();

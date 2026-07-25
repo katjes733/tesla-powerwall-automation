@@ -305,9 +305,16 @@ export default function Login() {
     let cancelled = false;
     browserSupportsWebAuthnAutofill().then((supported) => {
       if (cancelled || !supported) return;
-      loginWithPasskey({ silent: true, autofill: true }).catch(() => {
+      loginWithPasskey({ silent: true, autofill: true }).catch((error) => {
         // Routine: superseded by another ceremony, or the tab/page went away
-        // before the user picked a suggestion.
+        // before the user picked a suggestion. But if AuthContext just
+        // decided this device's marker is stale, it already cleared
+        // localStorage — sync the button's visibility too, or it would keep
+        // showing (and failing) until a later explicit click happens to
+        // notice the same thing.
+        if (!cancelled && isStalePasskeyError(error)) {
+          setHasUsedPasskeyOnDevice(false);
+        }
       });
     });
     return () => {
