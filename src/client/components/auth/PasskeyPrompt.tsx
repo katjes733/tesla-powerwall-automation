@@ -69,20 +69,47 @@ export default function PasskeyPrompt() {
           password. You can add or remove this anytime from Account Settings.
         </Typography>
       </DialogContent>
-      <DialogActions sx={{ flexWrap: "wrap", gap: 1 }}>
+      <DialogActions
+        sx={{
+          // On mobile, "column-reverse" puts the last DOM child (the
+          // primary action) on top — the button people should actually tap
+          // is no longer buried below two lower-priority dismiss buttons —
+          // while "Don't ask again" (the most consequential, least commonly
+          // wanted option) ends up at the very bottom. Desktop keeps the
+          // original single-row layout untouched.
+          flexDirection: { xs: "column-reverse", sm: "row" },
+          alignItems: { xs: "stretch", sm: "center" },
+          gap: 1,
+          // MUI's default DialogActions rule adds margin-left to every
+          // button but the first DOM child, for row-layout spacing. Combined
+          // with the width: 100% below, that shifts two of the three
+          // buttons right without shrinking them on mobile — flush against
+          // the dialog's edge on one side, doubled-up on the other. Cancel
+          // it only at xs (where gap: 1 above already spaces the stacked
+          // buttons correctly on its own); restore the original 8px at sm+
+          // so the existing single-row desktop spacing is untouched.
+          "& > :not(:first-of-type)": { marginLeft: { xs: 0, sm: 1 } },
+        }}
+      >
         <Button
           onClick={dismissPasskeyPromptPermanently}
           disabled={registering}
+          sx={{ width: { xs: "100%", sm: "auto" } }}
         >
           Don't ask again
         </Button>
-        <Button onClick={closePasskeyPrompt} disabled={registering}>
+        <Button
+          onClick={closePasskeyPrompt}
+          disabled={registering}
+          sx={{ width: { xs: "100%", sm: "auto" } }}
+        >
           Not now
         </Button>
         <Button
           variant="contained"
           onClick={handleSetUp}
           disabled={registering}
+          sx={{ width: { xs: "100%", sm: "auto" } }}
         >
           {registering ? "Waiting…" : `Set up ${passkeyLabel}`}
         </Button>

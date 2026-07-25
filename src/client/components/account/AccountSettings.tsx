@@ -178,7 +178,7 @@ export default function AccountSettings() {
               <ListItem
                 key={cred.id}
                 divider
-                sx={{ flexWrap: "wrap", gap: 1, px: 0 }}
+                sx={{ flexWrap: "wrap", gap: 1, pl: 0, pr: 6 }}
                 secondaryAction={
                   <IconButton
                     edge="end"
