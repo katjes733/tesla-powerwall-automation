@@ -15,6 +15,7 @@ import {
   startAuthentication,
   startRegistration,
   platformAuthenticatorIsAvailable,
+  WebAuthnError,
 } from "@simplewebauthn/browser";
 import { getElementState } from "~/shared/permissions/profile";
 import type { AccessLevel, ActionKey } from "~/shared/permissions/schema";
@@ -31,6 +32,24 @@ export const WEBAUTHN_CREDENTIAL_STORAGE_KEY = "webauthnLastCredentialId";
 // passkey?" prompt — checked alongside WEBAUTHN_CREDENTIAL_STORAGE_KEY so a
 // declined offer doesn't get re-asked on every future password login.
 export const WEBAUTHN_PROMPT_DISMISSED_KEY = "webauthnPromptDismissed";
+
+// A loginWithPasskey() rejection means this device's remembered credential no
+// longer works, either because the server rejected it (removed on another
+// device — surfaces as a 401) or because the browser itself reported no
+// usable credential before ever reaching the server (a NotAllowedError,
+// which @simplewebauthn/browser passes through as
+// ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY). WebAuthn deliberately uses that same
+// client-side error for both "no credential exists" and "user declined an
+// existing one" — the spec forbids a site from telling those apart, so this
+// errs toward treating it as stale; Conditional UI still works independently
+// of the marker this clears, so a legitimate credential remains reachable.
+export function isStalePasskeyError(error: any): boolean {
+  return (
+    error?.response?.status === 401 ||
+    (error instanceof WebAuthnError &&
+      error.code === "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY")
+  );
+}
 
 export interface SessionUser {
   loginEmail: string;
@@ -144,13 +163,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           sessionExpiry: response.data.sessionExpiry,
         });
       } catch (error: any) {
-        // The credential this device remembers no longer exists server-side
-        // (e.g. removed from Account Settings on a different device, or a
-        // stale marker from before this device's own removal wasn't cleared
-        // for some other reason) — self-heal so the button/Conditional UI
-        // stop offering a dead credential on every future visit instead of
-        // repeatedly failing the same way.
-        if (error.response?.status === 401) {
+        // Self-heal so the button/Conditional UI stop offering a dead
+        // credential on every future visit instead of repeatedly failing the
+        // same way — see isStalePasskeyError for why both a server 401 and a
+        // client-side NotAllowedError are treated as "no longer works".
+        if (isStalePasskeyError(error)) {
           localStorage.removeItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY);
         }
         if (!silent) {

@@ -8,20 +8,7 @@ const mockLoginWithPasskey = vi.fn();
 const mockPlatformAuthenticatorIsAvailable = vi.fn();
 const mockBrowserSupportsWebAuthnAutofill = vi.fn();
 const mockCancelCeremony = vi.fn();
-
-vi.mock("~/client/components/auth/AuthContext", () => ({
-  useAuth: () => ({
-    user: null,
-    login: vi.fn(),
-    loginWithPasskey: mockLoginWithPasskey,
-    loading: false,
-  }),
-  WEBAUTHN_CREDENTIAL_STORAGE_KEY: "webauthnLastCredentialId",
-}));
-
-vi.mock("~/client/components/notification/NotificationContext", () => ({
-  useNotification: () => ({ showNotification: vi.fn() }),
-}));
+const mockShowNotification = vi.fn();
 
 const { MockWebAuthnError } = vi.hoisted(() => {
   class MockWebAuthnError extends Error {
@@ -33,6 +20,27 @@ const { MockWebAuthnError } = vi.hoisted(() => {
   }
   return { MockWebAuthnError };
 });
+
+vi.mock("~/client/components/auth/AuthContext", () => ({
+  useAuth: () => ({
+    user: null,
+    login: vi.fn(),
+    loginWithPasskey: mockLoginWithPasskey,
+    loading: false,
+  }),
+  WEBAUTHN_CREDENTIAL_STORAGE_KEY: "webauthnLastCredentialId",
+  // Mirrors the real AuthContext.isStalePasskeyError so this file exercises
+  // the same classification Login.tsx actually relies on, rather than a
+  // stub that could silently drift from production behavior.
+  isStalePasskeyError: (error: any) =>
+    error?.response?.status === 401 ||
+    (error instanceof MockWebAuthnError &&
+      error.code === "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY"),
+}));
+
+vi.mock("~/client/components/notification/NotificationContext", () => ({
+  useNotification: () => ({ showNotification: mockShowNotification }),
+}));
 
 vi.mock("@simplewebauthn/browser", () => ({
   platformAuthenticatorIsAvailable: (...args: unknown[]) =>
@@ -142,6 +150,58 @@ describe("Login — manual Face ID button", () => {
       await screen.findByRole("button", { name: /sign in with face id/i }),
     ).toBeInTheDocument();
   });
+
+  it("hides the button and explains itself when the server rejects a stale credential (e.g. removed from another device)", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "cred-1");
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    const error: any = new Error("Unauthorized");
+    error.response = { status: 401, data: { error: "Passkey not recognized" } };
+    mockLoginWithPasskey.mockRejectedValue(error);
+    const user = userEvent.setup();
+    renderLogin();
+    const button = await screen.findByRole("button", {
+      name: /sign in with face id/i,
+    });
+    await user.click(button);
+    await waitFor(() => expect(mockLoginWithPasskey).toHaveBeenCalled());
+
+    await waitFor(() =>
+      expect(mockShowNotification).toHaveBeenCalledWith(
+        expect.stringContaining("no longer exists"),
+        "error",
+        expect.any(Number),
+      ),
+    );
+    expect(
+      screen.queryByRole("button", { name: /sign in with face id/i }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("hides the button and explains itself when the browser itself reports no usable credential (client-side NotAllowedError, never reaches the server)", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "cred-1");
+    mockPlatformAuthenticatorIsAvailable.mockResolvedValue(true);
+    mockLoginWithPasskey.mockRejectedValue(
+      new MockWebAuthnError("ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY"),
+    );
+    const user = userEvent.setup();
+    renderLogin();
+    const button = await screen.findByRole("button", {
+      name: /sign in with face id/i,
+    });
+    await user.click(button);
+    await waitFor(() => expect(mockLoginWithPasskey).toHaveBeenCalled());
+
+    await waitFor(() =>
+      expect(mockShowNotification).toHaveBeenCalledWith(
+        expect.stringContaining("no longer exists"),
+        "error",
+        expect.any(Number),
+      ),
+    );
+    expect(
+      screen.queryByRole("button", { name: /sign in with face id/i }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("Login — platform-adaptive passkey label", () => {
@@ -179,6 +239,53 @@ describe("Login — Conditional UI (passkey autofill)", () => {
         silent: true,
         autofill: true,
       }),
+    );
+  });
+
+  it("hides the manual button when the background Conditional UI attempt discovers the marker is stale", async () => {
+    localStorage.setItem("webauthnLastCredentialId", "cred-1");
+    // Control both promises manually so the button is deterministically
+    // visible before the background attempt rejects — with both mocks
+    // resolving/rejecting on the same microtask tick, React can batch the
+    // "become visible" and "hide again" updates into one, and the button
+    // would never actually be observed as visible, invalidating the test.
+    let resolvePlatformCheck: (available: boolean) => void;
+    mockPlatformAuthenticatorIsAvailable.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolvePlatformCheck = resolve;
+        }),
+    );
+    mockBrowserSupportsWebAuthnAutofill.mockResolvedValue(true);
+    let rejectLoginWithPasskey: (error: unknown) => void;
+    mockLoginWithPasskey.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          rejectLoginWithPasskey = reject;
+        }),
+    );
+
+    renderLogin();
+    await waitFor(() =>
+      expect(mockLoginWithPasskey).toHaveBeenCalledWith({
+        silent: true,
+        autofill: true,
+      }),
+    );
+
+    resolvePlatformCheck!(true);
+    expect(
+      await screen.findByRole("button", { name: /sign in with face id/i }),
+    ).toBeInTheDocument();
+
+    const error: any = new Error("Unauthorized");
+    error.response = { status: 401, data: { error: "Passkey not recognized" } };
+    rejectLoginWithPasskey!(error);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: /sign in with face id/i }),
+      ).not.toBeInTheDocument(),
     );
   });
 

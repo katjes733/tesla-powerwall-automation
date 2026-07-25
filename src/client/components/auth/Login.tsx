@@ -11,7 +11,10 @@ import KeyIcon from "@mui/icons-material/Key";
 import React from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useNotification } from "../notification/NotificationContext";
-import { WEBAUTHN_CREDENTIAL_STORAGE_KEY } from "./AuthContext";
+import {
+  WEBAUTHN_CREDENTIAL_STORAGE_KEY,
+  isStalePasskeyError,
+} from "./AuthContext";
 import { getPasskeyLabel } from "./passkeyLabel";
 import axios from "axios";
 import {
@@ -246,11 +249,13 @@ export default function Login() {
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
   const [passkeyPending, setPasskeyPending] = useState(false);
   const [passkeyLabel] = useState(getPasskeyLabel);
-  // GitHub's own passkey UI follows the same rule: only show a dedicated
-  // "sign in with a passkey" button once this browser has actually used one
-  // before, rather than whenever the platform merely supports Face ID/Touch
-  // ID/Windows Hello in the abstract.
-  const [hasUsedPasskeyOnDevice] = useState(
+  // Only show a dedicated "sign in with a passkey" button once this browser
+  // has actually used one before, rather than whenever the platform merely
+  // supports Face ID/Touch ID/Windows Hello in the abstract. This is a
+  // client-side heuristic, not a guarantee — the credential may since have
+  // been removed from another device — so it's kept in sync (not just read
+  // once) with the marker AuthContext clears on a rejected attempt below.
+  const [hasUsedPasskeyOnDevice, setHasUsedPasskeyOnDevice] = useState(
     () => !!localStorage.getItem(WEBAUTHN_CREDENTIAL_STORAGE_KEY),
   );
   const [signupStep, setSignupStep] = useState(1);
@@ -300,9 +305,16 @@ export default function Login() {
     let cancelled = false;
     browserSupportsWebAuthnAutofill().then((supported) => {
       if (cancelled || !supported) return;
-      loginWithPasskey({ silent: true, autofill: true }).catch(() => {
+      loginWithPasskey({ silent: true, autofill: true }).catch((error) => {
         // Routine: superseded by another ceremony, or the tab/page went away
-        // before the user picked a suggestion.
+        // before the user picked a suggestion. But if AuthContext just
+        // decided this device's marker is stale, it already cleared
+        // localStorage — sync the button's visibility too, or it would keep
+        // showing (and failing) until a later explicit click happens to
+        // notice the same thing.
+        if (!cancelled && isStalePasskeyError(error)) {
+          setHasUsedPasskeyOnDevice(false);
+        }
       });
     });
     return () => {
@@ -316,12 +328,26 @@ export default function Login() {
     try {
       await loginWithPasskey();
     } catch (error: any) {
-      // A user cancelling the OS Face ID/Touch ID prompt isn't a failure
-      // worth surfacing as an error toast.
-      if (!(
+      if (
         error instanceof WebAuthnError &&
         error.code === "ERROR_CEREMONY_ABORTED"
-      )) {
+      ) {
+        // A user cancelling the OS Face ID/Touch ID prompt isn't a failure
+        // worth surfacing as an error toast.
+      } else if (isStalePasskeyError(error)) {
+        // Either the server rejected the credential this device remembered
+        // (most likely removed from another device), or the browser itself
+        // reported no usable credential before ever reaching the server.
+        // AuthContext already cleared the stale marker in localStorage;
+        // drop the button immediately too, rather than leaving it up until
+        // the next reload.
+        setHasUsedPasskeyOnDevice(false);
+        showNotification(
+          "This device's passkey no longer exists. Please sign in with your username and password.",
+          "error",
+          6000,
+        );
+      } else {
         showNotification(
           error.response?.data?.error || error.message || "Passkey login error",
           "error",
