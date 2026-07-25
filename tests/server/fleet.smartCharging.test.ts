@@ -205,6 +205,56 @@ describe("setSmartGridCharging — disable when the charge window closes", () =>
       moment.tz("2026-07-14 00:00", TZ).toISOString(),
     );
   });
+
+  it("REGRESSION: reports blocked_window (not a bogus post-close start time) when SOC is nearly full and evaluated just after window close", async () => {
+    // Reproduces the exact shape of the reported bug: battery at 98.83% (a
+    // real value from the user's logs), evaluated 1 minute after the 13:30
+    // window close. The deadline anchor must keep pointing at the window
+    // close (13:30 − 5min buffer = 13:25) even after "now" passes it — if it
+    // silently reverts to the later peak-based deadline (13:45 − 5min =
+    // 13:40) instead, the tiny remaining energy (0.16kWh) makes
+    // latestGridStart land just after "now" (13:31:40), so the situation
+    // stays "waiting" with a nonsensical "grid will contribute ... starting
+    // 13:31" message — a start time inside a window that's already closed.
+    const fleet = Fleet.getInstance(
+      `smart-charging-near-full-soc-window-close-test-${Date.now()}@example.com`,
+      { throwOnError: false, mailOnError: false },
+    );
+
+    const now = moment.tz("2026-07-13 13:31", TZ);
+
+    vi.spyOn(fleet, "getSiteInfo").mockResolvedValue(SITE_INFO as any);
+    vi.spyOn(fleet, "getLiveStatus").mockResolvedValue({
+      ...LIVE_STATUS,
+      percentage_charged: 98.83,
+    } as any);
+    vi.spyOn(fleet, "getSolarHistory").mockResolvedValue([]);
+    vi.spyOn(fleet as any, "getCalibration").mockResolvedValue(null);
+    vi.spyOn(fleet as any, "getChargeCurve").mockResolvedValue(null);
+    vi.spyOn(fleet as any, "getSiteLocation").mockResolvedValue(null);
+    const setGridChargingSpy = vi
+      .spyOn(fleet, "setGridCharging")
+      .mockResolvedValue(undefined);
+    vi.useFakeTimers();
+    vi.setSystemTime(now.toDate());
+
+    const result = await fleet.setSmartGridCharging(
+      PRODUCT,
+      JSON.stringify({ targetSoc: 100 }),
+      CONDITIONS,
+    );
+
+    vi.useRealTimers();
+
+    expect(result?.situation).toBe("blocked_window");
+    expect(result?.reason).toBe(
+      "outside allowed window (closes 13:30) — would have needed to start by 13:16 for a full charge by peak",
+    );
+    expect(result?.reason).not.toContain("waiting");
+    expect(result?.action).toBe("disabled");
+    expect(setGridChargingSpy).toHaveBeenCalledWith(PRODUCT, "disabled");
+    expect(result?.gridStartAt).toBeNull();
+  });
 });
 
 describe("setSmartGridCharging — plans around the window's close time, not just peak", () => {
@@ -461,6 +511,61 @@ describe("setSmartGridCharging — waiting for a later start doesn't misreport a
     expect(result?.predictedSocAtPeak).toBe(90);
     expect(result?.targetGapPct).toBe(0);
     expect(result?.reason).not.toContain("predicted only");
+  });
+
+  it("REGRESSION: still disables currently-running grid charging while waiting outside the window, not just once blocked_window is reached", async () => {
+    // Same fixture as above (Friday 22:00, window closed hours ago, next
+    // legitimate start is ~14 hours out — situation correctly stays
+    // "waiting", not "blocked_window"). The bug: that branch only set
+    // desired="disabled" without also setting disableRequired, so the
+    // actual disable command never fired — grid charging already running
+    // would have kept running all evening, past the closed window, simply
+    // because "waiting" isn't the branch that normally triggers a disable
+    // call. disableRequired must be forced whenever !withinWindow, even in
+    // "waiting", precisely to catch this.
+    const fleet = Fleet.getInstance(
+      `smart-charging-waiting-outside-window-disables-test-${Date.now()}@example.com`,
+      { throwOnError: false, mailOnError: false },
+    );
+
+    const conditions: IScheduleCondition[] = [
+      {
+        condition: "inSeasonalGridChargeWindow",
+        value: [{ seasonName: "summer", from: "00:00", to: "12:00" }],
+      },
+    ];
+    const now = moment.tz("2026-07-13 22:00", TZ);
+
+    vi.spyOn(fleet, "getSiteInfo").mockResolvedValue(SITE_INFO as any);
+    vi.spyOn(fleet, "getLiveStatus").mockResolvedValue({
+      ...LIVE_STATUS,
+      percentage_charged: 50,
+    } as any);
+    vi.spyOn(fleet, "getSolarHistory").mockResolvedValue([]);
+    vi.spyOn(fleet as any, "getCalibration").mockResolvedValue(null);
+    vi.spyOn(fleet as any, "getChargeCurve").mockResolvedValue(null);
+    vi.spyOn(fleet as any, "getSiteLocation").mockResolvedValue(null);
+    const setGridChargingSpy = vi
+      .spyOn(fleet, "setGridCharging")
+      .mockResolvedValue(undefined);
+    vi.useFakeTimers();
+    vi.setSystemTime(now.toDate());
+
+    const result = await fleet.setSmartGridCharging(
+      PRODUCT,
+      JSON.stringify({ targetSoc: 90 }),
+      conditions,
+    );
+
+    vi.useRealTimers();
+
+    // SITE_INFO's disallow_charge_from_grid_with_solar_installed: false
+    // means grid charging is currently ON — the exact state that must not
+    // be left running past the window close.
+    expect(result?.situation).toBe("waiting");
+    expect(result?.desired).toBe("disabled");
+    expect(result?.action).toBe("disabled");
+    expect(setGridChargingSpy).toHaveBeenCalledWith(PRODUCT, "disabled");
   });
 });
 
