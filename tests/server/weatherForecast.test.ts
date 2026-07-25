@@ -193,4 +193,31 @@ describe("computeRadiationRatio", () => {
       computeRadiationRatio(forecast, historical, now, deadline, TZ),
     ).toBeNull();
   });
+
+  it("returns a defined ratio (not null) for a window narrower than the hourly data grid", () => {
+    // Regression: as a deadline approaches, [now, deadline) shrinks well
+    // below Open-Meteo's hourly grid. A strict-membership filter needs a
+    // point's own timestamp inside the window; a point at the START of its
+    // hourly bucket (12:00) falls outside a window covering only the last 2
+    // minutes of that bucket (12:58–13:00), so it used to be excluded
+    // entirely — forcing a null here even though the bucket's radiation
+    // value legitimately applies across those 2 minutes. Overlap
+    // integration credits that partial-bucket overlap instead.
+    const narrowNow = moment.tz("2026-07-15 12:58", TZ);
+    const narrowDeadline = moment.tz("2026-07-15 13:00", TZ);
+    const forecast = [point("2026-07-15 12:00", 60)];
+    const historical = [
+      point("2026-07-14 12:00", 60),
+      point("2026-07-13 12:00", 60),
+    ];
+    expect(
+      computeRadiationRatio(
+        forecast,
+        historical,
+        narrowNow,
+        narrowDeadline,
+        TZ,
+      ),
+    ).toBeCloseTo(1, 5);
+  });
 });

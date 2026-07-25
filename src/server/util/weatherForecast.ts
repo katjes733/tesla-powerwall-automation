@@ -82,6 +82,44 @@ export async function fetchHistoricalRadiation(
   });
 }
 
+const HOURLY_INTERVAL_MINUTES = 60;
+
+interface OverlapSum {
+  sum: number;
+  hadOverlap: boolean;
+}
+
+// Overlaps each hourly point's own HOURLY_INTERVAL_MINUTES-wide bucket
+// against [fromMins, toMins) rather than requiring the point's time-of-day
+// to fall strictly inside it. Mirrors solarForecast.ts's windowEnergyKwh:
+// Open-Meteo data is hourly, so a window narrower than an hour (routine in
+// the minutes right before any deadline) would otherwise catch zero grid
+// points depending on alignment, flickering the ratio between "found a
+// point" and null.
+function windowOverlapSum(
+  points: { todMins: number; radiation: number }[],
+  fromMins: number,
+  toMins: number,
+): OverlapSum {
+  let sum = 0;
+  let hadOverlap = false;
+  for (const p of points) {
+    const bucketStart = p.todMins;
+    const bucketEnd = p.todMins + HOURLY_INTERVAL_MINUTES;
+    const overlapMins =
+      Math.min(bucketEnd, toMins) - Math.max(bucketStart, fromMins);
+    if (overlapMins > 0) {
+      hadOverlap = true;
+      sum += p.radiation * (overlapMins / HOURLY_INTERVAL_MINUTES);
+    }
+  }
+  return { sum, hadOverlap };
+}
+
+function addOverlapSum(a: OverlapSum, b: OverlapSum): OverlapSum {
+  return { sum: a.sum + b.sum, hadOverlap: a.hadOverlap || b.hadOverlap };
+}
+
 // Sums forecasted radiation over [now, deadline] and historical average
 // radiation over the same clock window across the lookback days, returning
 // min(1.0, forecastSum / historicalAvgSum) — clamped so a better-than-average
@@ -99,35 +137,67 @@ export function computeRadiationRatio(
     return null;
   }
 
+  // Forecast points already carry absolute timestamps for the real window
+  // being evaluated, so overlap them directly in epoch-ms space — no
+  // calendar-day wrap ambiguity to resolve here.
   const nowMs = now.valueOf();
   const deadlineMs = deadline.valueOf();
-  const forecastSum = forecastPoints
-    .filter((p) => p.time.getTime() >= nowMs && p.time.getTime() <= deadlineMs)
-    .reduce((sum, p) => sum + p.radiation, 0);
+  const intervalMs = HOURLY_INTERVAL_MINUTES * 60 * 1000;
+  let forecastSum = 0;
+  let forecastHadOverlap = false;
+  for (const p of forecastPoints) {
+    const bucketStart = p.time.getTime();
+    const bucketEnd = bucketStart + intervalMs;
+    const overlapMs =
+      Math.min(bucketEnd, deadlineMs) - Math.max(bucketStart, nowMs);
+    if (overlapMs > 0) {
+      forecastHadOverlap = true;
+      forecastSum += p.radiation * (overlapMs / intervalMs);
+    }
+  }
+  if (!forecastHadOverlap) return null;
 
   const nowMins = now.hours() * 60 + now.minutes();
   const deadlineMins = deadline.hours() * 60 + deadline.minutes();
+  const wraps = nowMins > deadlineMins;
 
   // Group historical points by calendar day (in the site's own timezone),
-  // sum each day's radiation within the same clock window, then average —
-  // mirrors solarForecast.ts's own historical-window-matching approach,
-  // including its wrap-around-midnight handling.
-  const byDate = new Map<string, number>();
+  // then overlap-integrate the same clock window on each date — mirrors
+  // solarForecast.ts's own historical-window-matching approach, including
+  // its wrap-around-midnight handling.
+  const byDate = new Map<string, { todMins: number; radiation: number }[]>();
   for (const point of historicalPoints) {
     const m = moment.tz(point.time, timezone);
-    const todMins = m.hours() * 60 + m.minutes();
-    const withinWindow =
-      nowMins <= deadlineMins
-        ? todMins >= nowMins && todMins < deadlineMins
-        : todMins >= nowMins || todMins < deadlineMins;
-    if (!withinWindow) continue;
     const dateKey = m.format("YYYY-MM-DD");
-    byDate.set(dateKey, (byDate.get(dateKey) ?? 0) + point.radiation);
+    const reading = {
+      todMins: m.hours() * 60 + m.minutes(),
+      radiation: point.radiation,
+    };
+    const bucket = byDate.get(dateKey);
+    if (bucket) {
+      bucket.push(reading);
+    } else {
+      byDate.set(dateKey, [reading]);
+    }
   }
-  if (byDate.size === 0) return null;
 
-  const historicalAvgSum =
-    Array.from(byDate.values()).reduce((a, b) => a + b, 0) / byDate.size;
+  let historicalTotal = 0;
+  let daysUsed = 0;
+  for (const points of byDate.values()) {
+    const { sum, hadOverlap } = wraps
+      ? addOverlapSum(
+          windowOverlapSum(points, nowMins, 24 * 60),
+          windowOverlapSum(points, 0, deadlineMins),
+        )
+      : windowOverlapSum(points, nowMins, deadlineMins);
+    // No data at all for this date/window — skip; don't count as a zero day.
+    if (!hadOverlap) continue;
+    historicalTotal += sum;
+    daysUsed += 1;
+  }
+  if (daysUsed === 0) return null;
+
+  const historicalAvgSum = historicalTotal / daysUsed;
   if (historicalAvgSum <= 0) return null;
 
   return Math.min(1.0, forecastSum / historicalAvgSum);
