@@ -409,7 +409,6 @@ export default function EnergyFlow({
   const solarIn = Math.max(solar, 0);
   const gridIn = Math.max(grid, 0);
   const battDischIn = Math.max(battery, 0);
-  const totalIn = solarIn + gridIn + battDischIn;
   const battChargeOut = Math.max(-battery, 0);
   const gridExpOut = Math.max(-grid, 0);
 
@@ -420,16 +419,23 @@ export default function EnergyFlow({
   const battCharging = battChargeOut >= 100;
   const homeActive = home >= 50;
 
-  // Proportional source fractions
-  const homeSolarFrac = totalIn > 0 ? solarIn / totalIn : 0;
-  const homeGridFrac = totalIn > 0 ? gridIn / totalIn : 0;
-  const homeBattFrac = totalIn > 0 ? battDischIn / totalIn : 0;
-
   // Battery charging attribution: solar fills first, grid covers remainder
   const battSolarIn = Math.min(solarIn, battChargeOut);
   const battGridIn = Math.max(0, battChargeOut - battSolarIn);
   const battTotalIn = battSolarIn + battGridIn;
   const battSolarFrac = battTotalIn > 0 ? battSolarIn / battTotalIn : 0;
+
+  // Home attribution waterfall: solar surplus left over after the battery's
+  // charge need is met feeds home first, then battery discharge, then grid
+  // import covers whatever remains.
+  const solarSurplus = Math.max(0, solarIn - battSolarIn);
+  const solarToHome = Math.min(solarSurplus, home);
+  const battToHome = Math.min(battDischIn, Math.max(0, home - solarToHome));
+  const gridToHome = Math.max(0, home - solarToHome - battToHome);
+
+  const homeSolarFrac = home > 0 ? solarToHome / home : 0;
+  const homeGridFrac = home > 0 ? gridToHome / home : 0;
+  const homeBattFrac = home > 0 ? battToHome / home : 0;
 
   // ── Dash mode: proportional colour gradients on outgoing lines ──────────────
   const homeActiveSrcCount = [homeSolarFrac, homeBattFrac, homeGridFrac].filter(
@@ -481,9 +487,9 @@ export default function EnergyFlow({
   // and all destinations fan out simultaneously in the second half of the cycle.
   const groupedRoutes: GroupedRoute[] = [];
   if (connected && ANIM_STYLE === "pulse") {
-    const solarToHomeW = homeSolarFrac * home;
-    const gridToHomeW = homeGridFrac * home;
-    const battToHomeW = homeBattFrac * home;
+    const solarToHomeW = solarToHome;
+    const gridToHomeW = gridToHome;
+    const battToHomeW = battToHome;
 
     // Solar: can feed battery, home, and/or grid export
     if (solarActive) {
