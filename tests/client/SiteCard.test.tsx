@@ -201,6 +201,12 @@ describe("SiteCard — collapsed site-details row", () => {
     expect(screen.queryByText("Firmware")).not.toBeInTheDocument();
   });
 
+  it("shows Grid charging as Enabled when the API omits disallow_charge_from_grid_with_solar_installed (grid charging allowed)", () => {
+    renderCard({ info: { ...SITE_INFO, components: {} } });
+    const trigger = screen.getByTestId("site-details-trigger");
+    expect(within(trigger).getByText("Enabled")).toBeInTheDocument();
+  });
+
   it("opens a dialog with the full site details on click", async () => {
     renderCard({ info: SITE_INFO });
     const user = userEvent.setup();
