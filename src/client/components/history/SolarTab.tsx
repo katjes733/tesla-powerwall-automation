@@ -34,6 +34,18 @@ export default function SolarTab({ points, timezone }: Props) {
   return (
     <Box display="flex" flexDirection="column" gap={3}>
       <ChartContainer>
+        <Box mb={1}>
+          <Typography variant="caption" color="text.secondary">
+            Total Generated
+          </Typography>
+          <Typography
+            variant="h6"
+            fontWeight={700}
+            sx={{ fontSize: { xs: "1.1rem", sm: "1.25rem" } }}
+          >
+            {solarKwh.toFixed(2)} kWh
+          </Typography>
+        </Box>
         <Typography
           variant="caption"
           color="text.secondary"
