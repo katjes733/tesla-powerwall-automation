@@ -111,6 +111,55 @@ describe("SmartChargingBar — rich forecast mode", () => {
     expect(screen.queryByText(/⚡/)).not.toBeInTheDocument();
   });
 
+  it("drops the grid contribution label to a second line when it would overlap the solar label", () => {
+    renderBar({
+      ...BASE,
+      soc: 90,
+      situation: "waiting",
+      peakOrDeadlineAt: "2026-07-13T20:45:00.000Z",
+      gridStartAt: "2026-07-13T19:30:00.000Z",
+      targetSoc: 100,
+      predictedSocAtPeak: 96,
+      targetGapPct: 4,
+      solarContributionPct: 2,
+      gridContributionPct: 4,
+    });
+
+    // Natural centers (91% and 94%) are only 3 points apart — closer than a
+    // "☀ N%"-sized label is wide — so grid drops to a second line, still
+    // centered on its own segment (no horizontal change for either label).
+    const solarLabel = screen.getByText("☀ 2%");
+    expect(solarLabel).toHaveStyle({ left: "91%", top: "0px" });
+    expect(screen.getByText("⚡ 4%")).toHaveStyle({
+      left: "94%",
+      top: "14px",
+    });
+
+    // The row's own reserved height never changes — the dropped label
+    // overflows it rather than growing it, so nothing below (the caption)
+    // shifts position because of the collision.
+    expect(solarLabel.parentElement).toHaveStyle({ height: "14px" });
+  });
+
+  it("leaves solar/grid contribution labels on one line at their natural segment centers when there's no collision risk", () => {
+    renderBar({
+      ...BASE,
+      situation: "waiting",
+      peakOrDeadlineAt: "2026-07-13T20:45:00.000Z",
+      gridStartAt: "2026-07-13T19:30:00.000Z",
+      soc: 40,
+      targetSoc: 70,
+      solarContributionPct: 20,
+      gridContributionPct: 10,
+      predictedSocAtPeak: 70,
+    });
+
+    // Segments are wide enough apart (15-point gap) that no stacking is
+    // needed — labels display exactly as before, both on line one.
+    expect(screen.getByText("☀ 20%")).toHaveStyle({ left: "50%", top: "0px" });
+    expect(screen.getByText("⚡ 10%")).toHaveStyle({ left: "65%", top: "0px" });
+  });
+
   it("clamps an overflowing solarContributionPct to the bar's remaining room instead of showing a confusing >100% number", () => {
     const { container } = renderBar({
       ...BASE,

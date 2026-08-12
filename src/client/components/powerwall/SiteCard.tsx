@@ -457,6 +457,18 @@ export function SmartChargingBar({
   const { isRich, predicted, solarPct, gridPct, caption } =
     computeChargeBreakdown(data, timezone);
   const targetPct = Math.min(100, data.targetSoc);
+  const trackColor = theme.palette.action.disabledBackground;
+
+  // Solar/grid contribution labels sit centered over their own segment. At
+  // small contributions those centers land only a few percent apart —
+  // closer than a "☀ N%"-sized label is wide — so they'd overlap. Drop the
+  // grid label to a second line in that case; otherwise both display as
+  // before, centered on their segment on the same line.
+  const MIN_LABEL_GAP_PCT = 8;
+  const solarCenter = data.soc + solarPct / 2;
+  const gridCenter = data.soc + solarPct + gridPct / 2;
+  const labelsCollide =
+    solarPct > 0 && gridPct > 0 && gridCenter - solarCenter < MIN_LABEL_GAP_PCT;
 
   return (
     <Box
@@ -560,6 +572,11 @@ export function SmartChargingBar({
                   left: `${data.soc}%`,
                   width: `${solarPct}%`,
                   backgroundColor: "#f59e0b",
+                  // A 2px surface-color gap separates this from the SOC
+                  // segment it abuts, so it stays a distinct sliver instead
+                  // of blurring into neighboring fill even at a few % width.
+                  borderLeft:
+                    solarPct > 0 ? `2px solid ${trackColor}` : undefined,
                 }}
               />
               <Box
@@ -569,6 +586,8 @@ export function SmartChargingBar({
                   left: `${data.soc + solarPct}%`,
                   width: `${gridPct}%`,
                   backgroundColor: theme.palette.secondary.main,
+                  borderLeft:
+                    gridPct > 0 ? `2px solid ${trackColor}` : undefined,
                 }}
               />
             </>
@@ -619,19 +638,23 @@ export function SmartChargingBar({
         </Box>
       </Box>
       {isRich && (solarPct > 0 || gridPct > 0) && (
+        // Height/margin stay fixed no matter what — this row's contribution
+        // to the layout (and so the caption's position right after it) never
+        // changes. When stacked, the grid label simply overflows this box
+        // downward (it's absolutely positioned, so that overflow doesn't
+        // push the caption) rather than the row growing to fit it.
         <Box sx={{ position: "relative", width: "100%", height: 14, mt: 0.25 }}>
           {solarPct > 0 && (
             <Typography
               variant="caption"
               sx={{
                 position: "absolute",
-                top: 0,
                 transform: "translateX(-50%)",
                 whiteSpace: "nowrap",
                 color: "text.secondary",
                 fontSize: 10,
               }}
-              style={{ left: `${data.soc + solarPct / 2}%` }}
+              style={{ left: `${solarCenter}%`, top: 0 }}
             >
               ☀ {solarPct.toFixed(0)}%
             </Typography>
@@ -641,13 +664,12 @@ export function SmartChargingBar({
               variant="caption"
               sx={{
                 position: "absolute",
-                top: 0,
                 transform: "translateX(-50%)",
                 whiteSpace: "nowrap",
                 color: "text.secondary",
                 fontSize: 10,
               }}
-              style={{ left: `${data.soc + solarPct + gridPct / 2}%` }}
+              style={{ left: `${gridCenter}%`, top: labelsCollide ? 14 : 0 }}
             >
               ⚡ {gridPct.toFixed(0)}%
             </Typography>
