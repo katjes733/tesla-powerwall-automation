@@ -1,6 +1,8 @@
 import Box from "@mui/material/Box";
 import Divider from "@mui/material/Divider";
 import Typography from "@mui/material/Typography";
+import ArrowUpwardIcon from "@mui/icons-material/ArrowUpward";
+import ArrowDownwardIcon from "@mui/icons-material/ArrowDownward";
 import EnergyChart, { ChartContainer } from "./EnergyChart";
 import EnergySummaryCards from "./EnergySummaryCards";
 import {
@@ -58,6 +60,40 @@ export default function GridTab({ points, timezone }: Props) {
   return (
     <Box display="flex" flexDirection="column" gap={3}>
       <ChartContainer>
+        <Box display="flex" gap={3} mb={1}>
+          <Box>
+            <Box display="flex" alignItems="center" gap={0.25}>
+              <ArrowUpwardIcon sx={{ fontSize: 14, color: "text.secondary" }} />
+              <Typography variant="caption" color="text.secondary">
+                Imported
+              </Typography>
+            </Box>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ fontSize: { xs: "1.1rem", sm: "1.25rem" } }}
+            >
+              {gridImportKwh.toFixed(2)} kWh
+            </Typography>
+          </Box>
+          <Box>
+            <Box display="flex" alignItems="center" gap={0.25}>
+              <ArrowDownwardIcon
+                sx={{ fontSize: 14, color: "text.secondary" }}
+              />
+              <Typography variant="caption" color="text.secondary">
+                Exported
+              </Typography>
+            </Box>
+            <Typography
+              variant="h6"
+              fontWeight={700}
+              sx={{ fontSize: { xs: "1.1rem", sm: "1.25rem" } }}
+            >
+              {gridExportKwh.toFixed(2)} kWh
+            </Typography>
+          </Box>
+        </Box>
         <Typography
           variant="caption"
           color="text.secondary"
