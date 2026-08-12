@@ -342,7 +342,7 @@ router.delete("/credentials/:id", requireAuth, async (req, res, next) => {
     }
 
     const deleted = await webauthnCredentials.deleteForUser(
-      req.params.id,
+      req.params.id as string,
       user.id,
     );
     if (!deleted) {
