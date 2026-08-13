@@ -1002,9 +1002,7 @@ function FlowSettings({
 
   return (
     <>
-      <Typography variant="subtitle1">
-        When Powerwall state of charge is:
-      </Typography>
+      <Typography variant="subtitle1">When energy flow is:</Typography>
       <Box
         sx={{
           bgcolor: alpha(
