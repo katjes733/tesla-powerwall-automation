@@ -9,7 +9,7 @@ import useMediaQuery from "@mui/material/useMediaQuery";
 
 import { useAuth } from "../auth/AuthContext";
 import { useCallback, useRef, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router";
 import type { ActionKey } from "~/shared/permissions/schema";
 
 interface NavItem {

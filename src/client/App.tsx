@@ -6,7 +6,7 @@ import { AdapterDayjs } from "@mui/x-date-pickers/AdapterDayjs";
 import NavMenu from "./components/layout/NavMenu";
 import MainContainer from "./components/layout/MainContainer";
 import Footer from "./components/layout/Footer";
-import { Route, Navigate, Routes } from "react-router-dom";
+import { Route, Navigate, Routes } from "react-router";
 import { AuthProvider, useAuth } from "./components/auth/AuthContext";
 import HealthCards from "./components/health/Health";
 import Login from "./components/auth/Login";

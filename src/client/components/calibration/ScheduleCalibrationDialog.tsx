@@ -11,7 +11,7 @@ import Typography from "@mui/material/Typography";
 import { DateTimePicker } from "@mui/x-date-pickers/DateTimePicker";
 import dayjs, { type Dayjs } from "dayjs";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link as RouterLink } from "react-router-dom";
+import { Link as RouterLink } from "react-router";
 import { axiosInstance } from "../auth/AuthContext";
 
 type CalibrationType = "calibrate_grid_charge_rate" | "calibrate_charge_curve";

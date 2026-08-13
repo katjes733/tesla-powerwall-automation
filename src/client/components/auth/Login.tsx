@@ -9,7 +9,7 @@ import Paper from "@mui/material/Paper";
 import FaceIcon from "@mui/icons-material/Face";
 import KeyIcon from "@mui/icons-material/Key";
 import React from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 import { useNotification } from "../notification/NotificationContext";
 import {
   WEBAUTHN_CREDENTIAL_STORAGE_KEY,

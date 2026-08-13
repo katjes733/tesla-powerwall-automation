@@ -10,7 +10,7 @@ import {
   useMemo,
 } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import {
   startAuthentication,
   startRegistration,
