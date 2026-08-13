@@ -9,8 +9,8 @@ import {
   Typography,
 } from "@mui/material";
 import { WebAuthnError } from "@simplewebauthn/browser";
-import { useAuth } from "./AuthContext";
-import { useNotification } from "~/client/components/notification/NotificationContext";
+import { useAuth } from "./useAuth";
+import { useNotification } from "~/client/components/notification/useNotification";
 import { getPasskeyLabel, getDefaultPasskeyName } from "./passkeyLabel";
 
 // Rendered once, globally (see App.tsx) rather than from Login.tsx — Login

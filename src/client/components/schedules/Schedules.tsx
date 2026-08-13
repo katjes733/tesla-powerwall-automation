@@ -1,7 +1,7 @@
 import Box from "@mui/material/Box";
 import Typography from "@mui/material/Typography";
 import Divider from "@mui/material/Divider";
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "../auth/useAuth";
 import { DataGrid, type GridColDef } from "@mui/x-data-grid";
 import { useCallback, useEffect, useMemo, useRef, useState, memo } from "react";
 import axios from "axios";
@@ -46,7 +46,7 @@ import Checkbox from "@mui/material/Checkbox";
 import OutlinedInput from "@mui/material/OutlinedInput";
 import Slider from "@mui/material/Slider";
 import AddIcon from "@mui/icons-material/Add";
-import { useNotification } from "../notification/NotificationContext";
+import { useNotification } from "../notification/useNotification";
 import { v4 as uuidv4 } from "uuid";
 import Badge from "@mui/material/Badge";
 import CheckIcon from "@mui/icons-material/Check";
@@ -629,7 +629,7 @@ function TimeSettings({
       setSelectedDays(days);
     }
     setTabValid(schedule?.cron);
-  }, [schedule?.cron]);
+  }, [schedule?.cron, setTabValid]);
 
   const handleDaysChange = (_: any, newDays: string[]) => {
     setSelectedDays(newDays);
@@ -975,7 +975,7 @@ function FlowSettings({
 }: FlowSettingsProps) {
   const theme = useTheme();
 
-  const keys = options.map((opt) => opt.key);
+  const keys = useMemo(() => options.map((opt) => opt.key), [options]);
 
   useEffect(() => {
     if (schedule?.conditions) {
@@ -992,7 +992,13 @@ function FlowSettings({
       }
     }
     setTabValid(schedule?.conditions);
-  }, [schedule?.conditions]);
+  }, [
+    schedule?.conditions,
+    keys,
+    setFlowOption,
+    setFlowOptionValues,
+    setTabValid,
+  ]);
 
   return (
     <>
@@ -1133,6 +1139,103 @@ const CALIBRATION_ACTIONS = new Set([
   "calibrate_charge_curve",
 ]);
 
+const ACTION_CONFIG: {
+  [key: string]: {
+    label: string;
+    description?: string;
+    min?: number;
+    max?: number;
+    step?: number;
+    unit?: string;
+    options?: Array<{ key: string; label: string; description: string }>;
+  };
+} = {
+  setBackupReserve: {
+    label: "Set Backup Reserve",
+    description:
+      "Backup reserve determines how much of you Powerwall's stored energy will automatically be saved for backup use. Setting it higher than the current state of charge will charge up the battery from solar or grid.",
+    min: 0,
+    max: 100,
+    step: 1,
+    unit: "%",
+  },
+  setSoftBackupReserve: {
+    label: "Preserve battery charge",
+    description:
+      "Set the Powerwall backup reserve to its current state of charge. This will avoid discharging the battery, for example when charging an EV.",
+  },
+  setOperationalMode: {
+    label: "Set Operational Mode",
+    options: [
+      {
+        key: "selfPowered",
+        label: "Self Powered",
+        description:
+          "Use stored energy to power your home after the sun goes down. Reduces your reliance on the grid.",
+      },
+      {
+        key: "timeBasedControl",
+        label: "Time-Based Control",
+        description:
+          "Use stored energy to maximize savings based on your utility plan. Gives you the lowest energy bill.",
+      },
+    ],
+  },
+  setEnergyExports: {
+    label: "Set Energy Exports",
+    options: [
+      {
+        key: "solarOnly",
+        label: "Solar Only",
+        description:
+          "In Time-Based Control, your system will only send solar energy to the grid during high-value time periods. Stored Powerwall energy will serve home loads.",
+      },
+      {
+        key: "everything",
+        label: "Everything (solar and battery)",
+        description:
+          "Powerwall will export both solar production and stored Powerwall energy to the grid during high-cost time periods.",
+      },
+    ],
+  },
+  setGridCharging: {
+    label: "Set Grid Charging",
+    options: [
+      {
+        key: "enabled",
+        label: "Enabled",
+        description:
+          "Powerwall will charge from the grid to your backup reserve and for daily use in Time-Based Control.",
+      },
+      {
+        key: "disabled",
+        label: "Disabled",
+        description:
+          "Powerwall will not charge from the grid and only use solar energy to charge the battery.",
+      },
+    ],
+  },
+  setSmartGridCharging: {
+    label: "Smart Grid Charging",
+    description:
+      "Charges the battery to the target level before each on-peak period. Grid charging supplements solar only when solar alone cannot reach the target in time. Automatically disabled when the peak period begins.",
+    min: 0,
+    max: 100,
+    step: 1,
+    unit: "%",
+  },
+  calibrate_grid_charge_rate: {
+    label: "Calibrate Grid Charge Rate",
+    description:
+      "Runs grid charge rate calibration for each selected site. Requires SOC < 80%, solar < 0.1 kW, on-grid, and off-peak. If conditions are not met at run time, the occurrence is skipped and you will receive an email.",
+  },
+  calibrate_charge_curve: {
+    label: "Calibrate Charge Curve",
+    description:
+      "Runs charge curve calibration for each selected site (up to 3 h). Requires SOC < 85%, on-grid, and off-peak. If conditions are not met at run time, the occurrence is skipped and you will receive an email.",
+  },
+};
+
 function ActionConfigDialog({
   selectedAction,
   setSelectedAction,
@@ -1143,102 +1246,6 @@ function ActionConfigDialog({
   readOnly = false,
 }: ActionProps) {
   const theme = useTheme();
-  const actionConfig: {
-    [key: string]: {
-      label: string;
-      description?: string;
-      min?: number;
-      max?: number;
-      step?: number;
-      unit?: string;
-      options?: Array<{ key: string; label: string; description: string }>;
-    };
-  } = {
-    setBackupReserve: {
-      label: "Set Backup Reserve",
-      description:
-        "Backup reserve determines how much of you Powerwall's stored energy will automatically be saved for backup use. Setting it higher than the current state of charge will charge up the battery from solar or grid.",
-      min: 0,
-      max: 100,
-      step: 1,
-      unit: "%",
-    },
-    setSoftBackupReserve: {
-      label: "Preserve battery charge",
-      description:
-        "Set the Powerwall backup reserve to its current state of charge. This will avoid discharging the battery, for example when charging an EV.",
-    },
-    setOperationalMode: {
-      label: "Set Operational Mode",
-      options: [
-        {
-          key: "selfPowered",
-          label: "Self Powered",
-          description:
-            "Use stored energy to power your home after the sun goes down. Reduces your reliance on the grid.",
-        },
-        {
-          key: "timeBasedControl",
-          label: "Time-Based Control",
-          description:
-            "Use stored energy to maximize savings based on your utility plan. Gives you the lowest energy bill.",
-        },
-      ],
-    },
-    setEnergyExports: {
-      label: "Set Energy Exports",
-      options: [
-        {
-          key: "solarOnly",
-          label: "Solar Only",
-          description:
-            "In Time-Based Control, your system will only send solar energy to the grid during high-value time periods. Stored Powerwall energy will serve home loads.",
-        },
-        {
-          key: "everything",
-          label: "Everything (solar and battery)",
-          description:
-            "Powerwall will export both solar production and stored Powerwall energy to the grid during high-cost time periods.",
-        },
-      ],
-    },
-    setGridCharging: {
-      label: "Set Grid Charging",
-      options: [
-        {
-          key: "enabled",
-          label: "Enabled",
-          description:
-            "Powerwall will charge from the grid to your backup reserve and for daily use in Time-Based Control.",
-        },
-        {
-          key: "disabled",
-          label: "Disabled",
-          description:
-            "Powerwall will not charge from the grid and only use solar energy to charge the battery.",
-        },
-      ],
-    },
-    setSmartGridCharging: {
-      label: "Smart Grid Charging",
-      description:
-        "Charges the battery to the target level before each on-peak period. Grid charging supplements solar only when solar alone cannot reach the target in time. Automatically disabled when the peak period begins.",
-      min: 0,
-      max: 100,
-      step: 1,
-      unit: "%",
-    },
-    calibrate_grid_charge_rate: {
-      label: "Calibrate Grid Charge Rate",
-      description:
-        "Runs grid charge rate calibration for each selected site. Requires SOC < 80%, solar < 0.1 kW, on-grid, and off-peak. If conditions are not met at run time, the occurrence is skipped and you will receive an email.",
-    },
-    calibrate_charge_curve: {
-      label: "Calibrate Charge Curve",
-      description:
-        "Runs charge curve calibration for each selected site (up to 3 h). Requires SOC < 85%, on-grid, and off-peak. If conditions are not met at run time, the occurrence is skipped and you will receive an email.",
-    },
-  };
   const [tempValue, setTempValue] = useState<string | number | null>(null);
   const [peakWarning, setPeakWarning] = useState<{
     hasTouData: boolean;
@@ -1246,7 +1253,7 @@ function ActionConfigDialog({
   } | null>(null);
   useEffect(() => {
     if (selectedAction !== null) {
-      const config = actionConfig[selectedAction];
+      const config = ACTION_CONFIG[selectedAction];
       let raw: string | number | null = actionValues[selectedAction];
       let initial: string | number | null;
       if (selectedAction === "setSmartGridCharging") {
@@ -1325,7 +1332,7 @@ function ActionConfigDialog({
   }, [selectedAction, schedule?.cron, schedule?.site_ids]);
 
   if (!selectedAction) return null;
-  const config = actionConfig[selectedAction];
+  const config = ACTION_CONFIG[selectedAction];
   const value = tempValue ?? 20;
   return (
     <Dialog open onClose={() => setSelectedAction(null)} maxWidth="xs">
@@ -2927,6 +2934,26 @@ export default function Schedules() {
     smart: false,
     holiday: false,
   });
+  // Stable per-tab setters — each tab's settings component takes a plain
+  // `setTabValid(valid: boolean)` prop and lists it as a hook dependency, so
+  // these must keep the same identity across renders rather than being
+  // recreated as inline lambdas at each call site.
+  const setTimeTabValid = useCallback(
+    (valid: boolean) => setTabValid((v) => ({ ...v, time: valid })),
+    [],
+  );
+  const setPowerwallTabValid = useCallback(
+    (valid: boolean) => setTabValid((v) => ({ ...v, powerwall: valid })),
+    [],
+  );
+  const setFlowTabValid = useCallback(
+    (valid: boolean) => setTabValid((v) => ({ ...v, flow: valid })),
+    [],
+  );
+  const setSmartTabValid = useCallback(
+    (valid: boolean) => setTabValid((v) => ({ ...v, smart: valid })),
+    [],
+  );
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [scheduleToDelete, setScheduleToDelete] = useState<any | null>(null);
   const [selectedAction, setSelectedAction] = useState<string | null>(null);
@@ -3716,9 +3743,7 @@ export default function Schedules() {
               <TimeSettings
                 schedule={schedule}
                 setSchedule={setSchedule}
-                setTabValid={(valid) =>
-                  setTabValid((v) => ({ ...v, time: valid }))
-                }
+                setTabValid={setTimeTabValid}
                 readOnly={dialogReadOnly}
               />
               <ActionList
@@ -3764,9 +3789,7 @@ export default function Schedules() {
                 setPowerwallOptionValues={setPowerwallOptionValues}
                 schedule={schedule}
                 setSchedule={setSchedule}
-                setTabValid={(valid) =>
-                  setTabValid((v) => ({ ...v, powerwall: valid }))
-                }
+                setTabValid={setPowerwallTabValid}
                 readOnly={dialogReadOnly}
               />
               <BetweenHours
@@ -3797,9 +3820,7 @@ export default function Schedules() {
                 setFlowOptionValues={setFlowOptionValues}
                 schedule={schedule}
                 setSchedule={setSchedule}
-                setTabValid={(valid) =>
-                  setTabValid((v) => ({ ...v, flow: valid }))
-                }
+                setTabValid={setFlowTabValid}
                 readOnly={dialogReadOnly}
               />
               <BetweenHours
@@ -3825,9 +3846,7 @@ export default function Schedules() {
               <SmartSettings
                 schedule={schedule}
                 setSchedule={setSchedule}
-                setTabValid={(valid) =>
-                  setTabValid((v) => ({ ...v, smart: valid }))
-                }
+                setTabValid={setSmartTabValid}
                 actionValues={actionValues}
                 setSelectedAction={setSelectedAction}
                 tariffInfo={tariffInfo}

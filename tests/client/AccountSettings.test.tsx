@@ -9,17 +9,20 @@ const mockPost = vi.fn();
 const mockDelete = vi.fn();
 const mockRegisterPasskey = vi.fn();
 
-vi.mock("~/client/components/auth/AuthContext", () => ({
+vi.mock("~/client/components/auth/authClient", () => ({
   axiosInstance: {
     get: (...args: unknown[]) => mockGet(...args),
     post: (...args: unknown[]) => mockPost(...args),
     delete: (...args: unknown[]) => mockDelete(...args),
   },
-  useAuth: () => ({ registerPasskey: mockRegisterPasskey }),
   WEBAUTHN_CREDENTIAL_STORAGE_KEY: "webauthnLastCredentialId",
 }));
 
-vi.mock("~/client/components/notification/NotificationContext", () => ({
+vi.mock("~/client/components/auth/useAuth", () => ({
+  useAuth: () => ({ registerPasskey: mockRegisterPasskey }),
+}));
+
+vi.mock("~/client/components/notification/useNotification", () => ({
   useNotification: () => ({ showNotification }),
 }));
 

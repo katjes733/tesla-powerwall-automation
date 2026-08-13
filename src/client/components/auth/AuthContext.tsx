@@ -1,109 +1,21 @@
 import { Backdrop, Box, CircularProgress, Typography } from "@mui/material";
-import axios from "axios";
-import {
-  createContext,
-  useState,
-  useEffect,
-  useContext,
-  useCallback,
-  useRef,
-  useMemo,
-} from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useNavigate } from "react-router";
 import {
   startAuthentication,
   startRegistration,
   platformAuthenticatorIsAvailable,
-  WebAuthnError,
 } from "@simplewebauthn/browser";
 import { getElementState } from "~/shared/permissions/profile";
 import type { AccessLevel, ActionKey } from "~/shared/permissions/schema";
-import type { ProfileName } from "~/shared/permissions/profile";
-
-export const axiosInstance = axios.create({ timeout: 5000 });
-
-// Stashed on successful passkey registration/login so the Account Settings
-// credential list can tag "This device" and the auto-refocus sign-in below
-// only fires for devices that have actually enrolled a passkey before.
-export const WEBAUTHN_CREDENTIAL_STORAGE_KEY = "webauthnLastCredentialId";
-
-// Set when the user picks "Don't ask again" on the post-login "set up a
-// passkey?" prompt — checked alongside WEBAUTHN_CREDENTIAL_STORAGE_KEY so a
-// declined offer doesn't get re-asked on every future password login.
-export const WEBAUTHN_PROMPT_DISMISSED_KEY = "webauthnPromptDismissed";
-
-// A loginWithPasskey() rejection means this device's remembered credential no
-// longer works, either because the server rejected it (removed on another
-// device — surfaces as a 401) or because the browser itself reported no
-// usable credential before ever reaching the server (a NotAllowedError,
-// which @simplewebauthn/browser passes through as
-// ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY). WebAuthn deliberately uses that same
-// client-side error for both "no credential exists" and "user declined an
-// existing one" — the spec forbids a site from telling those apart, so this
-// errs toward treating it as stale; Conditional UI still works independently
-// of the marker this clears, so a legitimate credential remains reachable.
-export function isStalePasskeyError(error: any): boolean {
-  return (
-    error?.response?.status === 401 ||
-    (error instanceof WebAuthnError &&
-      error.code === "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY")
-  );
-}
-
-export interface SessionUser {
-  loginEmail: string;
-  teslaAccountEmail: string;
-  accountType: "owner" | "delegate";
-  profile: ProfileName;
-  siteIds: string[] | "*";
-  // False for a brand-new self-signup owner who hasn't completed Tesla OAuth
-  // yet — App.tsx/NavMenu restrict them to the Maintenance page until they do.
-  accountLinked: boolean;
-}
-
-interface AuthContextType {
-  user: SessionUser | null;
-  login: (username: string, password: string) => Promise<void>;
-  loginWithPasskey: (opts?: {
-    silent?: boolean;
-    autofill?: boolean;
-  }) => Promise<void>;
-  registerPasskey: (nickname?: string) => Promise<void>;
-  extendSession: () => Promise<void>;
-  logout: () => Promise<void>;
-  newSessionId: () => void;
-  loading: boolean;
-  sessionExpiry: any;
-  sessionId: string | null;
-  setSessionExpiry: (expiry: any) => void;
-  getElementState: (action: ActionKey) => AccessLevel;
-  hasSiteAccess: (siteId: string | null | undefined) => boolean;
-  isAdmin: boolean;
-  passkeyPromptOpen: boolean;
-  closePasskeyPrompt: () => void;
-  dismissPasskeyPromptPermanently: () => void;
-}
-
-export const AuthContext = createContext<AuthContextType>({
-  user: null,
-  login: async () => {},
-  loginWithPasskey: async () => {},
-  registerPasskey: async () => {},
-  extendSession: async () => {},
-  logout: async () => {},
-  newSessionId: () => {},
-  loading: false,
-  sessionExpiry: null,
-  sessionId: null,
-  setSessionExpiry: () => {},
-  getElementState: () => "none",
-  hasSiteAccess: () => false,
-  isAdmin: false,
-  passkeyPromptOpen: false,
-  closePasskeyPrompt: () => {},
-  dismissPasskeyPromptPermanently: () => {},
-});
+import {
+  axiosInstance,
+  WEBAUTHN_CREDENTIAL_STORAGE_KEY,
+  WEBAUTHN_PROMPT_DISMISSED_KEY,
+  isStalePasskeyError,
+} from "./authClient";
+import { AuthContext, type SessionUser } from "./authContextValue";
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
@@ -586,5 +498,3 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     </>
   );
 };
-
-export const useAuth = () => useContext(AuthContext);

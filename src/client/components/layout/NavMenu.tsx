@@ -7,7 +7,7 @@ import AppsIcon from "@mui/icons-material/Apps";
 import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 
-import { useAuth } from "../auth/AuthContext";
+import { useAuth } from "../auth/useAuth";
 import { useCallback, useRef, useState } from "react";
 import { useNavigate, useLocation } from "react-router";
 import type { ActionKey } from "~/shared/permissions/schema";
@@ -74,10 +74,10 @@ export default function NavMenu() {
     setAnchorEl(event.currentTarget);
   };
 
-  const handleUserMenuClose = () => {
+  const handleUserMenuClose = useCallback(() => {
     setAnchorEl(null);
     avatarRef.current?.focus();
-  };
+  }, []);
 
   const handleMainMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setMainMenuAnchor(event.currentTarget);

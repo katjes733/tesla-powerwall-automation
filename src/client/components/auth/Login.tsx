@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useAuth } from "./AuthContext";
+import { useAuth } from "./useAuth";
 import Box from "@mui/material/Box";
 import TextField from "@mui/material/TextField";
 import Button from "@mui/material/Button";
@@ -10,11 +10,11 @@ import FaceIcon from "@mui/icons-material/Face";
 import KeyIcon from "@mui/icons-material/Key";
 import React from "react";
 import { useNavigate, useSearchParams } from "react-router";
-import { useNotification } from "../notification/NotificationContext";
+import { useNotification } from "../notification/useNotification";
 import {
   WEBAUTHN_CREDENTIAL_STORAGE_KEY,
   isStalePasskeyError,
-} from "./AuthContext";
+} from "./authClient";
 import { getPasskeyLabel } from "./passkeyLabel";
 import axios from "axios";
 import {
@@ -401,6 +401,81 @@ export default function Login() {
     [login, email, password, showNotification],
   );
 
+  const validateEmail = (email: string) => {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+  };
+
+  const handleBlurEmail = useCallback(() => {
+    let errorMessage = "";
+    if (!validateEmail(email)) {
+      errorMessage = "Please enter a valid email address.";
+    }
+    setSignupErrors((prevErrors) => ({
+      ...prevErrors,
+      email: errorMessage,
+    }));
+    return !errorMessage;
+  }, [email]);
+
+  const validateSignupCode = (code: string) => {
+    return /^[0-9]{6}$/.test(code);
+  };
+
+  const handleBlurCode = useCallback(() => {
+    let errorMessage = "";
+    if (!validateSignupCode(signupCode)) {
+      errorMessage = "Verification code must be a 6-digit number.";
+    }
+    setSignupErrors((prevErrors) => ({
+      ...prevErrors,
+      code: errorMessage,
+    }));
+    return !errorMessage;
+  }, [signupCode]);
+
+  const validatePassword = (password: string) => {
+    return /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(
+      password,
+    );
+  };
+
+  const handleBlurSignupPassword = useCallback(() => {
+    let errorMessage = "";
+    if (!validatePassword(signupPassword)) {
+      errorMessage =
+        "Signup password must be at least 8 characters long, include an uppercase letter, a number, and a special character.";
+    }
+    setSignupErrors((prevErrors) => ({
+      ...prevErrors,
+      signupPassword: errorMessage,
+    }));
+    return !errorMessage;
+  }, [signupPassword]);
+
+  const handleBlurConfirmPassword = useCallback(() => {
+    let errorMessage = "";
+    if (signupConfirmPassword !== signupPassword) {
+      errorMessage = "New password and confirmation do not match.";
+    }
+    setSignupErrors((prevErrors) => ({
+      ...prevErrors,
+      signupConfirmPassword: errorMessage,
+    }));
+    return !errorMessage;
+  }, [signupConfirmPassword, signupPassword]);
+
+  const validateSignupEmail = useCallback(() => {
+    return handleBlurEmail();
+  }, [handleBlurEmail]);
+
+  const validateSignupCredentials = useCallback(() => {
+    return (
+      handleBlurCode() &&
+      handleBlurSignupPassword() &&
+      handleBlurConfirmPassword()
+    );
+  }, [handleBlurCode, handleBlurSignupPassword, handleBlurConfirmPassword]);
+
   const handleSendCode = useCallback(
     async (e: React.FormEvent) => {
       e.preventDefault();
@@ -443,7 +518,7 @@ export default function Login() {
           setSignupLoading(false);
         });
     },
-    [email, showNotification],
+    [email, showNotification, validateSignupEmail],
   );
 
   const handleResendCode = useCallback(async () => {
@@ -530,86 +605,11 @@ export default function Login() {
     [
       showNotification,
       signupPassword,
-      signupConfirmPassword,
       signupCode,
       email,
+      validateSignupCredentials,
     ],
   );
-
-  const validateEmail = (email: string) => {
-    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-  };
-
-  const handleBlurEmail = useCallback(() => {
-    let errorMessage = "";
-    if (!validateEmail(email)) {
-      errorMessage = "Please enter a valid email address.";
-    }
-    setSignupErrors((prevErrors) => ({
-      ...prevErrors,
-      email: errorMessage,
-    }));
-    return !errorMessage;
-  }, [email]);
-
-  const validateSignupCode = (code: string) => {
-    return /^[0-9]{6}$/.test(code);
-  };
-
-  const handleBlurCode = useCallback(() => {
-    let errorMessage = "";
-    if (!validateSignupCode(signupCode)) {
-      errorMessage = "Verification code must be a 6-digit number.";
-    }
-    setSignupErrors((prevErrors) => ({
-      ...prevErrors,
-      code: errorMessage,
-    }));
-    return !errorMessage;
-  }, [signupCode]);
-
-  const validatePassword = (password: string) => {
-    return /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/.test(
-      password,
-    );
-  };
-
-  const handleBlurSignupPassword = useCallback(() => {
-    let errorMessage = "";
-    if (!validatePassword(signupPassword)) {
-      errorMessage =
-        "Signup password must be at least 8 characters long, include an uppercase letter, a number, and a special character.";
-    }
-    setSignupErrors((prevErrors) => ({
-      ...prevErrors,
-      signupPassword: errorMessage,
-    }));
-    return !errorMessage;
-  }, [signupPassword]);
-
-  const handleBlurConfirmPassword = useCallback(() => {
-    let errorMessage = "";
-    if (signupConfirmPassword !== signupPassword) {
-      errorMessage = "New password and confirmation do not match.";
-    }
-    setSignupErrors((prevErrors) => ({
-      ...prevErrors,
-      signupConfirmPassword: errorMessage,
-    }));
-    return !errorMessage;
-  }, [signupConfirmPassword, signupPassword]);
-
-  const validateSignupEmail = useCallback(() => {
-    return handleBlurEmail();
-  }, [handleBlurEmail]);
-
-  const validateSignupCredentials = useCallback(() => {
-    return (
-      handleBlurCode() &&
-      handleBlurSignupPassword() &&
-      handleBlurConfirmPassword()
-    );
-  }, [handleBlurCode, handleBlurSignupPassword, handleBlurConfirmPassword]);
 
   const onEmailChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => setEmail(e.currentTarget.value),

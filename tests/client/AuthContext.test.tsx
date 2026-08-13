@@ -38,7 +38,8 @@ vi.mock("@simplewebauthn/browser", () => ({
   WebAuthnError: MockWebAuthnError,
 }));
 
-import { AuthProvider, useAuth } from "~/client/components/auth/AuthContext";
+import { AuthProvider } from "~/client/components/auth/AuthContext";
+import { useAuth } from "~/client/components/auth/useAuth";
 
 function Harness() {
   const {

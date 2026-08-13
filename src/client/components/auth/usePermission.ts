@@ -1,4 +1,4 @@
-import { useAuth } from "~/client/components/auth/AuthContext";
+import { useAuth } from "~/client/components/auth/useAuth";
 import type { AccessLevel, ActionKey } from "~/shared/permissions/schema";
 
 // The single source every gated component reads from — "none" (hidden),

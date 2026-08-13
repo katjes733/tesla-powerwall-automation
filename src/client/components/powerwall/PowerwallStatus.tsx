@@ -14,7 +14,7 @@ import PlayCircleIcon from "@mui/icons-material/PlayCircle";
 import RefreshIcon from "@mui/icons-material/Refresh";
 import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { axiosInstance } from "../auth/AuthContext";
+import { axiosInstance } from "../auth/authClient";
 import SiteCard from "./SiteCard";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
 import type { SmartChargingData } from "~/server/util/fleet";

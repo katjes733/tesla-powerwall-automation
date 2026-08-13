@@ -25,14 +25,14 @@ import {
 } from "@simplewebauthn/browser";
 import {
   axiosInstance,
-  useAuth,
   WEBAUTHN_CREDENTIAL_STORAGE_KEY,
-} from "~/client/components/auth/AuthContext";
+} from "~/client/components/auth/authClient";
+import { useAuth } from "~/client/components/auth/useAuth";
 import {
   getPasskeyLabel,
   getDefaultPasskeyName,
 } from "~/client/components/auth/passkeyLabel";
-import { useNotification } from "~/client/components/notification/NotificationContext";
+import { useNotification } from "~/client/components/notification/useNotification";
 
 interface PasskeyCredential {
   id: string;
