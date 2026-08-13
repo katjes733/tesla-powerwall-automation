@@ -34,8 +34,6 @@ interface Props {
   readOnly?: boolean;
 }
 
-const DAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
 type DayPreset = "weekdays" | "weekends" | "all" | "custom";
 
 function getDayPreset(block: TouTimeBlock): DayPreset {

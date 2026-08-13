@@ -241,7 +241,7 @@ const SignupForm = React.memo(
 );
 
 export default function Login() {
-  const { user, login, loginWithPasskey, loading } = useAuth();
+  const { user, login, loginWithPasskey } = useAuth();
   const { showNotification } = useNotification();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -269,7 +269,7 @@ export default function Login() {
     signupPassword: "",
     signupConfirmPassword: "",
   });
-  const [signupEmailExistsError, setSignupEmailExistsError] = useState(false);
+  const [, setSignupEmailExistsError] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 

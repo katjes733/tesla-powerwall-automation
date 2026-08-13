@@ -345,7 +345,7 @@ function parseCronToTimeAndDays(cron: string) {
   const [minute, hour, , , dayOfWeek] = cron.split(" ");
   const pad = (n: string) => (n.length === 1 ? `0${n}` : n);
   const time = `${pad(hour)}:${pad(minute)}`;
-  let days: string[] = [];
+  let days: string[];
   if (dayOfWeek === "*") {
     days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   } else if (/^[0-6](-[0-6])?$/.test(dayOfWeek)) {
@@ -376,11 +376,6 @@ function parseTimeAndDaysToCron(time: string, days: string[]) {
     )
     .join(",");
   return `${minute} ${hour} * * ${dayOfWeek}`;
-}
-
-function isFixedTime(cron: string) {
-  const [minute, hour] = cron.split(" ");
-  return /^\d+$/.test(minute) && /^\d+$/.test(hour);
 }
 
 function humanizeDays(days: string[]): string {
@@ -1050,7 +1045,6 @@ type ActionProps = {
 function ActionList({
   setSelectedAction,
   actionValues,
-  setActionValues,
   excludeKeys,
 }: ActionProps) {
   const theme = useTheme();
@@ -1138,34 +1132,6 @@ const CALIBRATION_ACTIONS = new Set([
   "calibrate_grid_charge_rate",
   "calibrate_charge_curve",
 ]);
-
-function nextCronOccurrence(cron: string): Date | null {
-  if (!cron || cron === "* * * * *") return null;
-  const { time, days } = parseCronToTimeAndDays(cron);
-  if (!time || days.length === 0) return null;
-  const [hour, minute] = time.split(":").map(Number);
-  const dayMap: Record<string, number> = {
-    Sun: 0,
-    Mon: 1,
-    Tue: 2,
-    Wed: 3,
-    Thu: 4,
-    Fri: 5,
-    Sat: 6,
-  };
-  const now = new Date();
-  let earliest: Date | null = null;
-  for (const day of days) {
-    const targetDow = dayMap[day] ?? 0;
-    const candidate = new Date(now);
-    candidate.setHours(hour, minute, 0, 0);
-    let diff = targetDow - now.getDay();
-    if (diff < 0 || (diff === 0 && candidate <= now)) diff += 7;
-    candidate.setDate(candidate.getDate() + diff);
-    if (!earliest || candidate < earliest) earliest = candidate;
-  }
-  return earliest;
-}
 
 function ActionConfigDialog({
   selectedAction,
@@ -1703,7 +1669,6 @@ type SmartSettingsProps = {
 };
 
 function SmartSettings({
-  schedule,
   setSchedule,
   setTabValid,
   actionValues,
