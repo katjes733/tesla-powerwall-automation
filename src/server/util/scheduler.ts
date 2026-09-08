@@ -1,5 +1,8 @@
 import type { ScheduledTask } from "node-cron";
-import { schedule as scheduleTask } from "node-cron";
+import {
+  schedule as scheduleTask,
+  setLogger as setCronLogger,
+} from "node-cron";
 import moment from "moment-timezone";
 import CronExpressionParser from "cron-parser";
 import type {
@@ -50,6 +53,44 @@ import {
 const CALIBRATION_ACTIONS = CALIBRATION_SCHEDULE_ACTIONS;
 
 const schedulerLog = logger.child({ service: "scheduler" });
+
+// node-cron's own internal logging (e.g. "missed execution" warnings — see
+// CRON_MISSED_EXECUTION_TOLERANCE_MS below) defaults to plain console output,
+// invisible to the Loki-backed structured logs everything else in this app
+// relies on. Route it through Pino so a dropped cron fire shows up in the
+// dashboard instead of only in raw container stdout.
+setCronLogger({
+  info: (message) => schedulerLog.info({ source: "node-cron" }, message),
+  warn: (message) => schedulerLog.warn({ source: "node-cron" }, message),
+  error: (message, err) =>
+    message instanceof Error
+      ? schedulerLog.error(
+          { source: "node-cron", err: message },
+          message.message,
+        )
+      : schedulerLog.error(
+          { source: "node-cron", ...(err && { err }) },
+          message,
+        ),
+  debug: (message, err) =>
+    message instanceof Error
+      ? schedulerLog.debug(
+          { source: "node-cron", err: message },
+          message.message,
+        )
+      : schedulerLog.debug(
+          { source: "node-cron", ...(err && { err }) },
+          message,
+        ),
+});
+
+// node-cron's default 1000ms missed-execution tolerance is tight enough that
+// a brief event-loop stall (e.g. several concurrent Fleet API calls/crypto
+// signing landing on the same tick) can silently cancel a whole cron fire
+// instead of just running it a bit late. 30s comfortably absorbs that kind of
+// jitter while still catching a genuinely wedged/down process, which is
+// handled separately by maybeRecoverSchedule's on-restart recovery.
+const CRON_MISSED_EXECUTION_TOLERANCE_MS = 30_000;
 
 // Awaited by every caller (directly, or via notifyOnce's send(), which itself
 // awaits it) — unlike sendEmail (which swallows its own errors internally),
@@ -578,7 +619,10 @@ export class Scheduler {
     const task = scheduleTask(
       schedule.cron,
       () => this.runEvaluation(schedule, triggeredPerProduct),
-      { timezone: schedule.timezone },
+      {
+        timezone: schedule.timezone,
+        missedExecutionTolerance: CRON_MISSED_EXECUTION_TOLERANCE_MS,
+      },
     );
     schedulerLog.info(
       {
@@ -592,6 +636,30 @@ export class Scheduler {
       "Schedule registered",
     );
     this.enabledScheduledTasks.set(schedule.id || "", task);
+
+    // Holiday schedules own the entire day's TOU override — unlike
+    // setSmartGridCharging (which just tries again next minute), there's no
+    // later tick to pick up a dropped fire. If node-cron's tolerance is ever
+    // exceeded anyway, run it as soon as the miss is reported instead of
+    // silently losing the whole day.
+    const isHolidaySchedule = (schedule.actions ?? []).some(
+      (a) => a.action === "setTouHolidayOverride",
+    );
+    if (isHolidaySchedule) {
+      task.on("execution:missed", () => {
+        schedulerLog.warn(
+          { scheduleId: schedule.id, email: maskEmail(schedule.email) },
+          "Holiday schedule missed its cron fire — running fallback evaluation",
+        );
+        this.runEvaluation(schedule, new Map()).catch((err: any) =>
+          schedulerLog.error(
+            { err, scheduleId: schedule.id },
+            "Holiday schedule fallback evaluation failed",
+          ),
+        );
+      });
+    }
+
     await this.maybeRecoverSchedule(schedule);
   }
 
@@ -632,169 +700,177 @@ export class Scheduler {
     // singleton — so there's no shared mutable state that requires sequencing.
     // A per-site catch keeps one failing site from blocking its siblings.
     this.calibrationTask?.stop();
-    this.calibrationTask = scheduleTask("* * * * *", async () => {
-      // Re-read every tick (single indexed query, negligible next to the
-      // per-site API calls below) so accounts registered after startup are
-      // picked up within a minute instead of requiring a server restart.
-      try {
-        this.validEmails = await getAllEmailsFromDb();
-      } catch (err: any) {
-        schedulerLog.error({ err }, "Failed to refresh valid emails");
-      }
-      await Promise.all(
-        this.validEmails.map(async ({ email }) => {
-          try {
-            const fleet = Fleet.getInstance(email, {
-              throwOnError: false,
-              mailOnError: true,
-            });
-            const products = await fleet.getEnergyProducts();
-            await Promise.all(
-              products.map((product) =>
-                fleet.detectCalibration(product).catch((err: any) => {
-                  schedulerLog.error(
-                    {
-                      err,
-                      email: maskEmail(email),
-                      siteId: product.energy_site_id,
-                    },
-                    "Calibration check failed for site",
-                  );
-                }),
-              ),
-            );
-          } catch (err: any) {
-            schedulerLog.error(
-              { err, email: maskEmail(email) },
-              "Calibration check failed",
-            );
-          }
-        }),
-      );
-    });
+    this.calibrationTask = scheduleTask(
+      "* * * * *",
+      async () => {
+        // Re-read every tick (single indexed query, negligible next to the
+        // per-site API calls below) so accounts registered after startup are
+        // picked up within a minute instead of requiring a server restart.
+        try {
+          this.validEmails = await getAllEmailsFromDb();
+        } catch (err: any) {
+          schedulerLog.error({ err }, "Failed to refresh valid emails");
+        }
+        await Promise.all(
+          this.validEmails.map(async ({ email }) => {
+            try {
+              const fleet = Fleet.getInstance(email, {
+                throwOnError: false,
+                mailOnError: true,
+              });
+              const products = await fleet.getEnergyProducts();
+              await Promise.all(
+                products.map((product) =>
+                  fleet.detectCalibration(product).catch((err: any) => {
+                    schedulerLog.error(
+                      {
+                        err,
+                        email: maskEmail(email),
+                        siteId: product.energy_site_id,
+                      },
+                      "Calibration check failed for site",
+                    );
+                  }),
+                ),
+              );
+            } catch (err: any) {
+              schedulerLog.error(
+                { err, email: maskEmail(email) },
+                "Calibration check failed",
+              );
+            }
+          }),
+        );
+      },
+      { missedExecutionTolerance: CRON_MISSED_EXECUTION_TOLERANCE_MS },
+    );
     schedulerLog.info("Calibration detection task initialized");
 
     // Internal task — not user-configurable, idempotent at 6-hour granularity, no recovery mechanism.
     this.curveCronTask?.stop();
-    this.curveCronTask = scheduleTask("0 */6 * * *", async () => {
-      schedulerLog.info(
-        "Running charge curve aggregation and sample purge job",
-      );
-      try {
-        const db = await AppDataSource.getInstance(true);
-        const sampleRepo = db.getRepository<
-          IBasicEntity & ISiteCalibrationSample
-        >("SiteCalibrationSample");
-        const calibRepo = db.getRepository<ISiteCalibration & IBasicEntity>(
-          "SiteCalibration",
+    this.curveCronTask = scheduleTask(
+      "0 */6 * * *",
+      async () => {
+        schedulerLog.info(
+          "Running charge curve aggregation and sample purge job",
         );
+        try {
+          const db = await AppDataSource.getInstance(true);
+          const sampleRepo = db.getRepository<
+            IBasicEntity & ISiteCalibrationSample
+          >("SiteCalibrationSample");
+          const calibRepo = db.getRepository<ISiteCalibration & IBasicEntity>(
+            "SiteCalibration",
+          );
 
-        const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000);
-        const rawGroups = await sampleRepo
-          .createQueryBuilder("s")
-          .select("s.site_id", "site_id")
-          .where("s.creation_time >= :cutoff", { cutoff })
-          .groupBy("s.site_id")
-          .getRawMany<{ site_id: string }>();
+          const cutoff = new Date(Date.now() - 60 * 24 * 3600 * 1000);
+          const rawGroups = await sampleRepo
+            .createQueryBuilder("s")
+            .select("s.site_id", "site_id")
+            .where("s.creation_time >= :cutoff", { cutoff })
+            .groupBy("s.site_id")
+            .getRawMany<{ site_id: string }>();
 
-        const settingsRepo = db.getRepository<IBasicEntity & ISiteSettings>(
-          "SiteSettings",
-        );
+          const settingsRepo = db.getRepository<IBasicEntity & ISiteSettings>(
+            "SiteSettings",
+          );
 
-        for (const { site_id } of rawGroups) {
-          try {
-            const settingsRecord = await settingsRepo.findOne({
-              where: { site_id },
-            });
-            const siteSettings = resolveSiteSettings(
-              settingsRecord?.settings ?? null,
-            );
-            if (!siteSettings.auto_curve_calibration_enabled) {
-              schedulerLog.info(
-                { siteId: site_id },
-                "Curve aggregation skipped — auto calibration disabled for site",
+          for (const { site_id } of rawGroups) {
+            try {
+              const settingsRecord = await settingsRepo.findOne({
+                where: { site_id },
+              });
+              const siteSettings = resolveSiteSettings(
+                settingsRecord?.settings ?? null,
               );
-              continue;
+              if (!siteSettings.auto_curve_calibration_enabled) {
+                schedulerLog.info(
+                  { siteId: site_id },
+                  "Curve aggregation skipped — auto calibration disabled for site",
+                );
+                continue;
+              }
+
+              const existing = await calibRepo.findOne({
+                where: { site_id, calibration_type: "chargeCurve" },
+                order: { creation_time: "DESC" },
+              });
+              const existingData = existing
+                ? (existing.calibration_data as unknown as ChargeCurveCalibrationData)
+                : null;
+
+              // Fetch only samples recorded after the last curve update so each
+              // batch is blended exactly once. Fall back to the full retention
+              // window when no curve exists yet (first-ever build).
+              const since = existing
+                ? new Date(existing.creation_time as unknown as string)
+                : cutoff;
+
+              const samples = (await sampleRepo
+                .createQueryBuilder("s")
+                .where(
+                  "s.site_id = :site_id AND s.calibration_type = :type AND s.creation_time > :since",
+                  { site_id, type: "chargeCurve", since },
+                )
+                .orderBy("s.creation_time", "ASC")
+                .getMany()) as Array<IBasicEntity & ISiteCalibrationSample>;
+
+              if (samples.length === 0) continue;
+
+              const candidate = buildChargeCurveBins(samples);
+              if (!isValidCandidate(candidate)) continue;
+
+              const updated = existingData
+                ? blendChargeCurveBins(existingData, candidate)
+                : candidate;
+
+              const now = new Date();
+              // Only the latest row per site+type is ever read — update it in
+              // place rather than accumulating a new row every 6 hours.
+              await calibRepo.save({
+                ...(existing && { id: existing.id }),
+                site_id,
+                calibration_type: "chargeCurve",
+                calibration_data: updated as unknown as Record<string, unknown>,
+                creation_time: now,
+                modified_time: now,
+              });
+              schedulerLog.info(
+                {
+                  siteId: site_id,
+                  bins: updated.bins.length,
+                  blended: existingData !== null,
+                },
+                "Curve aggregation: charge curve updated",
+              );
+            } catch (err: any) {
+              schedulerLog.error(
+                { err, siteId: site_id },
+                "Curve aggregation failed for site",
+              );
             }
+          }
 
-            const existing = await calibRepo.findOne({
-              where: { site_id, calibration_type: "chargeCurve" },
-              order: { creation_time: "DESC" },
-            });
-            const existingData = existing
-              ? (existing.calibration_data as unknown as ChargeCurveCalibrationData)
-              : null;
-
-            // Fetch only samples recorded after the last curve update so each
-            // batch is blended exactly once. Fall back to the full retention
-            // window when no curve exists yet (first-ever build).
-            const since = existing
-              ? new Date(existing.creation_time as unknown as string)
-              : cutoff;
-
-            const samples = (await sampleRepo
-              .createQueryBuilder("s")
-              .where(
-                "s.site_id = :site_id AND s.calibration_type = :type AND s.creation_time > :since",
-                { site_id, type: "chargeCurve", since },
-              )
-              .orderBy("s.creation_time", "ASC")
-              .getMany()) as Array<IBasicEntity & ISiteCalibrationSample>;
-
-            if (samples.length === 0) continue;
-
-            const candidate = buildChargeCurveBins(samples);
-            if (!isValidCandidate(candidate)) continue;
-
-            const updated = existingData
-              ? blendChargeCurveBins(existingData, candidate)
-              : candidate;
-
-            const now = new Date();
-            // Only the latest row per site+type is ever read — update it in
-            // place rather than accumulating a new row every 6 hours.
-            await calibRepo.save({
-              ...(existing && { id: existing.id }),
-              site_id,
-              calibration_type: "chargeCurve",
-              calibration_data: updated as unknown as Record<string, unknown>,
-              creation_time: now,
-              modified_time: now,
-            });
+          const { affected } = await sampleRepo
+            .createQueryBuilder()
+            .delete()
+            .where("creation_time < :cutoff", { cutoff })
+            .execute();
+          if (affected && affected > 0) {
             schedulerLog.info(
-              {
-                siteId: site_id,
-                bins: updated.bins.length,
-                blended: existingData !== null,
-              },
-              "Curve aggregation: charge curve updated",
-            );
-          } catch (err: any) {
-            schedulerLog.error(
-              { err, siteId: site_id },
-              "Curve aggregation failed for site",
+              { affected },
+              "Curve aggregation: purged expired calibration samples",
             );
           }
-        }
-
-        const { affected } = await sampleRepo
-          .createQueryBuilder()
-          .delete()
-          .where("creation_time < :cutoff", { cutoff })
-          .execute();
-        if (affected && affected > 0) {
-          schedulerLog.info(
-            { affected },
-            "Curve aggregation: purged expired calibration samples",
+        } catch (err: any) {
+          schedulerLog.error(
+            { err },
+            "Charge curve aggregation and sample purge job failed",
           );
         }
-      } catch (err: any) {
-        schedulerLog.error(
-          { err },
-          "Charge curve aggregation and sample purge job failed",
-        );
-      }
-    });
+      },
+      { missedExecutionTolerance: CRON_MISSED_EXECUTION_TOLERANCE_MS },
+    );
     schedulerLog.info(
       "Charge curve aggregation and sample purge task initialized (every 6 hours)",
     );
@@ -803,42 +879,48 @@ export class Scheduler {
     // (expired for >2 hours without being refreshed), which can indicate
     // that automatic token renewal is broken.
     this.tokenExpiryTask?.stop();
-    this.tokenExpiryTask = scheduleTask("0 9 * * *", async () => {
-      try {
-        const tokens = await getAllEmailsWithExpiryFromDb();
-        for (const { email, expiresAt } of tokens) {
-          if (expiresAt && isTokenStale(expiresAt)) {
-            const notifKey = `token_stale_notified:${email}`;
-            const alreadyNotified = await redis.exists(notifKey).catch(() => 1);
-            if (!alreadyNotified) {
-              const recipients = await resolveNotificationRecipients(
-                email,
-                null,
-                "account_health",
-              );
-              await Promise.all(
-                recipients.map((r) =>
-                  sendEmail(
-                    "Powerwall Notification",
-                    `[${new Date().toLocaleString()}] The Tesla access token for ${email} has not been refreshed since ${expiresAt.toLocaleString()}. Schedules for this account may be failing. Please check the server logs or re-authenticate if necessary.`,
-                    r,
+    this.tokenExpiryTask = scheduleTask(
+      "0 9 * * *",
+      async () => {
+        try {
+          const tokens = await getAllEmailsWithExpiryFromDb();
+          for (const { email, expiresAt } of tokens) {
+            if (expiresAt && isTokenStale(expiresAt)) {
+              const notifKey = `token_stale_notified:${email}`;
+              const alreadyNotified = await redis
+                .exists(notifKey)
+                .catch(() => 1);
+              if (!alreadyNotified) {
+                const recipients = await resolveNotificationRecipients(
+                  email,
+                  null,
+                  "account_health",
+                );
+                await Promise.all(
+                  recipients.map((r) =>
+                    sendEmail(
+                      "Powerwall Notification",
+                      `[${new Date().toLocaleString()}] The Tesla access token for ${email} has not been refreshed since ${expiresAt.toLocaleString()}. Schedules for this account may be failing. Please check the server logs or re-authenticate if necessary.`,
+                      r,
+                    ),
                   ),
-                ),
-              );
-              await redis
-                .set(notifKey, "1", "EX", 24 * 60 * 60)
-                .catch(() => {});
+                );
+                await redis
+                  .set(notifKey, "1", "EX", 24 * 60 * 60)
+                  .catch(() => {});
+              }
             }
           }
+        } catch (err: any) {
+          schedulerLog.error({ err }, "Token staleness check failed");
+          sendEmail(
+            "Powerwall Notification",
+            `[${new Date().toLocaleString()}] Token staleness check job failed: ${err?.message ?? "Unknown error"}. Stale token warnings may not have been sent. Please check the server logs.`,
+          );
         }
-      } catch (err: any) {
-        schedulerLog.error({ err }, "Token staleness check failed");
-        sendEmail(
-          "Powerwall Notification",
-          `[${new Date().toLocaleString()}] Token staleness check job failed: ${err?.message ?? "Unknown error"}. Stale token warnings may not have been sent. Please check the server logs.`,
-        );
-      }
-    });
+      },
+      { missedExecutionTolerance: CRON_MISSED_EXECUTION_TOLERANCE_MS },
+    );
     schedulerLog.info(
       "Token staleness check task initialized (daily at 09:00)",
     );
