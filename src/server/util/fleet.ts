@@ -34,7 +34,11 @@ import type {
 import AppDataSource from "~/server/database/datasource";
 import { IsNull } from "typeorm";
 import { v4 as uuidv4 } from "uuid";
-import { isObservedHolidayOnDate } from "~/server/util/holidays";
+import {
+  isObservedHolidayOnDate,
+  getActiveHolidayName,
+} from "~/server/util/holidays";
+import type { ISiteHolidayStatus } from "~/server/database/models/siteHolidayStatus";
 import { getNewTokenWithRefreshToken } from "~/server/util/auth";
 import { retry } from "~/server/util/retry";
 import { sendEmail } from "./mailing";
@@ -2128,6 +2132,29 @@ export class Fleet {
     siteLog.info("Holiday TOU override applied");
   }
 
+  // Persists the outcome of a setTouHolidayOverride evaluation so the
+  // frontend's holiday pill can show whether today's override actually
+  // applied, rather than only whether today matches a configured holiday
+  // date (the blind spot behind the 2026-09-07 Labor Day incident, where the
+  // override silently never ran). One row per site — continuously upserted,
+  // not a history log.
+  private async recordHolidayStatus(
+    siteId: string,
+    status: Omit<ISiteHolidayStatus, "site_id">,
+  ): Promise<void> {
+    const db = await AppDataSource.getInstance();
+    const repo = db.getRepository("SiteHolidayStatus");
+    const existing = await repo.findOne({ where: { site_id: siteId } });
+    const now = new Date();
+    await repo.save({
+      ...(existing && { id: (existing as any).id }),
+      site_id: siteId,
+      ...status,
+      creation_time: (existing as any)?.creation_time ?? now,
+      modified_time: now,
+    });
+  }
+
   private async restoreTou(product: Product): Promise<void> {
     const siteLog = this.log.child({
       siteId: String(product.energy_site_id),
@@ -2221,6 +2248,7 @@ export class Fleet {
       siteId: String(product.energy_site_id),
       siteName: product.site_name,
     });
+    const siteId = String(product.energy_site_id);
     const holidayCond = conditions.find((c) => c.condition === "holidayList");
     const entries = (holidayCond?.value as HolidayEntry[] | undefined) ?? [];
 
@@ -2229,45 +2257,92 @@ export class Fleet {
     const now = moment().tz(tz);
     const today = now.format("YYYY-MM-DD");
     const yesterday = now.clone().subtract(1, "day").format("YYYY-MM-DD");
+    const holidayName = getActiveHolidayName(entries, today);
 
     const tariffV2: Record<string, any> | undefined =
       siteInfo?.tariff_content_v2;
 
-    if (isObservedHolidayOnDate(entries, today)) {
-      siteLog.info(
-        {
-          scheduleAction: "setTouHolidayOverride",
-          data: { today, holidayAction: "override" } satisfies TouHolidayData,
-        },
-        "Holiday TOU override triggered",
-      );
-      if (!tariffV2) {
-        siteLog.warn(
-          "No tariff_content_v2 available — cannot apply holiday TOU override",
+    try {
+      if (isObservedHolidayOnDate(entries, today)) {
+        siteLog.info(
+          {
+            scheduleAction: "setTouHolidayOverride",
+            data: {
+              today,
+              holidayAction: "override",
+            } satisfies TouHolidayData,
+          },
+          "Holiday TOU override triggered",
         );
+        if (!tariffV2) {
+          siteLog.warn(
+            "No tariff_content_v2 available — cannot apply holiday TOU override",
+          );
+          await this.recordHolidayStatus(siteId, {
+            date: today,
+            action: "failed",
+            holiday_name: holidayName,
+            error: "No tariff_content_v2 available",
+            checked_at: new Date(),
+          });
+          return { today, holidayAction: "none" };
+        }
+        await this.applyHolidayTou(product, tariffV2);
+        await this.recordHolidayStatus(siteId, {
+          date: today,
+          action: "override",
+          holiday_name: holidayName,
+          error: null,
+          checked_at: new Date(),
+        });
+        return { today, holidayAction: "override" };
+      } else if (isObservedHolidayOnDate(entries, yesterday)) {
+        siteLog.info(
+          {
+            scheduleAction: "setTouHolidayOverride",
+            data: { today, holidayAction: "restore" } satisfies TouHolidayData,
+          },
+          "Day after holiday — restoring TOU",
+        );
+        await this.restoreTou(product);
+        await this.recordHolidayStatus(siteId, {
+          date: today,
+          action: "restore",
+          holiday_name: null,
+          error: null,
+          checked_at: new Date(),
+        });
+        return { today, holidayAction: "restore" };
+      } else {
+        siteLog.debug(
+          {
+            scheduleAction: "setTouHolidayOverride",
+            data: { today, holidayAction: "none" } satisfies TouHolidayData,
+          },
+          "No holiday action needed",
+        );
+        await this.recordHolidayStatus(siteId, {
+          date: today,
+          action: "none",
+          holiday_name: null,
+          error: null,
+          checked_at: new Date(),
+        });
         return { today, holidayAction: "none" };
       }
-      await this.applyHolidayTou(product, tariffV2);
-      return { today, holidayAction: "override" };
-    } else if (isObservedHolidayOnDate(entries, yesterday)) {
-      siteLog.info(
-        {
-          scheduleAction: "setTouHolidayOverride",
-          data: { today, holidayAction: "restore" } satisfies TouHolidayData,
-        },
-        "Day after holiday — restoring TOU",
-      );
-      await this.restoreTou(product);
-      return { today, holidayAction: "restore" };
-    } else {
-      siteLog.debug(
-        {
-          scheduleAction: "setTouHolidayOverride",
-          data: { today, holidayAction: "none" } satisfies TouHolidayData,
-        },
-        "No holiday action needed",
-      );
-      return { today, holidayAction: "none" };
+    } catch (err: any) {
+      // Persist the failure as a side-channel for the frontend's holiday
+      // pill, then re-throw unchanged — the existing scheduler-level catch
+      // (schedule-failure email, Schedule.last_error) must still fire; this
+      // must never swallow the error.
+      await this.recordHolidayStatus(siteId, {
+        date: today,
+        action: "failed",
+        holiday_name: holidayName,
+        error: err?.message ?? "Unknown error",
+        checked_at: new Date(),
+      }).catch(() => {});
+      throw err;
     }
   }
 

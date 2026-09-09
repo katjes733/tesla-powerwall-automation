@@ -8,12 +8,17 @@ import Chip, { type ChipProps } from "@mui/material/Chip";
 import CircularProgress from "@mui/material/CircularProgress";
 import Divider from "@mui/material/Divider";
 import LinearProgress from "@mui/material/LinearProgress";
+import Tooltip from "@mui/material/Tooltip";
 import Typography from "@mui/material/Typography";
 import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import ChevronRightIcon from "@mui/icons-material/ChevronRight";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
 import type { SmartChargingData } from "~/server/util/fleet";
+import {
+  HOLIDAY_PILL_COLORS,
+  type HolidayPillStatus,
+} from "~/shared/types/holidayStatus";
 import EnergyFlow from "./EnergyFlow";
 import SiteDetailsDialog from "./SiteDetailsDialog";
 import { modeLabel } from "./modeLabel";
@@ -30,7 +35,7 @@ interface Props {
   live: LiveStatus | null;
   info: SiteInfo | null;
   calibrating?: boolean;
-  activeHoliday?: string | null;
+  holidayStatus?: HolidayPillStatus | null;
   smartCharging?: SmartChargingData | null;
 }
 
@@ -654,7 +659,7 @@ export default function SiteCard({
   live,
   info,
   calibrating = false,
-  activeHoliday = null,
+  holidayStatus = null,
   smartCharging = null,
 }: Props) {
   const theme = useTheme();
@@ -712,12 +717,14 @@ export default function SiteCard({
             }}
           >
             <Chip label={gridChipLabel} color={gridChipColor} size="small" />
-            {activeHoliday && (
-              <Chip
-                label={`Holiday: ${activeHoliday}`}
-                color="warning"
-                size="small"
-              />
+            {holidayStatus && (
+              <Tooltip title={holidayStatus.detail}>
+                <Chip
+                  label={`Holiday: ${holidayStatus.name}`}
+                  color={HOLIDAY_PILL_COLORS[holidayStatus.state]}
+                  size="small"
+                />
+              </Tooltip>
             )}
           </Box>
         }

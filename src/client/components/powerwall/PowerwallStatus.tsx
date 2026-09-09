@@ -18,13 +18,14 @@ import { axiosInstance } from "../auth/authClient";
 import SiteCard from "./SiteCard";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
 import type { SmartChargingData } from "~/server/util/fleet";
+import type { HolidayPillStatus } from "~/shared/types/holidayStatus";
 
 interface SiteStatus {
   product: Product;
   live: LiveStatus | null;
   info: SiteInfo | null;
   calibrating: boolean;
-  activeHoliday: string | null;
+  holidayStatus: HolidayPillStatus | null;
   smartCharging: SmartChargingData | null;
 }
 
@@ -249,7 +250,7 @@ export default function PowerwallStatus() {
                       live,
                       info,
                       calibrating,
-                      activeHoliday,
+                      holidayStatus,
                       smartCharging,
                     }) => (
                       <Box
@@ -261,7 +262,7 @@ export default function PowerwallStatus() {
                           live={live}
                           info={info}
                           calibrating={calibrating}
-                          activeHoliday={activeHoliday}
+                          holidayStatus={holidayStatus}
                           smartCharging={smartCharging}
                         />
                       </Box>
@@ -314,7 +315,7 @@ export default function PowerwallStatus() {
                   live,
                   info,
                   calibrating,
-                  activeHoliday,
+                  holidayStatus,
                   smartCharging,
                 }) => (
                   <SiteCard
@@ -323,7 +324,7 @@ export default function PowerwallStatus() {
                     live={live}
                     info={info}
                     calibrating={calibrating}
-                    activeHoliday={activeHoliday}
+                    holidayStatus={holidayStatus}
                     smartCharging={smartCharging}
                   />
                 ),

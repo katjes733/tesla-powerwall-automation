@@ -1,4 +1,7 @@
+import moment from "moment-timezone";
 import type { HolidayEntry } from "~/server/database/models/schedule";
+import type { ISiteHolidayStatus } from "~/server/database/models/siteHolidayStatus";
+import type { HolidayPillStatus } from "~/shared/types/holidayStatus";
 
 const DAY_OF_WEEK: Record<string, number> = {
   Mon: 1,
@@ -339,4 +342,47 @@ export function generateHolidayTemplates(source: string): HolidayEntry[] {
     default:
       return [];
   }
+}
+
+/**
+ * Derives the color-coded holiday pill state from the persisted result of the
+ * last setTouHolidayOverride evaluation for a site. `ranToday` (comparing the
+ * persisted status's date to today's site-local date) is the key check: if
+ * the cron never fired today — the exact failure mode behind the 2026-09-07
+ * Labor Day incident, where node-cron silently dropped the fire — the status
+ * stays stale and this falls back to "pending" rather than showing a false
+ * "applied".
+ */
+export function deriveHolidayPillStatus(
+  activeHoliday: string | null,
+  status: ISiteHolidayStatus | null,
+  today: string,
+  tz: string,
+): HolidayPillStatus | null {
+  if (!activeHoliday) return null;
+
+  const ranToday = status?.date === today;
+  const checkedAt = status
+    ? moment(status.checked_at).tz(tz).format("h:mm A z")
+    : null;
+
+  if (ranToday && status!.action === "override") {
+    return {
+      name: activeHoliday,
+      state: "applied",
+      detail: `Holiday TOU override applied (checked ${checkedAt})`,
+    };
+  }
+  if (ranToday && status!.action === "failed") {
+    return {
+      name: activeHoliday,
+      state: "failed",
+      detail: `Holiday TOU override failed: ${status!.error ?? "Unknown error"} (checked ${checkedAt})`,
+    };
+  }
+  return {
+    name: activeHoliday,
+    state: "pending",
+    detail: "Holiday detected — override has not run yet today",
+  };
 }
