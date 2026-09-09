@@ -10,7 +10,7 @@ const mockDismissPasskeyPromptPermanently = vi.fn();
 
 let passkeyPromptOpen = true;
 
-vi.mock("~/client/components/auth/AuthContext", () => ({
+vi.mock("~/client/components/auth/useAuth", () => ({
   useAuth: () => ({
     passkeyPromptOpen,
     closePasskeyPrompt: mockClosePasskeyPrompt,
@@ -19,7 +19,7 @@ vi.mock("~/client/components/auth/AuthContext", () => ({
   }),
 }));
 
-vi.mock("~/client/components/notification/NotificationContext", () => ({
+vi.mock("~/client/components/notification/useNotification", () => ({
   useNotification: () => ({ showNotification }),
 }));
 

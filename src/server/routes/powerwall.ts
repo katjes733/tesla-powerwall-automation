@@ -6,8 +6,13 @@ import {
   getSmartChargingState,
 } from "~/server/util/fleet";
 import { getByEmail } from "~/server/util/routes/schedule";
-import { getActiveHolidayName } from "~/server/util/holidays";
+import {
+  getActiveHolidayName,
+  deriveHolidayPillStatus,
+} from "~/server/util/holidays";
 import type { HolidayEntry } from "~/server/database/models/schedule";
+import type { ISiteHolidayStatus } from "~/server/database/models/siteHolidayStatus";
+import AppDataSource from "~/server/database/datasource";
 import { getCurrentAccountEmail } from "~/server/util/currentAccount";
 import { resolveActorMiddleware } from "~/server/middleware/resolveActorMiddleware";
 import {
@@ -127,6 +132,8 @@ router.get(
       const holidaySchedules = schedules.filter((s) =>
         (s.actions ?? []).some((a) => a.action === "setTouHolidayOverride"),
       );
+      const db = await AppDataSource.getInstance();
+      const holidayStatusRepo = db.getRepository("SiteHolidayStatus");
       const data = await Promise.all(
         products.map(async (product) => {
           const [live, info] = await Promise.all([
@@ -146,6 +153,15 @@ router.get(
               (c) => c.condition === "holidayList",
             )?.value as HolidayEntry[] | undefined) ?? [];
           const activeHoliday = getActiveHolidayName(holidayEntries, today);
+          const holidayStatusRecord = (await holidayStatusRepo.findOne({
+            where: { site_id: siteIdStr },
+          })) as ISiteHolidayStatus | null;
+          const holidayStatus = deriveHolidayPillStatus(
+            activeHoliday,
+            holidayStatusRecord,
+            today,
+            tz,
+          );
           return {
             product,
             live,
@@ -154,7 +170,7 @@ router.get(
               ? isCalibrating(live) ||
                 (await isDischargeCalibrating(product.energy_site_id))
               : false,
-            activeHoliday,
+            holidayStatus,
             smartCharging: getSmartChargingState(product.energy_site_id),
           };
         }),

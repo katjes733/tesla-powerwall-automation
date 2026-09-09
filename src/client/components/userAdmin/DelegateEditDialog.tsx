@@ -12,8 +12,8 @@ import {
   Select,
   TextField,
 } from "@mui/material";
-import { axiosInstance } from "~/client/components/auth/AuthContext";
-import { useNotification } from "~/client/components/notification/NotificationContext";
+import { axiosInstance } from "~/client/components/auth/authClient";
+import { useNotification } from "~/client/components/notification/useNotification";
 import SiteMultiSelect from "~/client/components/shared/SiteMultiSelect";
 import type { SiteOption } from "~/client/components/shared/SiteSingleSelect";
 import { PROFILE_NAMES, type ProfileName } from "~/shared/permissions/profile";

@@ -15,8 +15,8 @@ import AddIcon from "@mui/icons-material/Add";
 import PublishIcon from "@mui/icons-material/Publish";
 import { useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
-import { axiosInstance } from "../auth/AuthContext";
-import { useNotification } from "../notification/NotificationContext";
+import { axiosInstance } from "../auth/authClient";
+import { useNotification } from "../notification/useNotification";
 import TouEditorDialog from "./TouEditorDialog";
 import ConfirmDialog from "../shared/ConfirmDialog";
 import PermissionButton from "../shared/PermissionButton";
@@ -160,7 +160,7 @@ export default function TouConfigs() {
         if (first) setSelectedSiteId(first.id);
       })
       .catch(() => showNotification("Failed to load sites", "error"));
-  }, []);
+  }, [showNotification]);
 
   const loadConfigs = useCallback(() => {
     if (!selectedSiteId) return;
@@ -172,7 +172,7 @@ export default function TouConfigs() {
       .then((r) => setConfigs(r.data.data ?? []))
       .catch(() => showNotification("Failed to load TOU configs", "error"))
       .finally(() => setLoadingConfigs(false));
-  }, [selectedSiteId]);
+  }, [selectedSiteId, showNotification]);
 
   useEffect(() => {
     loadConfigs();

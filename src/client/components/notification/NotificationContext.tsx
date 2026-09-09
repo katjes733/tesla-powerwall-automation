@@ -1,17 +1,6 @@
 import { Alert, Snackbar } from "@mui/material";
-import { createContext, useCallback, useContext, useState } from "react";
-
-type NotificationContextType = {
-  showNotification: (
-    message: string,
-    severity?: "error" | "warning" | "info" | "success",
-    duration?: number,
-  ) => void;
-};
-
-const NotificationContext = createContext<NotificationContextType>({
-  showNotification: () => {},
-});
+import { useCallback, useState } from "react";
+import { NotificationContext } from "./notificationContextValue";
 
 export const NotificationProvider = ({
   children,
@@ -63,5 +52,3 @@ export const NotificationProvider = ({
     </NotificationContext.Provider>
   );
 };
-
-export const useNotification = () => useContext(NotificationContext);

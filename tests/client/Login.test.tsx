@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 
 const mockLoginWithPasskey = vi.fn();
 const mockPlatformAuthenticatorIsAvailable = vi.fn();
@@ -21,15 +21,18 @@ const { MockWebAuthnError } = vi.hoisted(() => {
   return { MockWebAuthnError };
 });
 
-vi.mock("~/client/components/auth/AuthContext", () => ({
+vi.mock("~/client/components/auth/useAuth", () => ({
   useAuth: () => ({
     user: null,
     login: vi.fn(),
     loginWithPasskey: mockLoginWithPasskey,
     loading: false,
   }),
+}));
+
+vi.mock("~/client/components/auth/authClient", () => ({
   WEBAUTHN_CREDENTIAL_STORAGE_KEY: "webauthnLastCredentialId",
-  // Mirrors the real AuthContext.isStalePasskeyError so this file exercises
+  // Mirrors the real authClient.isStalePasskeyError so this file exercises
   // the same classification Login.tsx actually relies on, rather than a
   // stub that could silently drift from production behavior.
   isStalePasskeyError: (error: any) =>
@@ -38,7 +41,7 @@ vi.mock("~/client/components/auth/AuthContext", () => ({
       error.code === "ERROR_PASSTHROUGH_SEE_CAUSE_PROPERTY"),
 }));
 
-vi.mock("~/client/components/notification/NotificationContext", () => ({
+vi.mock("~/client/components/notification/useNotification", () => ({
   useNotification: () => ({ showNotification: mockShowNotification }),
 }));
 

@@ -11,6 +11,7 @@ import { ThemeProvider, createTheme } from "@mui/material/styles";
 import SiteCard from "~/client/components/powerwall/SiteCard";
 import type { LiveStatus, Product, SiteInfo } from "~/server/types/common";
 import type { SmartChargingData } from "~/server/util/fleet";
+import type { HolidayPillStatus } from "~/shared/types/holidayStatus";
 
 const theme = createTheme();
 
@@ -92,6 +93,7 @@ function renderCard(overrides: {
   calibrating?: boolean;
   live?: LiveStatus | null;
   info?: SiteInfo | null;
+  holidayStatus?: HolidayPillStatus | null;
 }) {
   const live = "live" in overrides ? overrides.live! : LIVE;
   return render(
@@ -102,6 +104,7 @@ function renderCard(overrides: {
         info={overrides.info ?? null}
         calibrating={overrides.calibrating ?? false}
         smartCharging={overrides.smartCharging ?? null}
+        holidayStatus={overrides.holidayStatus ?? null}
       />
     </ThemeProvider>,
   );
@@ -229,5 +232,79 @@ describe("SiteCard — collapsed site-details row", () => {
     await user.click(screen.getByRole("button", { name: "Close" }));
 
     await waitForElementToBeRemoved(() => screen.queryByRole("dialog"));
+  });
+});
+
+describe("SiteCard — holiday pill color and tooltip", () => {
+  it("renders no holiday chip when holidayStatus is null (not a holiday today)", () => {
+    renderCard({ holidayStatus: null });
+    expect(screen.queryByText(/^Holiday:/)).not.toBeInTheDocument();
+  });
+
+  it("renders a success-colored chip when the override was confirmed applied", () => {
+    renderCard({
+      holidayStatus: {
+        name: "Labor Day",
+        state: "applied",
+        detail: "Holiday TOU override applied (checked 12:00 AM MST)",
+      },
+    });
+
+    const chip = screen
+      .getByText("Holiday: Labor Day")
+      .closest(".MuiChip-root");
+    expect(chip).toHaveClass("MuiChip-colorSuccess");
+  });
+
+  it("renders a warning-colored chip when the override hasn't run yet today", () => {
+    renderCard({
+      holidayStatus: {
+        name: "Labor Day",
+        state: "pending",
+        detail: "Holiday detected — override has not run yet today",
+      },
+    });
+
+    const chip = screen
+      .getByText("Holiday: Labor Day")
+      .closest(".MuiChip-root");
+    expect(chip).toHaveClass("MuiChip-colorWarning");
+  });
+
+  it("renders an error-colored chip when the override failed", () => {
+    renderCard({
+      holidayStatus: {
+        name: "Labor Day",
+        state: "failed",
+        detail:
+          "Holiday TOU override failed: network error (checked 12:00 AM MST)",
+      },
+    });
+
+    const chip = screen
+      .getByText("Holiday: Labor Day")
+      .closest(".MuiChip-root");
+    expect(chip).toHaveClass("MuiChip-colorError");
+  });
+
+  it("shows the status detail in a tooltip on hover", async () => {
+    renderCard({
+      holidayStatus: {
+        name: "Labor Day",
+        state: "failed",
+        detail:
+          "Holiday TOU override failed: network error (checked 12:00 AM MST)",
+      },
+    });
+    const user = userEvent.setup();
+
+    await user.hover(screen.getByText("Holiday: Labor Day"));
+
+    const tooltip = await screen.findByRole("tooltip");
+    expect(
+      within(tooltip).getByText(
+        "Holiday TOU override failed: network error (checked 12:00 AM MST)",
+      ),
+    ).toBeInTheDocument();
   });
 });

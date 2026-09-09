@@ -45,7 +45,7 @@ export default defineConfig([
   },
   {
     name: "client-react-config",
-    files: ["{src|tests}/client/**/*.{ts,tsx,js,jsx}"],
+    files: ["{src,tests}/client/**/*.{ts,tsx,js,jsx}"],
     languageOptions: {
       parser,
       ecmaVersion: 2020,
@@ -63,6 +63,19 @@ export default defineConfig([
       "react-hooks": reactHooks,
       "react-refresh": reactRefresh,
     },
-    rules: {},
+    rules: {
+      // TypeScript already checks for undefined/unused bindings — the base
+      // rules don't understand TS-only constructs (interface method
+      // signatures, function-type params) and misfire on them.
+      "no-undef": "off",
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": [
+        "error",
+        { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
+      ],
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
+      "react-refresh/only-export-components": "warn",
+    },
   },
 ]);

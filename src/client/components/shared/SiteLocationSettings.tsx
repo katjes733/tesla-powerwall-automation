@@ -7,8 +7,8 @@ import {
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useState } from "react";
-import { axiosInstance } from "../auth/AuthContext";
-import { useNotification } from "../notification/NotificationContext";
+import { axiosInstance } from "../auth/authClient";
+import { useNotification } from "../notification/useNotification";
 import PermissionButton from "./PermissionButton";
 import type { ActionKey } from "~/shared/permissions/schema";
 

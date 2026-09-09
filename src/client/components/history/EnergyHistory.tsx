@@ -7,8 +7,8 @@ import Tab from "@mui/material/Tab";
 import Tabs from "@mui/material/Tabs";
 import Typography from "@mui/material/Typography";
 import dayjs, { type Dayjs } from "dayjs";
-import { axiosInstance } from "../auth/AuthContext";
-import { useNotification } from "../notification/NotificationContext";
+import { axiosInstance } from "../auth/authClient";
+import { useNotification } from "../notification/useNotification";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
 import DayNavigator from "./DayNavigator";
 import HomeTab from "./HomeTab";
@@ -75,7 +75,7 @@ export default function EnergyHistory() {
         if (defaultSite) setSelectedSiteId(defaultSite.id);
       })
       .catch(() => showNotification("Failed to load sites", "error"));
-  }, []);
+  }, [showNotification]);
 
   const selectedTimezone =
     sites.find((s) => s.id === selectedSiteId)?.timezone ?? "UTC";
@@ -126,7 +126,7 @@ export default function EnergyHistory() {
   useEffect(() => {
     setHistoryData(null);
     fetchHistory();
-  }, [selectedSiteId, selectedDate]);
+  }, [selectedSiteId, selectedDate, fetchHistory]);
 
   useEffect(() => {
     if (!isMobile) return;

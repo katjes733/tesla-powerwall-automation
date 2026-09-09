@@ -7,11 +7,14 @@ const showNotification = vi.fn();
 const mockGet = vi.fn();
 const mockPost = vi.fn();
 
-vi.mock("~/client/components/auth/AuthContext", () => ({
+vi.mock("~/client/components/auth/authClient", () => ({
   axiosInstance: {
     get: (...args: unknown[]) => mockGet(...args),
     post: (...args: unknown[]) => mockPost(...args),
   },
+}));
+
+vi.mock("~/client/components/auth/useAuth", () => ({
   useAuth: () => ({
     getElementState: () => "write",
     hasSiteAccess: () => true,
@@ -19,7 +22,7 @@ vi.mock("~/client/components/auth/AuthContext", () => ({
   }),
 }));
 
-vi.mock("~/client/components/notification/NotificationContext", () => ({
+vi.mock("~/client/components/notification/useNotification", () => ({
   useNotification: () => ({ showNotification }),
 }));
 

@@ -14,8 +14,8 @@ import {
   Typography,
 } from "@mui/material";
 import { useCallback, useEffect, useState } from "react";
-import { axiosInstance } from "../auth/AuthContext";
-import { useNotification } from "../notification/NotificationContext";
+import { axiosInstance } from "../auth/authClient";
+import { useNotification } from "../notification/useNotification";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
 import ConfirmDialog from "../shared/ConfirmDialog";
 
@@ -105,7 +105,7 @@ export default function ManualSettings() {
         if (firstOnline) setSelectedSiteId(firstOnline.id);
       })
       .catch(() => showNotification("Failed to load sites", "error"));
-  }, []);
+  }, [showNotification]);
 
   const fetchStatus = useCallback(
     (siteId: string) => {

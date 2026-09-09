@@ -11,8 +11,8 @@ import {
 import CheckCircleOutlineIcon from "@mui/icons-material/CheckCircleOutline";
 import ErrorOutlineIcon from "@mui/icons-material/ErrorOutline";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { axiosInstance } from "../auth/AuthContext";
-import { useNotification } from "../notification/NotificationContext";
+import { axiosInstance } from "../auth/authClient";
+import { useNotification } from "../notification/useNotification";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";
 import ConfirmDialog from "../shared/ConfirmDialog";
 import PermissionButton from "../shared/PermissionButton";
@@ -294,7 +294,7 @@ export default function Calibration() {
         if (firstOnline) setSelectedSiteId(firstOnline.id);
       })
       .catch(() => showNotification("Failed to load sites", "error"));
-  }, []);
+  }, [showNotification]);
 
   const fetchCalibrationData = useCallback(
     (siteId: string) => {
@@ -487,18 +487,21 @@ export default function Calibration() {
     fetchScheduleStatus,
     pollJob,
     pollCurveJob,
+    showNotification,
   ]);
+
+  const jobIsRunning = jobStatus?.status === "running";
 
   useEffect(() => {
     if (!selectedSiteId) return;
-    if (jobStatus?.status !== "running") return;
+    if (!jobIsRunning) return;
     pollJob(selectedSiteId);
     if (jobPollRef.current) clearInterval(jobPollRef.current);
     jobPollRef.current = setInterval(() => pollJob(selectedSiteId), 10_000);
     return () => {
       if (jobPollRef.current) clearInterval(jobPollRef.current);
     };
-  }, [selectedSiteId, jobStatus?.status === "running", pollJob]);
+  }, [selectedSiteId, jobIsRunning, pollJob]);
 
   const handleStartCalibration = async () => {
     if (!selectedSiteId) return;
@@ -574,9 +577,11 @@ export default function Calibration() {
     }
   };
 
+  const curveJobIsRunning = curveJobStatus?.status === "running";
+
   useEffect(() => {
     if (!selectedSiteId) return;
-    if (curveJobStatus?.status !== "running") return;
+    if (!curveJobIsRunning) return;
     pollCurveJob(selectedSiteId);
     if (curvePollRef.current) clearInterval(curvePollRef.current);
     curvePollRef.current = setInterval(
@@ -586,7 +591,7 @@ export default function Calibration() {
     return () => {
       if (curvePollRef.current) clearInterval(curvePollRef.current);
     };
-  }, [selectedSiteId, curveJobStatus?.status === "running", pollCurveJob]);
+  }, [selectedSiteId, curveJobIsRunning, pollCurveJob]);
 
   const handleStartCurveCalibration = async (mode: "add" | "fresh") => {
     setCurveStartDialogOpen(false);

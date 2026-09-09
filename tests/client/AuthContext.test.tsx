@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router";
 
 const mockGet = vi.fn();
 const mockPost = vi.fn();
@@ -38,7 +38,8 @@ vi.mock("@simplewebauthn/browser", () => ({
   WebAuthnError: MockWebAuthnError,
 }));
 
-import { AuthProvider, useAuth } from "~/client/components/auth/AuthContext";
+import { AuthProvider } from "~/client/components/auth/AuthContext";
+import { useAuth } from "~/client/components/auth/useAuth";
 
 function Harness() {
   const {

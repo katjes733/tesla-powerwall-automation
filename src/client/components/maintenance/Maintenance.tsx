@@ -8,8 +8,8 @@ import {
 } from "@mui/material";
 import dayjs from "dayjs";
 import { useCallback, useEffect, useState } from "react";
-import { axiosInstance } from "../auth/AuthContext";
-import { useNotification } from "../notification/NotificationContext";
+import { axiosInstance } from "../auth/authClient";
+import { useNotification } from "../notification/useNotification";
 import ConfirmDialog from "../shared/ConfirmDialog";
 import PermissionButton from "../shared/PermissionButton";
 import SiteSingleSelect, { type SiteOption } from "../shared/SiteSingleSelect";

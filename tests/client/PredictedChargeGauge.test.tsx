@@ -2,10 +2,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { ThemeProvider, createTheme } from "@mui/material/styles";
-import {
-  PredictedChargeGauge,
-  formatDayTime,
-} from "~/client/components/powerwall/SiteCard";
+import { PredictedChargeGauge } from "~/client/components/powerwall/SiteCard";
+import { formatDayTime } from "~/client/components/powerwall/dateFormat";
 import type { SmartChargingData } from "~/server/util/fleet";
 
 const theme = createTheme();
